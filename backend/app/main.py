@@ -14,7 +14,14 @@ from .excel_import import parse_excel_file
 from .fonts import resolve_font_path
 from .preview import build_preview_html, preview_res_root
 from .quiz_builder import IMPORT_TEMPLATE_DIR, MASTER_SCORM, build_quiz_from_excel
-from .scorm_parser import SESSIONS_ROOT, ScormSession, find_index_html, get_session
+from .scorm_parser import (
+    SESSIONS_ROOT,
+    ScormSession,
+    find_index_html,
+    get_package_root,
+    get_session,
+    resolve_asset_path,
+)
 
 app = FastAPI(title="SCORM Editor", version="1.0.0")
 
@@ -232,7 +239,7 @@ def save_session(session_id: str, payload: SavePayload):
 @app.get("/api/session/{session_id}/asset/{filename}")
 def get_asset(session_id: str, filename: str):
     try:
-        path = get_session(session_id).asset_path(filename)
+        path = resolve_asset_path(session_id, filename)
         return FileResponse(path)
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc)) from exc
@@ -314,12 +321,13 @@ def session_res_static(session_id: str, path: str):
 
 def _serve_package_res(session_id: str, path: str) -> FileResponse:
     try:
-        session = get_session(session_id)
-        res_root = preview_res_root(session.package_root)
+        package_root = get_package_root(session_id)
+        res_root = preview_res_root(package_root)
         file_path = (res_root / path).resolve()
         if not str(file_path).startswith(str(res_root.resolve())):
             raise HTTPException(403, "Invalid path")
         if not file_path.is_file():
+            session = get_session(session_id)
             fallback = resolve_font_path(session.package_root, session.quiz_json, path)
             if fallback and fallback.is_file():
                 file_path = fallback

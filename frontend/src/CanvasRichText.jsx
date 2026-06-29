@@ -13,16 +13,23 @@ export default function CanvasRichText({
   onTextChange,
   onFocus,
   onBlur,
+  onActivate,
   onEditorMount,
 }) {
   const previewHtml = html || buildStyledHtml(value, role, format, typography, html)
+  const handleActivate = onActivate || onFocus
 
   return (
     <div className={`canvas-rich-text ${className}`.trim()}>
       {!editing && previewHtml && (
         <div
-          className="ispring-html fidelity-html"
+          className="ispring-html fidelity-html canvas-text-preview"
           dangerouslySetInnerHTML={{ __html: previewHtml }}
+          onMouseDown={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            handleActivate?.()
+          }}
         />
       )}
       {editing && (

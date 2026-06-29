@@ -52,6 +52,40 @@ export function extractTextAlignFromHtml(htmlText) {
   return match ? match[1].toLowerCase() : null
 }
 
+/** Chuyển HTML iSpring sang plain text giữ xuống dòng cho contentEditable */
+export function htmlToEditableText(html, fallback = '') {
+  if (!html) return fallback || ''
+  let text = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>\s*<p[^>]*>/gi, '\n')
+    .replace(/<\/div>\s*<div[^>]*>/gi, '\n')
+  text = text.replace(/<[^>]+>/g, '')
+  text = text
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\u200b/g, '')
+  const plain = text.replace(/\n{3,}/g, '\n\n').trim()
+  return plain || fallback || ''
+}
+
+/** Gộp format slide + object + HTML gốc để không mất căn lề/cỡ chữ khi bấm sửa */
+export function resolveCanvasTextFormat(slideFormat, objFormat, html, role = 'content') {
+  const base = mergeFormat(slideFormat || objFormat, defaultFormat(role))
+  const align = slideFormat?.align || extractTextAlignFromHtml(html) || base.align
+  const next = { ...base, align }
+  if (!next.fontSize && html) {
+    const sizeMatch = html.match(/font-size:\s*(\d+)px/i)
+    if (sizeMatch) next.fontSize = Number(sizeMatch[1])
+  }
+  if (html && (!slideFormat?.color || slideFormat.color === '#000000')) {
+    const colorMatch = html.match(/color:\s*(#[0-9a-fA-F]{3,6})/i)
+    if (colorMatch) next.color = colorMatch[1]
+  }
+  return next
+}
+
 export function buildStyledHtml(text, role = 'content', format = null, typography = null, sourceHtml = null) {
   const fmt = mergeFormat(format, defaultFormat(role))
   const plain = (text || '').trim()
@@ -73,6 +107,7 @@ export function buildStyledHtml(text, role = 'content', format = null, typograph
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br>')
 
   return `<p style="text-align:${align};font-size:${size}px;font-family:${font};color:${color};font-weight:${weight};font-style:${style};text-decoration:${deco};margin:0;line-height:1.35"><span style="color:${color};font-size:${size}px;font-family:${font};font-weight:${weight};font-style:${style};text-decoration:${deco}">${escaped}</span></p>`
 }

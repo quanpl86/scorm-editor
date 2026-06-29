@@ -216,6 +216,11 @@ def extract_background_meta(slide: dict[str, Any]) -> dict[str, Any]:
 
 
 def extract_object_image(obj: dict[str, Any], slide: dict[str, Any]) -> str | None:
+    if obj.get("tp") == "image" and obj.get("i"):
+        path = image_path_from_storage(obj["i"])
+        if path:
+            return path
+
     if obj.get("tp") == "slidePicture":
         attached = extract_slide_attachment_image(slide)
         if attached:
@@ -687,6 +692,106 @@ def extract_layout(slide: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _blank_object_styles() -> dict[str, Any]:
+    return {
+        "b": {"f": "none"},
+        "s": {"t": "none", "s": 1, "d": "", "c": "butt", "j": "miter"},
+        "a": {"t": "", "a": True},
+        "t": {
+            "a": "doNotAutofit",
+            "v": "middle",
+            "w": True,
+            "l": 0,
+            "r": 0,
+            "t": 0,
+            "b": 0,
+        },
+    }
+
+
+def _bump_slide_object_quota(slide: dict[str, Any], object_type: str) -> None:
+    area = slide.setdefault("a", {})
+    for key in ("O", "i"):
+        node = area.get(key)
+        if not isinstance(node, dict) or "o" not in node:
+            continue
+        try:
+            counts = json.loads(node["o"])
+        except (TypeError, json.JSONDecodeError):
+            counts = {}
+        if not isinstance(counts, dict):
+            counts = {}
+        counts[object_type] = int(counts.get(object_type, 0)) + 1
+        node["o"] = json.dumps(counts, separators=(",", ":"))
+
+
+def make_ispring_slide_picture(name: str, rect: dict[str, float]) -> dict[str, Any]:
+    return {
+        "tp": "slidePicture",
+        "I": name,
+        "k": False,
+        "r": {
+            "x": float(rect.get("x", 80)),
+            "y": float(rect.get("y", 80)),
+            "w": max(40.0, float(rect.get("w", 200))),
+            "h": max(40.0, float(rect.get("h", 150))),
+        },
+        "s": "rectangle",
+        "S": _blank_object_styles(),
+        "b": 0.3,
+    }
+
+
+def make_ispring_image(name: str, rect: dict[str, float], image_filename: str | None = None) -> dict[str, Any]:
+    obj: dict[str, Any] = {
+        "tp": "image",
+        "I": name,
+        "k": False,
+        "r": {
+            "x": float(rect.get("x", 80)),
+            "y": float(rect.get("y", 80)),
+            "w": max(40.0, float(rect.get("w", 160))),
+            "h": max(40.0, float(rect.get("h", 120))),
+        },
+        "s": "rectangle",
+        "S": _blank_object_styles(),
+        "b": 0.3,
+        "rt": {
+            "h": '<p style="font-family:fnt2_24031"><span style="font-family:fnt2_24031;">​</span></p>',
+            "a": "<p></p>",
+            "r": [],
+            "d": [],
+            "t": {"tf": {"f": "Open Sans"}},
+        },
+        "z": False,
+    }
+    if image_filename:
+        obj["i"] = f"storage://images/{image_filename}"
+    return obj
+
+
+def set_slide_attachment(slide: dict[str, Any], image_filename: str | None) -> None:
+    if not image_filename:
+        slide.pop("at", None)
+        return
+    slide["at"] = {"i": {"i": f"storage://images/{image_filename}", "z": True}}
+
+
+def set_object_image(obj: dict[str, Any], slide: dict[str, Any], image_filename: str | None) -> None:
+    if not image_filename:
+        if obj.get("tp") == "image":
+            obj.pop("i", None)
+        if obj.get("tp") == "slidePicture":
+            slide.pop("at", None)
+        return
+    storage = f"storage://images/{image_filename}"
+    if obj.get("tp") == "image":
+        obj["i"] = storage
+        obj["z"] = False
+    elif obj.get("tp") == "slidePicture":
+        set_slide_attachment(slide, image_filename)
+
+
 def layout_changed(slide: dict[str, Any], layout: dict[str, Any], *, epsilon: float = 0.5) -> bool:
     """True when incoming layout rects/z-order differ from the slide."""
     if not layout:
@@ -713,6 +818,18 @@ def layout_changed(slide: dict[str, Any], layout: dict[str, Any], *, epsilon: fl
         if z_order != current_order:
             return True
 
+    if layout.get("addedObjects"):
+        return True
+    if layout.get("removedIndexes"):
+        return True
+    if layout.get("slideAttachment") is not None:
+        return True
+    for obj_update in layout.get("objects", []):
+        if obj_update.get("remove"):
+            return True
+        if "image" in obj_update:
+            return True
+
     return False
 
 
@@ -729,12 +846,64 @@ def apply_layout(slide: dict[str, Any], layout: dict[str, Any]) -> None:
         objects[idx]["r"]["w"] = max(8.0, float(r.get("w", objects[idx]["r"].get("w", 0))))
         objects[idx]["r"]["h"] = max(8.0, float(r.get("h", objects[idx]["r"].get("h", 0))))
 
+    _apply_layout_zorder(slide, layout)
+
+
+def _apply_layout_zorder(slide: dict[str, Any], layout: dict[str, Any]) -> None:
+    objects = slide.get("a", {}).get("o", [])
     z_order = layout.get("zOrder")
     if z_order and len(z_order) == len(objects):
         slide["a"]["o"] = [objects[i] for i in z_order if i < len(objects)]
 
 
+def apply_layout_media(slide: dict[str, Any], layout: dict[str, Any]) -> None:
+    slide.setdefault("a", {}).setdefault("o", [])
+    objects = slide["a"]["o"]
+
+    removed = sorted(
+        {
+            int(i)
+            for i in (layout.get("removedIndexes") or [])
+            if isinstance(i, int) or (isinstance(i, str) and str(i).isdigit())
+        }
+        | {
+            int(obj["index"])
+            for obj in layout.get("objects", [])
+            if obj.get("remove") and obj.get("index") is not None
+        },
+        reverse=True,
+    )
+    for idx in removed:
+        if 0 <= idx < len(objects):
+            objects.pop(idx)
+
+    for spec in layout.get("addedObjects", []):
+        rect = spec.get("r") or {}
+        role = spec.get("role") or spec.get("tp")
+        name = spec.get("I") or spec.get("name") or "Picture"
+        if role == "slidePicture" or spec.get("tp") == "slidePicture":
+            objects.append(make_ispring_slide_picture(name, rect))
+            _bump_slide_object_quota(slide, "slidePicture")
+            if spec.get("image"):
+                set_slide_attachment(slide, spec["image"])
+        elif role == "image" or spec.get("tp") == "image":
+            objects.append(make_ispring_image(name, rect, spec.get("image")))
+            _bump_slide_object_quota(slide, "image")
+
+    if layout.get("slideAttachment") is not None:
+        set_slide_attachment(slide, layout.get("slideAttachment") or None)
+
+    for obj_update in layout.get("objects", []):
+        idx = obj_update.get("index")
+        if idx is None or idx < 0 or idx >= len(objects):
+            continue
+        if "image" in obj_update:
+            set_object_image(objects[idx], slide, obj_update.get("image"))
+
+
 def apply_question_layout_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:
     layout = edit.get("layout")
-    if layout and layout_changed(slide, layout):
-        apply_layout(slide, layout)
+    if not layout or not layout_changed(slide, layout):
+        return
+    apply_layout_media(slide, layout)
+    apply_layout(slide, layout)

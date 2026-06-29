@@ -65,6 +65,16 @@ export async function uploadImage(sessionId, filename, file) {
   return res.json()
 }
 
+export async function uploadNewImage(sessionId, file) {
+  const ext = (file?.name?.split('.').pop() || 'png').toLowerCase()
+  const id = typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID().replace(/-/g, '')
+    : `${Date.now()}${Math.random().toString(16).slice(2)}`
+  const filename = `img-${id.slice(0, 40)}.${ext}`
+  const result = await uploadImage(sessionId, filename, file)
+  return { ...result, filename }
+}
+
 export function assetUrl(sessionId, filename) {
   return `${API}/session/${sessionId}/asset/${encodeURIComponent(filename)}?t=${Date.now()}`
 }
@@ -76,6 +86,8 @@ export function previewPlayerUrl(sessionId, options = {}) {
   if (options.qIndex != null && options.qIndex >= 0) params.set('qIndex', String(options.qIndex))
   if (options.editor) params.set('editor', '1')
   if (options.skipStart) params.set('skipStart', '1')
+  if (options.slideRole) params.set('slideRole', options.slideRole)
+  if (options.resultKind) params.set('resultKind', options.resultKind)
   const qs = params.toString()
   return `${API}/session/${sessionId}/preview/player${qs ? `?${qs}` : ''}`
 }

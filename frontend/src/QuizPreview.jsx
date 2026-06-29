@@ -34,7 +34,7 @@ function statusClass(status) {
   return ''
 }
 
-export default function QuizPreview({ quiz, onBack, onSave, saving }) {
+export default function QuizPreview({ quiz, onBack, onSave, saving, previewRevision = 0 }) {
   const [scorm, setScorm] = useState({ initialized: false, data: {} })
   const [reloadKey, setReloadKey] = useState(0)
   const [syncing, setSyncing] = useState(false)
@@ -66,6 +66,12 @@ export default function QuizPreview({ quiz, onBack, onSave, saving }) {
     () => previewPlayerUrl(quiz.sessionId, { reloadKey }),
     [quiz.sessionId, reloadKey],
   )
+
+  useEffect(() => {
+    if (previewRevision > 0) {
+      setReloadKey((k) => k + 1)
+    }
+  }, [previewRevision])
 
   useEffect(() => {
     const handler = (event) => {

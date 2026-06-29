@@ -69,6 +69,38 @@ button, input, textarea, select {
   align-items: center;
 }
 
+.history-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding-right: 8px;
+  border-right: 1px solid var(--border);
+  margin-right: 2px;
+}
+
+.btn-icon {
+  padding: 7px 12px;
+  font-size: 0.8rem;
+}
+
+.auto-sync-badge {
+  font-size: 0.75rem;
+  color: var(--accent);
+  white-space: nowrap;
+  animation: pulse-sync 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-sync {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.sideview-sync-hint {
+  font-size: 0.75rem;
+  color: var(--accent);
+  margin-right: 8px;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -770,6 +802,12 @@ button, input, textarea, select {
   color: var(--muted);
 }
 
+.canvas-media-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .toolbar-hint {
   opacity: 0.8;
 }
@@ -918,9 +956,16 @@ button, input, textarea, select {
 }
 
 .obj-html .canvas-editable-text,
+.obj-html .canvas-rich-text,
+.obj-html .canvas-text-preview,
+.obj-html .ispring-html,
+.obj-html .fidelity-html,
 .content-zone.editable-zone,
-.content-zone.editable-zone .canvas-editable-text {
+.content-zone.editable-zone .canvas-editable-text,
+.content-zone.editable-zone .canvas-rich-text,
+.content-zone.editable-zone .canvas-text-preview {
   pointer-events: auto;
+  cursor: text;
 }
 
 .obj-html p {
@@ -1379,10 +1424,55 @@ button, input, textarea, select {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
   height: 100%;
   color: #9333ea;
   font-size: 12px;
   background: rgba(168, 85, 247, 0.08);
+  border: none;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.picture-placeholder.clickable:hover {
+  background: rgba(168, 85, 247, 0.16);
+}
+
+.props-media {
+  margin: 10px 0 14px;
+}
+
+.props-media h5 {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.props-media-preview img {
+  width: 100%;
+  max-height: 120px;
+  object-fit: contain;
+  border-radius: 6px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+}
+
+.props-media-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.props-media-upload {
+  width: 100%;
+  text-align: center;
+}
+
+.btn-danger {
+  color: #fecaca;
+  border-color: rgba(239, 68, 68, 0.45);
 }
 
 .choice-preview {

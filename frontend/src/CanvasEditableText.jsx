@@ -15,12 +15,32 @@ export default function CanvasEditableText({
 }) {
   const ref = useRef(null)
   const focusedRef = useRef(false)
+  const mountedRef = useRef(false)
 
   useLayoutEffect(() => {
-    onEditorMount?.(ref.current)
-  }, [onEditorMount])
+    const el = ref.current
+    if (!el || mountedRef.current) return
+    mountedRef.current = true
+    onEditorMount?.(el)
+    const next = value || ''
+    if (el.innerText !== next) {
+      el.innerText = next
+    }
+    applyFormatToElement(el, format, role, typography)
+    requestAnimationFrame(() => {
+      if (!ref.current) return
+      ref.current.focus()
+      const range = document.createRange()
+      range.selectNodeContents(ref.current)
+      range.collapse(false)
+      const sel = window.getSelection()
+      sel?.removeAllRanges()
+      sel?.addRange(range)
+    })
+  }, [format, onEditorMount, role, typography, value])
 
   useLayoutEffect(() => {
+    if (!mountedRef.current) return
     applyFormatToElement(ref.current, format, role, typography)
   }, [format, role, typography])
 
@@ -47,7 +67,7 @@ export default function CanvasEditableText({
       }}
       onBlur={() => {
         focusedRef.current = false
-        onBlur?.()
+        onBlur?.(ref.current?.innerText ?? '')
       }}
       onInput={(e) => onTextChange?.(e.currentTarget.innerText)}
       onPointerDown={(e) => e.stopPropagation()}

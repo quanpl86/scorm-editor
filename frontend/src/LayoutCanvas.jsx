@@ -8,7 +8,13 @@ import {
   TypeInPreview,
   WordBankChips,
 } from './QuestionPreviews'
-import { assetUrl } from './api'
+import { assetUrl, uploadNewImage } from './api'
+import {
+  buildLayoutPatch,
+  canDeleteCanvasObject,
+  createImageObject,
+  createSlidePictureObject,
+} from './canvasObjectUtils'
 import PanelResizeHandle from './PanelResizeHandle'
 import CanvasFonts from './CanvasFonts'
 import { useResizableWidth } from './useResizableWidth'
@@ -17,7 +23,13 @@ import CanvasRichText from './CanvasRichText'
 import TextFormatToolbar from './TextFormatToolbar'
 import { applyFormatToElement } from './canvasTextUtils'
 import { shapeBoxStyle, textPaddingStyle, verticalAlignStyle } from './canvasShapeUtils'
-import { buildStyledHtml, defaultFormat, extractTextAlignFromHtml } from './textFormatUtils'
+import {
+  buildStyledHtml,
+  defaultFormat,
+  extractTextAlignFromHtml,
+  htmlToEditableText,
+  resolveCanvasTextFormat,
+} from './textFormatUtils'
 import {
   CANVAS_H,
   CANVAS_W,
@@ -120,7 +132,7 @@ function ChoicePreview({
                 editing
                 placeholder={`Đáp án ${i + 1}`}
                 onTextChange={(text) => onChoiceTextChange(i, text)}
-                onBlur={() => onChoiceBlur?.(i, choices?.[i]?.text || item.text || '')}
+                onBlur={(text) => onChoiceBlur?.(i, text || choices?.[i]?.text || item.text || '')}
                 onFocus={() => onChoiceFocus?.(i)}
                 onEditorMount={onEditorMount}
               />
@@ -146,7 +158,17 @@ function ChoicePreview({
   )
 }
 
-function PropertiesPanel({ obj, onChange, overlaps, onLayerAction }) {
+function PropertiesPanel({
+  obj,
+  sessionId,
+  imgRev,
+  onChange,
+  overlaps,
+  onLayerAction,
+  onPickImage,
+  onClearImage,
+  onDeleteObject,
+}) {
   if (!obj) {
     return (
       <div className="props-panel empty">
@@ -161,10 +183,35 @@ function PropertiesPanel({ obj, onChange, overlaps, onLayerAction }) {
     onChange({ ...obj.r, [field]: num })
   }
 
+  const isMedia = obj.role === 'slidePicture' || obj.role === 'image'
+
   return (
     <div className="props-panel">
       <h4>{obj.name}</h4>
       <span className={`role-tag role-${obj.role}`}>{obj.role}</span>
+
+      {isMedia && (
+        <div className="props-media">
+          <h5>Ảnh</h5>
+          {obj.image ? (
+            <div className="props-media-preview">
+              <img src={`${assetUrl(sessionId, obj.image)}&v=${imgRev || 0}`} alt="" />
+              <div className="props-media-actions">
+                <label className="btn btn-sm">
+                  Đổi ảnh
+                  <input type="file" accept="image/*" hidden onChange={(e) => onPickImage?.(e.target.files?.[0])} />
+                </label>
+                <button type="button" className="btn btn-sm" onClick={() => onClearImage?.()}>Gỡ ảnh</button>
+              </div>
+            </div>
+          ) : (
+            <label className="btn btn-sm btn-primary props-media-upload">
+              Chèn ảnh vào khung
+              <input type="file" accept="image/*" hidden onChange={(e) => onPickImage?.(e.target.files?.[0])} />
+            </label>
+          )}
+        </div>
+      )}
 
       <div className="props-grid">
         <label>X<input type="number" value={Math.round(obj.r.x)} onChange={(e) => set('x', e.target.value)} /></label>
@@ -176,6 +223,9 @@ function PropertiesPanel({ obj, onChange, overlaps, onLayerAction }) {
       <div className="layer-actions">
         <button type="button" className="btn btn-sm" onClick={() => onLayerAction('up')}>↑ Lên trên</button>
         <button type="button" className="btn btn-sm" onClick={() => onLayerAction('down')}>↓ Xuống dưới</button>
+        {canDeleteCanvasObject(obj) && (
+          <button type="button" className="btn btn-sm btn-danger" onClick={() => onDeleteObject?.()}>Xoá thành phần</button>
+        )}
       </div>
 
       {overlaps.length > 0 && (
@@ -192,9 +242,20 @@ function PropertiesPanel({ obj, onChange, overlaps, onLayerAction }) {
   )
 }
 
-export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onChange }) {
+export default function LayoutCanvas({
+  question,
+  sessionId,
+  fonts,
+  imgRev = 0,
+  onPatch,
+  onChange,
+  onCanvasEditStart,
+  onImageUpload,
+}) {
   const containerRef = useRef(null)
   const editingElRef = useRef(null)
+  const imageInputRef = useRef(null)
+  const pendingImageTarget = useRef(null)
   const [scale, setScale] = useState(1)
   const [selectedIndex, setSelectedIndex] = useState(null)
   const [interaction, setInteraction] = useState(null)
@@ -353,6 +414,7 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
   )
 
   useLayoutEffect(() => {
+    if (activeEditKey) return
     const cp = question?.layout?.choicePreview
     const hasReflowTarget = question?.layout?.objects?.length
       && (
@@ -372,26 +434,102 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
       ),
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps -- reflow keyed by content, not object refs
-  }, [reflowKey])
+  }, [reflowKey, activeEditKey])
 
   const overlaps = detectOverlapsLocal(objects)
   const selected = objects.find((o) => o.index === selectedIndex)
 
-  const commitObjects = useCallback(
-    (next) => {
+  const commitLayoutState = useCallback(
+    (next, extra = {}) => {
       setObjects(next)
       onChange({
         ...question,
         _dirtyLayout: true,
-        layout: {
-          ...question.layout,
-          objects: next,
+        layout: buildLayoutPatch(question, next, {
           overlaps: detectOverlapsLocal(next),
-        },
+          ...extra,
+        }),
       })
     },
     [onChange, question],
   )
+
+  const commitObjects = useCallback(
+    (next) => commitLayoutState(next),
+    [commitLayoutState],
+  )
+
+  const assignImageToObject = useCallback(async (objIndex, file) => {
+    if (!file || objIndex == null) return
+    const { filename } = await uploadNewImage(sessionId, file)
+    const next = objects.map((o) => (o.index === objIndex ? { ...o, image: filename } : o))
+    const target = next.find((o) => o.index === objIndex)
+    const extra = {}
+    if (target?.role === 'slidePicture') extra.slideAttachment = filename
+    commitLayoutState(next, extra)
+    onImageUpload?.(filename, file)
+  }, [commitLayoutState, objects, onImageUpload, sessionId])
+
+  const handleImageFile = useCallback(async (file) => {
+    if (!file) return
+    const target = pendingImageTarget.current
+    pendingImageTarget.current = null
+    try {
+      if (target === 'canvas-image') {
+        const { filename } = await uploadNewImage(sessionId, file)
+        const obj = createImageObject(objects, null, filename)
+        const next = [...objects, obj]
+        const zOrder = [...(question.layout?.zOrder || objects.map((o) => o.index)), obj.index]
+        commitLayoutState(next, { zOrder })
+        setSelectedIndex(obj.index)
+        onImageUpload?.(filename, file)
+        return
+      }
+      if (target === 'new-frame') {
+        const { filename } = await uploadNewImage(sessionId, file)
+        const obj = createSlidePictureObject(objects)
+        obj.image = filename
+        const next = [...objects, obj]
+        const zOrder = [...(question.layout?.zOrder || objects.map((o) => o.index)), obj.index]
+        commitLayoutState(next, { zOrder, slideAttachment: filename })
+        setSelectedIndex(obj.index)
+        onImageUpload?.(filename, file)
+        return
+      }
+      if (typeof target === 'number') {
+        await assignImageToObject(target, file)
+      }
+    } catch (err) {
+      console.error(err)
+      window.alert(err.message || 'Upload ảnh thất bại')
+    }
+  }, [assignImageToObject, commitLayoutState, objects, onImageUpload, question.layout?.zOrder, sessionId])
+
+  const openImagePicker = useCallback((target) => {
+    pendingImageTarget.current = target
+    imageInputRef.current?.click()
+  }, [])
+
+  const handleAddSlidePicture = useCallback(() => {
+    const obj = createSlidePictureObject(objects)
+    const next = [...objects, obj]
+    const zOrder = [...(question.layout?.zOrder || objects.map((o) => o.index)), obj.index]
+    commitLayoutState(next, { zOrder })
+    setSelectedIndex(obj.index)
+  }, [commitLayoutState, objects, question.layout?.zOrder])
+
+  const handleDeleteObject = useCallback((index) => {
+    const obj = objects.find((o) => o.index === index)
+    if (!canDeleteCanvasObject(obj)) return
+    const next = objects.filter((o) => o.index !== index)
+    const zOrder = (question.layout?.zOrder || objects.map((o) => o.index)).filter((i) => i !== index)
+    const extra = { zOrder }
+    if (obj.role === 'slidePicture' && obj.image) {
+      extra.slideAttachment = null
+    }
+    commitLayoutState(next, extra)
+    if (selectedIndex === index) setSelectedIndex(null)
+  }, [commitLayoutState, objects, question.layout?.zOrder, selectedIndex])
 
   const updateSlide = useCallback(
     (patch) => {
@@ -412,6 +550,7 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
 
   const activeEdit = useMemo(() => {
     if (activeEditKey === 'question') {
+      const dir = objects.find((o) => o.I === 'direction')
       return {
         key: 'question',
         label: question.type === 'IntroSlide'
@@ -420,15 +559,26 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
             ? 'Thông báo kết quả'
             : 'Câu hỏi',
         role: 'title',
-        format: question.questionFormat || defaultFormat('title'),
+        format: resolveCanvasTextFormat(
+          question.questionFormat,
+          dir?.textFormat,
+          dir?.html,
+          'title',
+        ),
       }
     }
     if (activeEditKey === 'subtitle') {
+      const content = objects.find((o) => o.role === 'content')
       return {
         key: 'subtitle',
         label: 'Gợi ý bắt đầu',
         role: 'content',
-        format: question.subtitleFormat || defaultFormat('content'),
+        format: resolveCanvasTextFormat(
+          question.subtitleFormat,
+          content?.textFormat,
+          content?.html,
+          'content',
+        ),
       }
     }
     if (activeEditKey === 'choice' && activeChoiceIdx !== null) {
@@ -442,7 +592,7 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
       }
     }
     return null
-  }, [activeEditKey, activeChoiceIdx, question])
+  }, [activeEditKey, activeChoiceIdx, question, objects])
 
   const syncDirectionHtml = useCallback(
     (text, format = question.questionFormat) => {
@@ -463,6 +613,31 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
         ...question,
         questionText: text,
         _dirtyQuestionText: true,
+        layout: { ...question.layout, objects: next },
+      })
+    },
+    [objects, onChange, question, typography],
+  )
+
+  const syncSubtitleHtml = useCallback(
+    (text, format = question.subtitleFormat) => {
+      const content = objects.find((o) => o.role === 'content')
+      if (!content) return
+      const html = buildStyledHtml(
+        text,
+        'content',
+        format,
+        typography,
+        content.html,
+      )
+      const next = objects.map((o) =>
+        o.role === 'content' ? { ...o, html, text } : o,
+      )
+      setObjects(next)
+      onChange({
+        ...question,
+        subtitleText: text,
+        _dirtySubtitleText: true,
         layout: { ...question.layout, objects: next },
       })
     },
@@ -506,13 +681,18 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
       applyFormatToElement(el, fmt, activeEdit.role, typography)
     }
 
+    const liveText = editingElRef.current?.innerText
+      ?? (activeEditKey === 'question' ? question.questionText : question.subtitleText)
+      ?? ''
+
     if (activeEditKey === 'question') {
       updateSlide({ questionFormat: fmt })
-      syncDirectionHtml(question.questionText || '', fmt)
+      syncDirectionHtml(liveText, fmt)
       return
     }
     if (activeEditKey === 'subtitle') {
       updateSlide({ subtitleFormat: fmt })
+      syncSubtitleHtml(liveText, fmt)
       return
     }
     if (activeEditKey === 'choice' && activeChoiceIdx !== null) {
@@ -522,7 +702,7 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
       updateSlide({ choices })
       syncChoiceHtml(activeChoiceIdx, choices[activeChoiceIdx].text || '', fmt)
     }
-  }, [activeEdit, activeEditKey, activeChoiceIdx, question.choices, question.questionText, syncChoiceHtml, syncDirectionHtml, typography, updateSlide])
+  }, [activeEdit, activeEditKey, activeChoiceIdx, question.choices, question.questionText, question.subtitleText, syncChoiceHtml, syncDirectionHtml, syncSubtitleHtml, typography, updateSlide])
 
   const handleChoiceTextChange = useCallback(
     (idx, text) => {
@@ -577,6 +757,7 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
 
     setSelectedIndex(objIndex)
     const handle = getHandleAt(obj.r, pt.x, pt.y, scale)
+    onCanvasEditStart?.()
     if (handle) {
       setInteraction({ type: 'resize', index: objIndex, handle, start: pt, orig: { ...obj.r } })
     } else {
@@ -598,7 +779,9 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
         y: interaction.orig.y + dy,
       })
     } else {
-      const lockRatio = e.shiftKey || objects[interaction.index]?.role === 'slidePicture'
+      const lockRatio = e.shiftKey
+        || objects[interaction.index]?.role === 'slidePicture'
+        || objects[interaction.index]?.role === 'image'
       updateObjectRect(
         interaction.index,
         applyResize(interaction.orig, interaction.handle, dx, dy, lockRatio),
@@ -720,10 +903,31 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
     <div className="layout-workspace">
       <CanvasFonts sessionId={sessionId} fonts={fonts} />
       <div className="layout-canvas-wrap" ref={containerRef}>
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => {
+            handleImageFile(e.target.files?.[0])
+            e.target.value = ''
+          }}
+        />
         <div className="canvas-toolbar">
           <span>Canvas {CANVAS_W}×{CANVAS_H}</span>
+          <div className="canvas-media-actions">
+            <button type="button" className="btn btn-sm" onClick={handleAddSlidePicture}>
+              + Khung ảnh
+            </button>
+            <button type="button" className="btn btn-sm" onClick={() => openImagePicker('new-frame')}>
+              + Khung có ảnh
+            </button>
+            <button type="button" className="btn btn-sm btn-primary" onClick={() => openImagePicker('canvas-image')}>
+              + Ảnh lên canvas
+            </button>
+          </div>
           <span className="toolbar-hint">
-            Bấm trực tiếp vào chữ trên canvas để sửa · định dạng cập nhật ngay
+            Bấm vào chữ để sửa · chọn khung/ảnh để chèn hoặc đổi ảnh
             {question.layout?.typography && (
               <> · Title {question.layout.typography.titleSize}px / Content {question.layout.typography.contentSize}px</>
             )}
@@ -737,7 +941,7 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
                 label=""
                 role={activeEdit.role}
                 format={activeEdit.format}
-                showAlign={activeEdit.role === 'title'}
+                showAlign
                 onChange={handleFormatChange}
               />
             </div>
@@ -782,7 +986,9 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
               const { x, y, w, h } = obj.r
               const visual = obj.visual
               const shapeStyle = shapeBoxStyle(visual)
-              const directionAlign = extractTextAlignFromHtml(obj.html) || 'center'
+              const directionAlign = activeEditKey === 'question'
+                ? (question.questionFormat?.align || extractTextAlignFromHtml(obj.html) || 'center')
+                : (extractTextAlignFromHtml(obj.html) || question.questionFormat?.align || 'center')
               const labelAlign = extractTextAlignFromHtml(obj.html) || 'right'
 
               return (
@@ -794,7 +1000,7 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
                 >
                   {obj.image && (obj.role === 'slidePicture' || obj.role === 'image') && (
                     <img
-                      src={assetUrl(sessionId, obj.image)}
+                      src={`${assetUrl(sessionId, obj.image)}&v=${imgRev}`}
                       alt=""
                       draggable={false}
                       style={{ objectFit: question.layout?.backgroundFit || 'cover' }}
@@ -823,17 +1029,32 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
                     >
                       <CanvasRichText
                         className="direction-editable"
-                        value={question.questionText || obj.text || ''}
-                        format={question.questionFormat || obj.textFormat}
+                        value={
+                          activeEditKey === 'question'
+                            ? (question.questionText ?? htmlToEditableText(obj.html, obj.text || ''))
+                            : htmlToEditableText(obj.html, question.questionText || obj.text || '')
+                        }
+                        format={resolveCanvasTextFormat(
+                          question.questionFormat,
+                          obj.textFormat,
+                          obj.html,
+                          'title',
+                        )}
                         role="title"
                         typography={typography}
                         html={obj.html}
                         editing={activeEditKey === 'question'}
                         placeholder="Nhập tiêu đề / nội dung chính..."
                         onTextChange={(text) => updateSlide({ questionText: text })}
-                        onBlur={() => {
+                        onBlur={(text) => {
                           setActiveEditKey(null)
-                          syncDirectionHtml(question.questionText || obj.text || '')
+                          const latest = text || editingElRef.current?.innerText || question.questionText || obj.text || ''
+                          syncDirectionHtml(latest)
+                        }}
+                        onActivate={() => {
+                          setSelectedIndex(obj.index)
+                          setActiveEditKey('question')
+                          setActiveChoiceIdx(null)
                         }}
                         onFocus={() => {
                           setSelectedIndex(obj.index)
@@ -853,14 +1074,33 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
                       {question.type === 'IntroSlide' ? (
                         <CanvasRichText
                           className="intro-subtitle"
-                          value={question.subtitleText || obj.text || ''}
-                          format={question.subtitleFormat || obj.textFormat}
+                          value={
+                            activeEditKey === 'subtitle'
+                              ? (question.subtitleText ?? htmlToEditableText(obj.html, obj.text || ''))
+                              : htmlToEditableText(obj.html, question.subtitleText || obj.text || '')
+                          }
+                          format={resolveCanvasTextFormat(
+                            question.subtitleFormat,
+                            obj.textFormat,
+                            obj.html,
+                            'content',
+                          )}
                           role="content"
                           typography={typography}
                           html={obj.html}
                           editing={activeEditKey === 'subtitle'}
                           placeholder='Gợi ý bắt đầu (vd: Bấm "Start Quiz")...'
                           onTextChange={(text) => updateSlide({ subtitleText: text })}
+                          onBlur={(text) => {
+                            setActiveEditKey(null)
+                            const latest = text || editingElRef.current?.innerText || question.subtitleText || obj.text || ''
+                            syncSubtitleHtml(latest)
+                          }}
+                          onActivate={() => {
+                            setSelectedIndex(obj.index)
+                            setActiveEditKey('subtitle')
+                            setActiveChoiceIdx(null)
+                          }}
                           onFocus={() => {
                             setSelectedIndex(obj.index)
                             setActiveEditKey('subtitle')
@@ -954,8 +1194,18 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
                     </div>
                   )}
 
-                  {!obj.image && obj.role === 'slidePicture' && (
-                    <div className="picture-placeholder">Không có ảnh slide</div>
+                  {!obj.image && (obj.role === 'slidePicture' || obj.role === 'image') && (
+                    <button
+                      type="button"
+                      className="picture-placeholder clickable"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openImagePicker(obj.index)
+                      }}
+                    >
+                      Bấm để chèn ảnh
+                    </button>
                   )}
 
                   {isSelected && (
@@ -1008,9 +1258,20 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
 
         <PropertiesPanel
           obj={selected}
+          sessionId={sessionId}
+          imgRev={imgRev}
           overlaps={overlaps.filter((w) => w.a === selectedIndex || w.b === selectedIndex)}
           onChange={(r) => updateObjectRect(selectedIndex, r)}
           onLayerAction={onLayerAction}
+          onPickImage={(file) => assignImageToObject(selectedIndex, file)}
+          onClearImage={() => {
+            if (selectedIndex == null) return
+            const next = objects.map((o) => (o.index === selectedIndex ? { ...o, image: null } : o))
+            const target = next.find((o) => o.index === selectedIndex)
+            const extra = target?.role === 'slidePicture' ? { slideAttachment: null } : {}
+            commitLayoutState(next, extra)
+          }}
+          onDeleteObject={() => handleDeleteObject(selectedIndex)}
         />
       </div>
     </div>

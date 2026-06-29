@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   assetUrl,
   exportSession,
@@ -13,6 +13,8 @@ import LayoutCanvas from './LayoutCanvas'
 import PanelResizeHandle from './PanelResizeHandle'
 import QuestionSideView from './QuestionSideView'
 import QuizPreview from './QuizPreview'
+import { useAutoSync } from './useAutoSync'
+import { useQuizHistory } from './useQuizHistory'
 import { useResizableWidth } from './useResizableWidth'
 import TextFormatToolbar, { TextFormatPreview } from './TextFormatToolbar'
 import { buildStyledHtml, defaultFormat } from './textFormatUtils'
@@ -40,10 +42,29 @@ const RESULT_KIND_LABELS = {
 
 function sanitizeLayoutForSave(layout) {
   if (!layout) return null
-  return {
-    objects: (layout.objects || []).map(({ index, r }) => ({ index, r })),
+  const payload = {
+    objects: (layout.objects || []).map((obj) => {
+      const row = { index: obj.index, r: obj.r }
+      if (obj.remove) row.remove = true
+      if (obj.image != null) row.image = obj.image
+      return row
+    }),
     zOrder: layout.zOrder,
   }
+  const added = (layout.objects || []).filter((o) => o.isNew)
+  if (added.length) {
+    payload.addedObjects = added.map((o) => ({
+      tp: o.tp || o.role,
+      role: o.role,
+      I: o.I || o.name,
+      name: o.name,
+      r: o.r,
+      image: o.image || null,
+    }))
+  }
+  if (layout.removedIndexes?.length) payload.removedIndexes = layout.removedIndexes
+  if (layout.slideAttachment != null) payload.slideAttachment = layout.slideAttachment
+  return payload
 }
 
 /** Giữ HTML đúng như canvas trước khi gửi server — tránh rebuild làm lệch font/layout */
@@ -741,12 +762,15 @@ function EditorWorkspace({
   sessionId,
   fonts,
   saving,
+  autoSaving,
+  previewRevision,
   onChange,
   onPatch,
   onDelete,
   onImageUpload,
   onSelectSlide,
   onSave,
+  onCanvasEditStart,
 }) {
   const [tab, setTab] = useState('layout')
   const isSpecial = slide?.slideRole === 'intro' || slide?.slideRole === 'result'
@@ -775,15 +799,20 @@ function EditorWorkspace({
           selectedId={selectedId}
           onSelectSlide={onSelectSlide}
           onSave={onSave}
-          saving={saving}
+          saving={saving || autoSaving}
+          autoSaving={autoSaving}
+          previewRevision={previewRevision}
         />
       ) : tab === 'layout' ? (
         <LayoutCanvas
           question={slide}
           sessionId={sessionId}
           fonts={fonts}
+          imgRev={quiz._imgRev || 0}
           onPatch={onPatch}
           onChange={onChange}
+          onCanvasEditStart={onCanvasEditStart}
+          onImageUpload={onImageUpload}
         />
       ) : isSpecial ? (
         <SpecialSlideEditor
@@ -807,8 +836,24 @@ function EditorWorkspace({
   )
 }
 
+function isEditableTarget(target) {
+  if (!target) return false
+  const tag = target.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
+  return !!target.isContentEditable
+}
+
 export default function App() {
-  const [quiz, setQuiz] = useState(null)
+  const {
+    quiz,
+    setQuiz,
+    resetHistory,
+    undo,
+    redo,
+    beginCanvasEdit,
+    canUndo,
+    canRedo,
+  } = useQuizHistory(null)
   const [selectedId, setSelectedId] = useState(null)
   const [workspaceMode, setWorkspaceMode] = useState('edit')
   const [loading, setLoading] = useState(false)
@@ -817,6 +862,49 @@ export default function App() {
   const [importReport, setImportReport] = useState(null)
   const [toast, setToast] = useState(null)
   const sidebarResize = useResizableWidth('scorm-editor.sidebar-width', 320, { min: 240, max: 480 })
+
+  const applySavedState = useCallback((savedView) => {
+    setQuiz((prev) => {
+      if (!savedView) {
+        const questions = (prev.questions || [])
+          .filter((q) => !q.deleted)
+          .map((q) => clearSlideDirtyFlags(syncSlideCanvasHtml(q)))
+        return clearDirtyFlags({
+          ...prev,
+          questions,
+          questionCount: questions.length,
+          resultSlides: (prev.resultSlides || []).map(clearSlideDirtyFlags),
+          introSlide: clearSlideDirtyFlags(prev.introSlide),
+        })
+      }
+
+      const savedQuestions = Object.fromEntries(
+        (savedView.questions || []).map((q) => [q.id, clearSlideDirtyFlags(q)]),
+      )
+      const questions = (prev.questions || [])
+        .filter((q) => !q.deleted)
+        .map((q) => savedQuestions[q.id] || clearSlideDirtyFlags(syncSlideCanvasHtml(q)))
+
+      return clearDirtyFlags({
+        ...prev,
+        title: savedView.title ?? prev.title,
+        passingScore: savedView.passingScore ?? prev.passingScore,
+        questionCount: savedView.questionCount ?? questions.length,
+        questions,
+        introSlide: savedView.introSlide
+          ? clearSlideDirtyFlags(savedView.introSlide)
+          : clearSlideDirtyFlags(prev.introSlide),
+        resultSlides: (savedView.resultSlides || []).map(clearSlideDirtyFlags),
+        fonts: savedView.fonts ?? prev.fonts,
+      })
+    }, { recordHistory: false })
+  }, [setQuiz])
+
+  const { previewRevision, autoSaving, bumpPreviewRevision } = useAutoSync({
+    quiz,
+    buildPayload: buildSavePayload,
+    applySavedState,
+  })
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type })
@@ -829,7 +917,7 @@ export default function App() {
     setImportReport(null)
     try {
       const data = await fn()
-      setQuiz(data)
+      resetHistory(data)
       setSelectedId(firstSelectableId(data))
       const slideCount = (data.introSlide ? 1 : 0) + (data.resultSlides?.length || 0)
       if (data.importReport) {
@@ -871,8 +959,8 @@ export default function App() {
           q.id === updated.id ? applyDirtyFlags(q, updated) : q,
         ),
       }
-    })
-  }, [])
+    }, { burst: true })
+  }, [setQuiz])
 
   const patchSlide = useCallback((patch) => {
     if (!selectedId) return
@@ -894,8 +982,8 @@ export default function App() {
           q.id === selectedId ? applyDirtyFlags(q, patch) : q,
         ),
       }
-    })
-  }, [selectedId])
+    }, { burst: true })
+  }, [selectedId, setQuiz])
 
   const deleteQuestion = () => {
     if (!selectedSlide || selectedSlide.slideRole !== 'question') return
@@ -909,26 +997,15 @@ export default function App() {
     }))
     const remaining = quiz.questions.filter((q) => q.id !== selectedId && !q.deleted)
     setSelectedId(remaining[0]?.id || null)
-    showToast('Đã đánh dấu xoá — nhấn Lưu để áp dụng')
+    showToast('Đã đánh dấu xoá')
   }
 
   const persistQuiz = async () => {
     if (!quiz) return null
-    await saveSession(quiz.sessionId, buildSavePayload(quiz))
-    // Giữ nguyên 100% state canvas — không thay bằng dữ liệu server tái trích xuất
-    setQuiz((prev) => {
-      const questions = (prev.questions || [])
-        .filter((q) => !q.deleted)
-        .map((q) => clearSlideDirtyFlags(syncSlideCanvasHtml(q)))
-      return clearDirtyFlags({
-        ...prev,
-        questions,
-        questionCount: questions.length,
-        resultSlides: (prev.resultSlides || []).map(clearSlideDirtyFlags),
-        introSlide: clearSlideDirtyFlags(prev.introSlide),
-      })
-    })
-    return quiz
+    const saved = await saveSession(quiz.sessionId, buildSavePayload(quiz))
+    applySavedState(saved)
+    bumpPreviewRevision()
+    return saved
   }
 
   const handleSave = async () => {
@@ -943,6 +1020,25 @@ export default function App() {
       setSaving(false)
     }
   }
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (!isEditableTarget(e.target) && (e.metaKey || e.ctrlKey)) {
+        if (e.key === 'z' && !e.shiftKey) {
+          e.preventDefault()
+          if (canUndo) undo()
+          return
+        }
+        if ((e.key === 'z' && e.shiftKey) || e.key === 'y') {
+          e.preventDefault()
+          if (canRedo) redo()
+          return
+        }
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [canUndo, canRedo, undo, redo])
 
   const handleOpenPreview = async () => {
     if (!quiz) return
@@ -983,7 +1079,7 @@ export default function App() {
     try {
       await uploadImage(quiz.sessionId, filename, file)
       showToast(`Đã thay ảnh ${filename}`)
-      setQuiz((prev) => ({ ...prev, _imgRev: Date.now() }))
+      setQuiz((prev) => ({ ...prev, _imgRev: Date.now() }), { recordHistory: false })
     } catch (err) {
       showToast(err.message, 'error')
     }
@@ -1015,7 +1111,8 @@ export default function App() {
       <div className="app app-preview">
         <QuizPreview
           quiz={quiz}
-          saving={saving}
+          saving={saving || autoSaving}
+          previewRevision={previewRevision}
           onBack={() => setWorkspaceMode('edit')}
           onSave={persistQuiz}
         />
@@ -1032,7 +1129,28 @@ export default function App() {
       <header className="header">
         <h1><span>SCORM</span> Editor</h1>
         <div className="header-actions">
-          <button className="btn" onClick={() => { setQuiz(null); setSelectedId(null); setWorkspaceMode('edit') }}>
+          <div className="history-actions">
+            <button
+              type="button"
+              className="btn btn-icon"
+              disabled={!canUndo}
+              onClick={undo}
+              title="Hoàn tác (Ctrl+Z)"
+            >
+              ↶ Undo
+            </button>
+            <button
+              type="button"
+              className="btn btn-icon"
+              disabled={!canRedo}
+              onClick={redo}
+              title="Làm lại (Ctrl+Shift+Z)"
+            >
+              ↷ Redo
+            </button>
+          </div>
+          {autoSaving && <span className="auto-sync-badge">Đang đồng bộ...</span>}
+          <button className="btn" onClick={() => { resetHistory(null); setSelectedId(null); setWorkspaceMode('edit') }}>
             Import mới
           </button>
           <button className="btn" disabled={saving} onClick={handleOpenPreview}>
@@ -1056,7 +1174,7 @@ export default function App() {
               <input
                 type="text"
                 value={quiz.title}
-                onChange={(e) => setQuiz((p) => ({ ...p, title: e.target.value }))}
+                onChange={(e) => setQuiz((p) => ({ ...p, title: e.target.value }), { burst: true })}
               />
             </div>
             <div className="meta-field">
@@ -1066,7 +1184,7 @@ export default function App() {
                 min={0}
                 max={100}
                 value={quiz.passingScore}
-                onChange={(e) => setQuiz((p) => ({ ...p, passingScore: Number(e.target.value) }))}
+                onChange={(e) => setQuiz((p) => ({ ...p, passingScore: Number(e.target.value) }), { burst: true })}
               />
             </div>
             <div className="stats-row">
@@ -1152,12 +1270,15 @@ export default function App() {
           sessionId={quiz.sessionId}
           fonts={quiz.fonts}
           saving={saving}
+          autoSaving={autoSaving}
+          previewRevision={previewRevision}
           onChange={updateSlide}
           onPatch={patchSlide}
           onDelete={deleteQuestion}
           onImageUpload={handleImageUpload}
           onSelectSlide={setSelectedId}
           onSave={persistQuiz}
+          onCanvasEditStart={beginCanvasEdit}
         />
       </div>
 

@@ -6,8 +6,11 @@ import base64
 import html
 import io
 import json
+import os
 import re
 import shutil
+import struct
+import time
 import uuid
 import zipfile
 from pathlib import Path
@@ -26,6 +29,90 @@ from .typography import (
 )
 
 SESSIONS_ROOT = Path(__file__).resolve().parent.parent / "data" / "sessions"
+
+IMAGE_FOLDERS = ("res/data/images", "data/images", "images")
+
+
+def image_dimensions(path: Path) -> tuple[int, int]:
+    try:
+        from PIL import Image
+
+        with Image.open(path) as im:
+            return im.size
+    except Exception:
+        pass
+    if path.suffix.lower() == ".png" and path.is_file():
+        with path.open("rb") as handle:
+            handle.seek(16)
+            return struct.unpack(">II", handle.read(8))
+    if path.suffix.lower() in {".jpg", ".jpeg"} and path.is_file():
+        with path.open("rb") as handle:
+            handle.seek(2)
+            while True:
+                marker = handle.read(2)
+                if len(marker) < 2 or marker[0] != 0xFF:
+                    break
+                if marker[1] in (0xC0, 0xC1, 0xC2):
+                    handle.read(3)
+                    h, w = struct.unpack(">HH", handle.read(4))
+                    return w, h
+                length = struct.unpack(">H", handle.read(2))[0]
+                handle.seek(length - 2, os.SEEK_CUR)
+    return 800, 600
+
+
+def ensure_image_registry(quiz_json: dict[str, Any], package_root: Path) -> None:
+    """Register uploaded images in rs.i so iSpring player can render them."""
+    registry = quiz_json.setdefault("rs", {}).setdefault("i", {})
+    raw = json.dumps(quiz_json, ensure_ascii=False)
+    for match in re.finditer(r"storage://images/([^\"'\\s>]+)", raw):
+        filename = match.group(1)
+        storage_key = f"storage://images/{filename}"
+        if storage_key in registry:
+            continue
+        image_path = None
+        for folder in IMAGE_FOLDERS:
+            candidate = package_root / folder / filename
+            if candidate.is_file():
+                image_path = candidate
+                break
+        if not image_path:
+            continue
+        width, height = image_dimensions(image_path)
+        registry[storage_key] = {
+            "s": f"data\\images\\{filename}",
+            "v": width,
+            "h": height,
+        }
+
+
+def atomic_write_text(path: Path, content: str) -> None:
+    """Write file atomically so concurrent readers never see partial content."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_text(content, encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            tmp.unlink(missing_ok=True)
+
+
+def get_package_root(session_id: str) -> Path:
+    package_root = SESSIONS_ROOT / session_id / "package"
+    if not package_root.exists():
+        raise FileNotFoundError("Session không tồn tại")
+    return package_root
+
+
+def resolve_asset_path(session_id: str, filename: str) -> Path:
+    package_root = get_package_root(session_id)
+    safe = Path(filename).name
+    for folder in IMAGE_FOLDERS:
+        candidate = package_root / folder / safe
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(safe)
 
 
 def strip_html(text: str | None) -> str:
@@ -650,21 +737,23 @@ class ScormSession:
                     apply_question_edit(slide, questions[sid])
                 new_slides.append(slide)
             group["S"] = new_slides
+        ensure_image_registry(self.quiz_json, self.package_root)
         self.persist()
         return self.get_view()
 
     def persist(self) -> None:
         quiz_path = self.package_root / "quiz_data.json"
-        quiz_path.write_text(json.dumps(self.quiz_json, ensure_ascii=False, indent=2), encoding="utf-8")
-        self.index_path.write_text(replace_quiz_data(self.index_html_template, self.quiz_json), encoding="utf-8")
+        atomic_write_text(
+            quiz_path,
+            json.dumps(self.quiz_json, ensure_ascii=False, indent=2),
+        )
+        atomic_write_text(
+            self.index_path,
+            replace_quiz_data(self.index_html_template, self.quiz_json),
+        )
 
     def asset_path(self, relative: str) -> Path:
-        safe = Path(relative).name
-        for folder in ["res/data/images", "data/images", "images"]:
-            candidate = self.package_root / folder / safe
-            if candidate.exists():
-                return candidate
-        raise FileNotFoundError(safe)
+        return resolve_asset_path(self.session_id, relative)
 
     def replace_image(self, filename: str, content: bytes) -> str:
         for folder in ["res/data/images", "data/images", "images"]:
@@ -685,12 +774,26 @@ class ScormSession:
         return export_scorm_zip(self.package_root, self.quiz_json, export_title)
 
 
-def get_session(session_id: str) -> ScormSession:
-    package_root = SESSIONS_ROOT / session_id / "package"
-    if not package_root.exists():
-        raise FileNotFoundError("Session không tồn tại")
-    session = ScormSession(session_id, package_root)
+def _load_saved_quiz_json(session: ScormSession, package_root: Path) -> None:
     saved = package_root / "quiz_data.json"
-    if saved.exists():
-        session.quiz_json = json.loads(saved.read_text(encoding="utf-8"))
+    if not saved.exists():
+        return
+    for attempt in range(5):
+        try:
+            raw = saved.read_text(encoding="utf-8")
+            if not raw.strip():
+                raise json.JSONDecodeError("empty quiz_data.json", raw, 0)
+            session.quiz_json = json.loads(raw)
+            return
+        except json.JSONDecodeError:
+            if attempt < 4:
+                time.sleep(0.02)
+                continue
+            # Auto-save may still be flushing; keep quiz_json decoded from index.html.
+
+
+def get_session(session_id: str) -> ScormSession:
+    package_root = get_package_root(session_id)
+    session = ScormSession(session_id, package_root)
+    _load_saved_quiz_json(session, package_root)
     return session

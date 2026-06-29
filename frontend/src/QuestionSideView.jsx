@@ -27,12 +27,33 @@ function findSlide(quiz, slideId) {
   return quiz.questions.find((q) => q.id === slideId) || null
 }
 
-function navigatePlayerToSlide(iframe, slideId, qIndex) {
-  if (!iframe || !slideId) return
-  const payload = { type: 'scorm-preview-goto-slide', slideId }
-  if (qIndex != null && qIndex >= 0) payload.qIndex = qIndex
+function buildNavTarget(slide) {
+  if (!slide) return null
+  if (slide.slideRole === 'intro') {
+    return { slideId: slide.id, slideRole: 'intro', skipAutoStart: true }
+  }
+  if (slide.slideRole === 'result') {
+    return {
+      slideId: slide.id,
+      slideRole: 'result',
+      resultKind: slide.resultKind || '',
+      skipAutoStart: false,
+    }
+  }
+  return {
+    slideId: slide.id,
+    slideRole: 'question',
+    qIndex: slide.questionIndex,
+    skipAutoStart: false,
+  }
+}
+
+function navigatePlayerToSlide(iframe, slide) {
+  const target = buildNavTarget(slide)
+  if (!iframe || !target) return
+  const payload = { type: 'scorm-preview-goto-slide', ...target }
   try {
-    iframe.contentWindow?.scormPreviewGoToSlide?.(slideId, qIndex)
+    iframe.contentWindow?.scormPreviewGoToSlide?.(target.slideId, target.qIndex, target)
   } catch {
     /* cross-origin guard */
   }
@@ -43,26 +64,33 @@ function navigatePlayerToSlide(iframe, slideId, qIndex) {
   }
 }
 
+function isSpecialSlide(slide) {
+  return slide?.slideRole === 'intro' || slide?.slideRole === 'result'
+}
+
 export default function QuestionSideView({
   quiz,
   selectedId,
   onSelectSlide,
   onSave,
   saving,
+  autoSaving,
+  previewRevision = 0,
 }) {
   const [reloadKey, setReloadKey] = useState(0)
   const [syncing, setSyncing] = useState(false)
   const [playerReady, setPlayerReady] = useState(false)
   const iframeRef = useRef(null)
-  const [launchSlideId] = useState(() => selectedId)
-  const [launchQIndex] = useState(() => {
-    const slide = findSlide(quiz, selectedId)
-    return slide?.slideRole === 'question' ? slide.questionIndex : -1
-  })
+  const lastPlayerSlideId = useRef(null)
   const filmstripResize = useResizableWidth('scorm-editor.sideview-filmstrip-width', 240, {
     min: 180,
     max: 400,
   })
+
+  const selectedSlide = useMemo(
+    () => findSlide(quiz, selectedId),
+    [quiz, selectedId],
+  )
 
   const activeQuestions = useMemo(
     () => quiz.questions.filter((q) => !q.deleted),
@@ -77,16 +105,20 @@ export default function QuestionSideView({
     return slides
   }, [quiz.introSlide, quiz.resultSlides, activeQuestions])
 
-  const playerUrl = useMemo(
-    () => previewPlayerUrl(quiz.sessionId, {
+  const playerUrl = useMemo(() => {
+    const slide = selectedSlide || findSlide(quiz, selectedId)
+    const isIntro = slide?.slideRole === 'intro'
+    const isResult = slide?.slideRole === 'result'
+    return previewPlayerUrl(quiz.sessionId, {
       reloadKey,
-      slideId: launchSlideId,
-      qIndex: launchQIndex,
+      slideId: selectedId,
+      qIndex: slide?.slideRole === 'question' ? slide.questionIndex : -1,
       editor: true,
-      skipStart: quiz.introSlide?.id === launchSlideId,
-    }),
-    [quiz.sessionId, quiz.introSlide?.id, launchSlideId, launchQIndex, reloadKey],
-  )
+      skipStart: isIntro,
+      slideRole: slide?.slideRole || '',
+      resultKind: isResult ? slide.resultKind || '' : '',
+    })
+  }, [quiz.sessionId, selectedId, selectedSlide, reloadKey])
 
   useEffect(() => {
     const handler = (event) => {
@@ -95,8 +127,7 @@ export default function QuestionSideView({
       if (data.type === 'scorm-preview-player-ready') {
         setPlayerReady(true)
         const slide = findSlide(quiz, selectedId)
-        const qIndex = slide?.slideRole === 'question' ? slide.questionIndex : -1
-        navigatePlayerToSlide(iframeRef.current, selectedId, qIndex)
+        navigatePlayerToSlide(iframeRef.current, slide)
       }
       if (data.type === 'scorm-preview-slide-changed' && data.slideId) {
         if (data.slideId !== selectedId) onSelectSlide(data.slideId)
@@ -111,10 +142,26 @@ export default function QuestionSideView({
   }, [reloadKey])
 
   useEffect(() => {
-    if (!selectedId || !playerReady) return
+    if (previewRevision > 0) {
+      setPlayerReady(false)
+      setReloadKey((k) => k + 1)
+    }
+  }, [previewRevision])
+
+  useEffect(() => {
     const slide = findSlide(quiz, selectedId)
-    const qIndex = slide?.slideRole === 'question' ? slide.questionIndex : -1
-    navigatePlayerToSlide(iframeRef.current, selectedId, qIndex)
+    if (!selectedId || !slide) return
+
+    const needsReload = isSpecialSlide(slide) && lastPlayerSlideId.current !== selectedId
+    if (needsReload) {
+      lastPlayerSlideId.current = selectedId
+      setPlayerReady(false)
+      setReloadKey((k) => k + 1)
+      return
+    }
+
+    if (!playerReady) return
+    navigatePlayerToSlide(iframeRef.current, slide)
   }, [quiz, selectedId, playerReady])
 
   const handleSyncAndReload = useCallback(async () => {
@@ -132,8 +179,9 @@ export default function QuestionSideView({
   const handleFilmstripClick = (slide) => {
     if (slide.deleted) return
     onSelectSlide(slide.id)
-    const qIndex = slide.slideRole === 'question' ? slide.questionIndex : -1
-    navigatePlayerToSlide(iframeRef.current, slide.id, qIndex)
+    if (!isSpecialSlide(slide) && playerReady) {
+      navigatePlayerToSlide(iframeRef.current, slide)
+    }
   }
 
   let lastGroup = null
@@ -143,13 +191,14 @@ export default function QuestionSideView({
       <div className="sideview-toolbar">
         <span className="sideview-toolbar-title">Slide View + Side View</span>
         <div className="sideview-toolbar-actions">
+          {autoSaving && <span className="sideview-sync-hint">Đang cập nhật player...</span>}
           <button
             type="button"
             className="btn btn-sm"
             disabled={syncing || saving || !onSave}
             onClick={handleSyncAndReload}
           >
-            {syncing ? 'Đang đồng bộ...' : 'Đồng bộ & tải lại'}
+            {syncing ? 'Đang tải lại...' : 'Tải lại player'}
           </button>
         </div>
       </div>
@@ -243,7 +292,7 @@ export default function QuestionSideView({
           <div className="preview-player-frame sideview-player-frame">
             <iframe
               ref={iframeRef}
-              key={reloadKey}
+              key={`${reloadKey}-${selectedId}`}
               title="SCORM Slide Preview"
               src={playerUrl}
               className="preview-iframe"

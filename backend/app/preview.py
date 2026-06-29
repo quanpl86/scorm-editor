@@ -109,13 +109,84 @@ NAVIGATION_BRIDGE_SCRIPT = """
     return match ? decodeURIComponent(match[1]) : "";
   }
 
+  var cachedSlideStates = {};
+
   function readEditorConfig() {
     return {
       editorMode: getUrlParam("editor") === "1",
       slideId: getUrlParam("slideId"),
       qIndex: getUrlParam("qIndex"),
-      skipAutoStart: getUrlParam("skipStart") === "1"
+      skipAutoStart: getUrlParam("skipStart") === "1",
+      slideRole: getUrlParam("slideRole"),
+      resultKind: getUrlParam("resultKind")
     };
+  }
+
+  function normalizeTarget(target) {
+    if (!target) return null;
+    var slideRole = target.slideRole || "";
+    if (!slideRole && target.skipAutoStart) slideRole = "intro";
+    return {
+      slideId: target.slideId || "",
+      qIndex: target.qIndex != null && Number(target.qIndex) >= 0 ? String(target.qIndex) : "",
+      skipAutoStart: !!target.skipAutoStart || slideRole === "intro",
+      slideRole: slideRole,
+      resultKind: target.resultKind || ""
+    };
+  }
+
+  function getStateManager() {
+    try {
+      return player && player.u ? player.u : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function getSessionMode() {
+    try {
+      var session = getSession();
+      return session && session.sessionMode ? session.sessionMode() : "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function findSlideDefById(slideId) {
+    var mgr = getStateManager();
+    if (!mgr || !slideId) return null;
+    try {
+      var intro = mgr.Sp && mgr.Sp();
+      if (intro && intro.id() === slideId) return intro;
+    } catch (e) {}
+    try {
+      var fb = mgr.ha && mgr.ha.fb ? mgr.ha.fb() : null;
+      if (fb && fb.Ce) {
+        var slides = fb.Ce().slides();
+        for (var i = 0; i < slides.length; i++) {
+          if (slides[i].id() === slideId) return slides[i];
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  function hookController(ctrl) {
+    if (!ctrl || ctrl.__scormPreviewHooked) return;
+    try {
+      if (typeof ctrl.o3 === "function") {
+        var origO3 = ctrl.o3;
+        ctrl.o3 = function (state) {
+          try {
+            if (state && state.slide) {
+              cachedSlideStates[state.slide().id()] = state;
+            }
+          } catch (e) {}
+          return origO3.apply(this, arguments);
+        };
+      }
+    } catch (e) {}
+    ctrl.__scormPreviewHooked = true;
   }
 
   function postToParent(payload) {
@@ -261,8 +332,183 @@ NAVIGATION_BRIDGE_SCRIPT = """
     } catch (e) {}
   }
 
-  function navigateToTarget(target) {
-    if (!player || !target) return;
+  function showIntroSlide(slideId) {
+    var ctrl = getController();
+    if (!ctrl) return false;
+    hookController(ctrl);
+
+    try {
+      if (player.currentSlideId && player.currentSlideId() === slideId) return true;
+    } catch (e) {}
+
+    if (cachedSlideStates[slideId]) {
+      try {
+        ctrl.o3(cachedSlideStates[slideId]);
+        return true;
+      } catch (e) {}
+    }
+
+    var mgr = getStateManager();
+    if (mgr && mgr.Fo) {
+      try {
+        if (mgr.Fo.slide().id() === slideId) {
+          ctrl.o3(mgr.Fo);
+          cachedSlideStates[slideId] = mgr.Fo;
+          return true;
+        }
+      } catch (e) {}
+    }
+
+    try {
+      if (mgr && typeof mgr.reset === "function") {
+        mgr.reset();
+        mgr.Fo = null;
+        mgr.Lo = [];
+        var intro = mgr.Sp && mgr.Sp();
+        if (intro && intro.id() === slideId) {
+          mgr.Lo.push(intro);
+          if (typeof mgr.pb === "function") {
+            mgr.pb(function () {});
+            return true;
+          }
+        }
+      }
+    } catch (e) {}
+
+    return false;
+  }
+
+  function submitAllQuestions(session) {
+    if (!session || !session.Oa) return false;
+    var oa = session.Oa();
+    if (!oa || !oa.Ca) return false;
+    for (var i = 0; i < oa.Ca.length; i++) {
+      try {
+        oa.setActiveSlideIndex(i);
+        var q = oa.Ca[i];
+        if (q && typeof q.submit === "function") {
+          q.submit(true);
+        }
+      } catch (e) {}
+    }
+    refreshSlideDisplay();
+    return true;
+  }
+
+  function completeQuizForPreview(resultKind) {
+    var session = getSession();
+    if (!session) return false;
+    if (resultKind === "failed") {
+      try {
+        if (typeof session.finish === "function") {
+          session.finish();
+        }
+        return true;
+      } catch (e) {}
+      return false;
+    }
+    submitAllQuestions(session);
+    try {
+      if (typeof session.finish === "function") {
+        session.finish();
+      }
+      return true;
+    } catch (e) {}
+    return false;
+  }
+
+  function showResultSlide(slideId, resultKind) {
+    var ctrl = getController();
+    var session = getSession();
+    if (!ctrl || !session) return false;
+    hookController(ctrl);
+
+    if (getSessionMode() === "completed") {
+      try {
+        var resultState = session.le && session.le();
+        if (resultState && resultState.slide().id() === slideId) {
+          refreshSlideDisplay();
+          return true;
+        }
+        if (typeof ctrl.XG === "function") {
+          ctrl.XG(slideId);
+        }
+        if (typeof ctrl.oC === "function") {
+          ctrl.oC();
+        }
+        refreshSlideDisplay();
+        return true;
+      } catch (e) {}
+    }
+
+    return completeQuizForPreview(resultKind);
+  }
+
+  function navigateToIntro(target) {
+    navigating = true;
+    var attempts = 0;
+    var maxAttempts = 80;
+
+    function finish(ok) {
+      navigating = false;
+      if (ok) setTimeout(notifyCurrentSlide, 250);
+    }
+
+    function step() {
+      attempts++;
+      if (showIntroSlide(target.slideId)) {
+        return setTimeout(function () { finish(true); }, 300);
+      }
+      if (attempts < maxAttempts) return setTimeout(step, 200);
+      finish(false);
+    }
+
+    step();
+  }
+
+  function navigateToResult(target) {
+    navigating = true;
+    var attempts = 0;
+    var maxAttempts = 150;
+    var startClicks = 0;
+
+    function finish(ok) {
+      navigating = false;
+      if (ok) setTimeout(notifyCurrentSlide, 300);
+    }
+
+    function step() {
+      attempts++;
+      try {
+        var testing = isTestingMode();
+        if (!testing && startClicks < 25) {
+          if (attempts % 2 === 0 && triggerStartQuiz()) startClicks++;
+          if (attempts < maxAttempts) return setTimeout(step, 200);
+          return finish(false);
+        }
+
+        if (getSessionMode() === "completed") {
+          if (showResultSlide(target.slideId, target.resultKind)) {
+            return setTimeout(function () { finish(true); }, 400);
+          }
+        }
+
+        if (testing && attempts % 4 === 0) {
+          showResultSlide(target.slideId, target.resultKind);
+        }
+
+        if (attempts < maxAttempts) return setTimeout(step, 250);
+        finish(false);
+      } catch (e) {
+        if (attempts < maxAttempts) return setTimeout(step, 250);
+        finish(false);
+      }
+    }
+
+    step();
+  }
+
+  function navigateToQuestion(target) {
     navigating = true;
     watchStartButton();
 
@@ -275,9 +521,7 @@ NAVIGATION_BRIDGE_SCRIPT = """
 
     function finish(ok) {
       navigating = false;
-      if (ok) {
-        setTimeout(notifyCurrentSlide, 200);
-      }
+      if (ok) setTimeout(notifyCurrentSlide, 200);
     }
 
     function step() {
@@ -323,7 +567,24 @@ NAVIGATION_BRIDGE_SCRIPT = """
     step();
   }
 
-  function queueNavigate(target) {
+  function navigateToTarget(rawTarget) {
+    if (!player || !rawTarget) return;
+    var target = normalizeTarget(rawTarget);
+    if (!target || !target.slideId) return;
+
+    if (target.slideRole === "intro") {
+      navigateToIntro(target);
+      return;
+    }
+    if (target.slideRole === "result") {
+      navigateToResult(target);
+      return;
+    }
+    navigateToQuestion(target);
+  }
+
+  function queueNavigate(rawTarget) {
+    var target = normalizeTarget(rawTarget);
     if (!target || !target.slideId) return;
     pendingNav = target;
     if (playerReady) {
@@ -347,11 +608,13 @@ NAVIGATION_BRIDGE_SCRIPT = """
     }
 
     var cfg = readEditorConfig();
-    var target = pendingNav || {
+    var target = pendingNav || normalizeTarget({
       slideId: cfg.slideId,
       qIndex: cfg.qIndex,
-      skipAutoStart: cfg.skipAutoStart
-    };
+      skipAutoStart: cfg.skipAutoStart,
+      slideRole: cfg.slideRole,
+      resultKind: cfg.resultKind
+    });
     pendingNav = null;
 
     if (target.slideId) {
@@ -363,6 +626,7 @@ NAVIGATION_BRIDGE_SCRIPT = """
 
   function setupPlayer(p) {
     player = p;
+    hookController(p.Wy);
     var ready = false;
     function onceReady() {
       if (ready) return;
@@ -382,11 +646,13 @@ NAVIGATION_BRIDGE_SCRIPT = """
     setTimeout(onceReady, 5000);
   }
 
-  window.scormPreviewGoToSlide = function (slideId, qIndex) {
+  window.scormPreviewGoToSlide = function (slideId, qIndex, options) {
     queueNavigate({
       slideId: slideId,
       qIndex: qIndex != null && Number(qIndex) >= 0 ? qIndex : "",
-      skipAutoStart: false
+      skipAutoStart: !!(options && options.skipAutoStart),
+      slideRole: options && options.slideRole ? options.slideRole : "",
+      resultKind: options && options.resultKind ? options.resultKind : ""
     });
     return true;
   };
@@ -395,11 +661,13 @@ NAVIGATION_BRIDGE_SCRIPT = """
     var data = event.data;
     if (!data || typeof data !== "object") return;
     if (data.type === "scorm-preview-goto-slide" && data.slideId) {
-      var target = {
+      var target = normalizeTarget({
         slideId: data.slideId,
         qIndex: data.qIndex != null && Number(data.qIndex) >= 0 ? data.qIndex : "",
-        skipAutoStart: false
-      };
+        skipAutoStart: data.skipAutoStart,
+        slideRole: data.slideRole,
+        resultKind: data.resultKind
+      });
       if (playerReady) navigateToTarget(target);
       else pendingNav = target;
     }
