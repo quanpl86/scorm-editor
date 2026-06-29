@@ -26,6 +26,7 @@ body {
   color: var(--text);
   min-height: 100vh;
   line-height: 1.5;
+  overflow: hidden;
 }
 
 button, input, textarea, select {
@@ -33,12 +34,15 @@ button, input, textarea, select {
 }
 
 .app {
+  height: 100vh;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -120,6 +124,8 @@ button, input, textarea, select {
   flex: 1;
   display: flex;
   overflow: hidden;
+  min-height: 0;
+  min-width: 0;
 }
 
 /* Import page */
@@ -133,7 +139,7 @@ button, input, textarea, select {
 
 .import-card {
   width: 100%;
-  max-width: 520px;
+  max-width: 640px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -189,6 +195,120 @@ button, input, textarea, select {
   flex-wrap: wrap;
 }
 
+.import-section {
+  text-align: left;
+  margin-bottom: 28px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--border);
+}
+
+.import-section:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.import-section h3 {
+  font-size: 1rem;
+  margin-bottom: 6px;
+  text-align: center;
+}
+
+.import-section-hint {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-bottom: 14px !important;
+  text-align: center;
+}
+
+.import-section-hint a {
+  color: var(--accent);
+}
+
+.dropzone-excel {
+  padding: 36px 24px;
+}
+
+.import-report {
+  text-align: left;
+  margin-bottom: 20px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: rgba(59, 130, 246, 0.06);
+  border: 1px solid var(--border);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.import-report-summary {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  font-weight: 500;
+  margin-bottom: 10px;
+}
+
+.import-report-warn {
+  color: #fbbf24;
+}
+
+.import-report-muted {
+  color: var(--muted);
+}
+
+.import-report-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.78rem;
+}
+
+.import-report-item {
+  display: grid;
+  grid-template-columns: auto auto auto 1fr;
+  gap: 8px;
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+}
+
+.import-report-item:first-child {
+  border-top: none;
+}
+
+.import-report-row {
+  color: var(--muted);
+}
+
+.import-report-type {
+  font-weight: 600;
+}
+
+.import-report-status {
+  color: var(--muted);
+}
+
+.import-report-imported .import-report-status {
+  color: #4ade80;
+}
+
+.import-report-error .import-report-status,
+.import-report-error .import-report-error {
+  color: #fca5a5;
+}
+
+.import-report-question {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.import-report-error {
+  grid-column: 1 / -1;
+}
+
 .error-banner {
   background: rgba(239, 68, 68, 0.15);
   border: 1px solid var(--danger);
@@ -201,15 +321,18 @@ button, input, textarea, select {
 
 /* Editor layout */
 .sidebar {
-  width: 320px;
+  flex-shrink: 0;
   border-right: 1px solid var(--border);
   background: var(--surface);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0;
+  height: 100%;
 }
 
 .sidebar-header {
+  flex-shrink: 0;
   padding: 16px;
   border-bottom: 1px solid var(--border);
 }
@@ -245,8 +368,11 @@ button, input, textarea, select {
 
 .question-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 8px;
+  overscroll-behavior: contain;
 }
 
 .group-label {
@@ -535,14 +661,18 @@ button, input, textarea, select {
   overflow: hidden;
   background: var(--bg);
   min-width: 0;
+  min-height: 0;
 }
 
 .editor-workspace .editor-panel {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .question-header {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -565,6 +695,7 @@ button, input, textarea, select {
 }
 
 .editor-tabs {
+  flex-shrink: 0;
   display: flex;
   gap: 4px;
   padding: 12px 24px 0;
@@ -611,12 +742,25 @@ button, input, textarea, select {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 16px 24px 24px;
-  overflow: auto;
+  padding: 12px 16px 16px;
+  overflow: hidden;
   min-width: 0;
+  min-height: 0;
+}
+
+.canvas-stage-host {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .canvas-toolbar {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -624,7 +768,6 @@ button, input, textarea, select {
   margin-bottom: 12px;
   font-size: 0.8rem;
   color: var(--muted);
-  flex-wrap: wrap;
 }
 
 .toolbar-hint {
@@ -716,7 +859,8 @@ button, input, textarea, select {
   background: transparent;
 }
 
-.canvas-inner.fidelity .canvas-object.wysiwyg-object.direction {
+.canvas-inner.fidelity .canvas-object.wysiwyg-object.direction,
+.canvas-inner.fidelity .canvas-object.wysiwyg-object.content {
   overflow: visible;
 }
 
@@ -732,7 +876,8 @@ button, input, textarea, select {
   box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25);
 }
 
-.canvas-object img {
+.canvas-object.slidePicture img,
+.canvas-object.image img {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -864,11 +1009,15 @@ button, input, textarea, select {
   box-sizing: border-box;
 }
 
-.canvas-inner.fidelity .wysiwyg-content .choice-preview.wysiwyg {
+.canvas-inner.fidelity .wysiwyg-content .choice-preview.wysiwyg,
+.canvas-inner.fidelity .wysiwyg-content .truefalse-preview.wysiwyg,
+.canvas-inner.fidelity .wysiwyg-content .matching-preview.wysiwyg,
+.canvas-inner.fidelity .wysiwyg-content .sequence-preview.wysiwyg {
   padding: 0;
   align-content: start;
   overflow: visible;
   height: 100%;
+  min-height: 0;
 }
 
 .canvas-inner.fidelity .ispring-html,
@@ -1253,6 +1402,513 @@ button, input, textarea, select {
   overflow: visible;
 }
 
+/* Matching (nối cặp) — khớp iSpring Slide View */
+.matching-preview.wysiwyg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  box-sizing: border-box;
+}
+
+.matching-preview .matching-columns {
+  display: grid;
+  align-items: start;
+  height: 100%;
+  width: 100%;
+}
+
+.matching-preview .matching-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  width: 100%;
+}
+
+.matching-preview .matching-column-spacer {
+  min-width: 0;
+}
+
+.matching-preview .matching-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  background: #ffffff;
+  border-radius: 4px;
+  border: 1px solid #e5e5e5;
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.05);
+  overflow: visible;
+  min-height: 22px;
+  width: 100%;
+}
+
+.matching-preview .matching-item-text {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.5;
+  word-break: break-word;
+  white-space: normal;
+  color: #000;
+  font-family: fnt5_24031, 'Quicksand', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+}
+
+.matching-preview .matching-item-text p {
+  margin: 0;
+  line-height: 1.5;
+  width: 100%;
+}
+
+.matching-preview .matching-item-img {
+  max-height: calc(100% - 8px);
+  max-width: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  pointer-events: none;
+  display: block;
+}
+
+/* Connector dạng C + vòng tròn — iSpring #C9D5DD */
+.matching-preview .matching-connector {
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  width: 16px;
+  height: 26px;
+  margin-top: -13px;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+.matching-preview .matching-connector.connector-right {
+  right: 10px;
+  border: 2px solid #c9d5dd;
+  border-left: none;
+  border-radius: 0 13px 13px 0;
+  background: #ffffff;
+}
+
+.matching-preview .matching-connector.connector-left {
+  left: 10px;
+  border: 2px solid #c9d5dd;
+  border-right: none;
+  border-radius: 13px 0 0 13px;
+  background: #ffffff;
+}
+
+.matching-preview .matching-connector::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1.5px solid #c9d5dd;
+  box-sizing: border-box;
+}
+
+/* Thanh tab iSpring — premise bên phải, response bên trái */
+.matching-preview .matching-cell::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 27px;
+  background: #c9d5dd;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.matching-preview .matching-cell.premise::before {
+  right: 0;
+  left: auto;
+  border-radius: 0 4px 4px 0;
+}
+
+.matching-preview .matching-cell.response::before {
+  left: 0;
+  border-radius: 4px 0 0 4px;
+}
+
+.canvas-inner.fidelity .matching-preview .matching-cell {
+  overflow: visible;
+}
+
+.canvas-inner.fidelity .matching-preview .matching-item-text,
+.canvas-inner.fidelity .matching-preview .matching-item-text.ispring-html {
+  height: auto;
+  overflow: visible;
+  line-height: 1.5;
+  font-weight: 700;
+}
+
+.canvas-inner.fidelity .matching-preview .matching-item-text.ispring-html p,
+.canvas-inner.fidelity .matching-preview .matching-item-text.ispring-html span {
+  font-weight: inherit;
+}
+
+/* Nhãn Cột A / Cột B — shape textbox trên canvas */
+.canvas-inner.fidelity .canvas-object.shape.textBox.matching-label .shape-label-preview {
+  justify-content: center;
+  text-align: center;
+  font-weight: 700;
+  font-size: 20px;
+  color: #000;
+}
+
+.canvas-inner.fidelity .canvas-object.shape.textBox.matching-label .shape-label-preview .ispring-html {
+  justify-content: center;
+  text-align: center;
+  width: 100%;
+}
+
+/* True/False — khớp iSpring Slide View */
+.truefalse-preview.wysiwyg {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  align-content: center;
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+.truefalse-preview .truefalse-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.truefalse-preview .truefalse-icon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  flex-shrink: 0;
+  pointer-events: none;
+  display: block;
+}
+
+.truefalse-preview .truefalse-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: #000;
+  font-family: fnt5_24031, 'Quicksand', sans-serif;
+}
+
+.truefalse-preview .truefalse-text p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.canvas-inner.fidelity .truefalse-preview .truefalse-choice {
+  align-items: center;
+  gap: 0;
+  overflow: visible;
+}
+
+.canvas-inner.fidelity .truefalse-preview .fake-radio {
+  flex-shrink: 0;
+  width: 23px;
+  height: 23px;
+  min-width: 23px;
+  margin-left: 6px;
+  margin-right: 12px;
+  border: none;
+  border-radius: 50%;
+  background: #999;
+  position: relative;
+  box-sizing: border-box;
+}
+
+.canvas-inner.fidelity .truefalse-preview .fake-radio::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.canvas-inner.fidelity .truefalse-preview .truefalse-icon {
+  width: 32px;
+  height: 32px;
+  margin-right: 8px;
+}
+
+.canvas-inner.fidelity .truefalse-preview .truefalse-text,
+.canvas-inner.fidelity .truefalse-preview .truefalse-text.ispring-html {
+  flex: 1;
+  min-width: 0;
+  height: auto;
+  overflow: visible;
+  display: flex;
+  align-items: center;
+  font-weight: 700;
+}
+
+.canvas-inner.fidelity .truefalse-preview.image-only .truefalse-choice.image-primary {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding-left: 41px;
+}
+
+.canvas-inner.fidelity .truefalse-preview.image-only .truefalse-choice.image-primary .fake-radio {
+  position: absolute;
+  left: 6px;
+  top: 10px;
+  margin: 0;
+  z-index: 1;
+}
+
+.canvas-inner.fidelity .truefalse-preview.image-only .truefalse-image-main {
+  width: 100%;
+  height: auto;
+  max-height: none;
+  margin-right: 0;
+  object-fit: contain;
+}
+
+.canvas-inner.fidelity .truefalse-preview.has-images:not(.image-only) .truefalse-choice.has-image .truefalse-icon {
+  width: 32px;
+  height: 32px;
+}
+
+/* Sequence — khớp iSpring Slide View */
+.sequence-preview.wysiwyg {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+.sequence-preview .sequence-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.sequence-preview .sequence-index {
+  flex-shrink: 0;
+  width: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  text-align: right;
+  font-size: 18px;
+  font-weight: 700;
+  color: rgba(43, 59, 70, 0.56);
+  font-family: fnt5_24031, 'Quicksand', sans-serif;
+  line-height: 1;
+}
+
+.sequence-preview .sequence-item {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  background: #ffffff;
+  border-radius: 4px;
+  border: 1px solid #e5e5e5;
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.05);
+  min-height: 22px;
+  overflow: visible;
+}
+
+.sequence-preview .sequence-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: #000;
+  font-family: fnt5_24031, 'Quicksand', sans-serif;
+  display: flex;
+  align-items: center;
+}
+
+.sequence-preview .sequence-text p {
+  margin: 0;
+  line-height: 1.5;
+  width: 100%;
+}
+
+.sequence-preview .sequence-drag-handle {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  width: 18px;
+  height: 14px;
+  margin-top: -7px;
+  background: linear-gradient(180deg, #94a3b8 0%, #94a3b8 35%, transparent 35%, transparent 45%, #94a3b8 45%, #94a3b8 55%, transparent 55%, transparent 65%, #94a3b8 65%, #94a3b8 100%);
+  opacity: 0.7;
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+.canvas-inner.fidelity .sequence-preview .sequence-row {
+  align-items: stretch;
+}
+
+.canvas-inner.fidelity .sequence-preview .sequence-item {
+  overflow: visible;
+}
+
+.canvas-inner.fidelity .sequence-preview .sequence-text,
+.canvas-inner.fidelity .sequence-preview .sequence-text.ispring-html {
+  height: auto;
+  overflow: visible;
+  line-height: 1.5;
+  font-weight: 700;
+}
+
+.canvas-inner.fidelity .sequence-preview .sequence-text.ispring-html p,
+.canvas-inner.fidelity .sequence-preview .sequence-text.ispring-html span {
+  font-weight: inherit;
+}
+
+/* Type In — short answer */
+.typein-preview.wysiwyg {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+}
+
+.typein-preview .typein-field {
+  width: 100%;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.05);
+  padding: 10px 14px;
+  box-sizing: border-box;
+}
+
+.typein-preview .typein-placeholder {
+  color: #939aa3;
+  font-size: 18px;
+  font-family: fnt5_24031, 'Quicksand', sans-serif;
+}
+
+/* Fill in blank / Word bank sentence */
+.fillin-preview.wysiwyg,
+.wordbank-preview.wysiwyg {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+}
+
+.fillin-preview .blank-rich-text,
+.wordbank-preview .blank-rich-text {
+  width: 100%;
+  padding: 20px 24px;
+  background: #ffffff;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.05);
+  line-height: 2.33;
+  font-size: 18px;
+  font-family: fnt5_24031, 'Quicksand', sans-serif;
+  box-sizing: border-box;
+}
+
+.fillin-preview .blank-rich-text p,
+.wordbank-preview .blank-rich-text p {
+  margin: 0;
+  line-height: inherit;
+}
+
+.blank-slot {
+  display: inline-block;
+  min-width: 80px;
+  max-width: 240px;
+  min-height: 28px;
+  margin: 0 4px;
+  padding: 2px 8px;
+  vertical-align: middle;
+  border-bottom: 2px solid #c9d5dd;
+  background: rgba(201, 213, 221, 0.15);
+  border-radius: 3px;
+  line-height: 1.7;
+}
+
+.blank-slot.fib-blank {
+  border-bottom-color: #3da0e1;
+}
+
+.blank-slot.wordbank-blank {
+  border-bottom-color: #81c712;
+  background: rgba(129, 199, 18, 0.08);
+}
+
+/* Word bank chips — additionalContent */
+.wordbank-chips.wysiwyg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-content: flex-start;
+  width: 100%;
+  height: 100%;
+  padding: 8px 4px;
+  box-sizing: border-box;
+}
+
+.wordbank-chips .wordbank-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 16px;
+  background: #ffffff;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.05);
+  font-size: 18px;
+  font-weight: 700;
+  color: #000;
+  font-family: fnt5_24031, 'Quicksand', sans-serif;
+  cursor: default;
+  user-select: none;
+}
+
+.canvas-inner.fidelity .canvas-object.shape.textBox .shape-label-preview {
+  overflow: visible;
+  height: auto;
+  min-height: 100%;
+  align-items: center;
+}
+
+.canvas-inner.fidelity .canvas-object.shape.textBox .shape-label-preview .ispring-html {
+  height: auto;
+  overflow: visible;
+  line-height: 1.35;
+}
+
 .choice-preview.wysiwyg .choice-preview-row {
   min-height: 0;
   align-items: center;
@@ -1390,8 +2046,56 @@ button, input, textarea, select {
 .handle-sw { bottom: -5px; left: -5px; cursor: sw-resize; }
 .handle-w  { top: 50%; left: -5px; margin-top: -5px; cursor: w-resize; }
 
+.panel-resize-handle {
+  flex-shrink: 0;
+  width: 6px;
+  margin: 0 -3px;
+  cursor: col-resize;
+  touch-action: none;
+  position: relative;
+  z-index: 5;
+  align-self: stretch;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.panel-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--border);
+  opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.panel-resize-handle:hover::after,
+.panel-resize-handle.is-active::after,
+body.is-panel-resizing .panel-resize-handle::after {
+  opacity: 1;
+  background: var(--accent);
+  width: 2px;
+}
+
+.panel-resize-handle:hover,
+.panel-resize-handle.is-active,
+body.is-panel-resizing .panel-resize-handle {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+body.is-panel-resizing {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+body.is-panel-resizing * {
+  cursor: col-resize !important;
+}
+
 .layout-side {
-  width: 280px;
   border-left: 1px solid var(--border);
   background: var(--surface);
   display: flex;
@@ -1688,6 +2392,101 @@ button, input, textarea, select {
   color: var(--muted);
   border-top: 1px solid var(--border);
   line-height: 1.4;
+}
+
+.filmstrip-slide-btn {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.filmstrip-slide-btn:hover {
+  border-color: var(--border);
+  background: var(--bg);
+}
+
+.filmstrip-slide-btn.active {
+  border-color: var(--accent);
+  background: rgba(99, 102, 241, 0.12);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.filmstrip-slide-btn.active .filmstrip-slide-num {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* Editor Side View tab */
+.sideview-workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.sideview-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.sideview-toolbar-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.sideview-toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.sideview-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sideview-filmstrip {
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+}
+
+.sideview-player-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 20px;
+  background: #0a0e14;
+  overflow: auto;
+  min-width: 0;
+}
+
+.sideview-player-label {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 12px;
+  align-self: flex-start;
+}
+
+.sideview-player-frame {
+  width: 100%;
+  max-width: 900px;
+  flex: 1;
+  min-height: 320px;
 }
 
 .preview-player-wrap {

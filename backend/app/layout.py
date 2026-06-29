@@ -30,6 +30,21 @@ def image_path_from_storage(storage_uri: str) -> str | None:
     match = re.search(r"storage://images/(.+)", storage_uri)
     return match.group(1) if match else None
 
+
+def image_path_from_html(html_str: str | None) -> str | None:
+    """Fallback when choice image is embedded in rich HTML instead of ia.i."""
+    if not html_str:
+        return None
+    for pattern in (
+        r"storage://images/([^\"'\s>]+)",
+        r"(?:src|href)=[\"'][^\"']*?/images/([^\"'\s>?#]+)",
+        r"(?:src|href)=[\"'][^\"']*?images%2F([^\"'\s>?#&]+)",
+    ):
+        match = re.search(pattern, html_str, re.IGNORECASE)
+        if match:
+            return match.group(1)
+    return None
+
 CANVAS_W = 720
 CANVAS_H = 540
 
@@ -126,6 +141,10 @@ def extract_shape_visual(obj: dict[str, Any]) -> dict[str, Any]:
         visual["variant"] = "label"
     elif obj_id == "direction":
         visual["variant"] = "titleBox"
+    elif shape_kind == "textBox":
+        visual["variant"] = "textBox"
+
+    visual["autofit"] = text_box.get("a", "doNotAutofit")
 
     if bg.get("f") == "gradientFill":
         gradient = bg.get("g", {}) or {}
@@ -336,7 +355,7 @@ def extract_choice_preview(slide: dict[str, Any]) -> dict[str, Any] | None:
 
     preview: dict[str, Any] = {"type": qtype, "contentRect": content.get("r", {}), "items": []}
 
-    if qtype in ("MultipleChoice", "MultipleResponse", "MultipleChoiceText"):
+    if qtype in ("MultipleChoice", "MultipleResponse", "MultipleChoiceText", "TrueFalse"):
         for ch in slide.get("C", {}).get("chs", []):
             text = ""
             if isinstance(ch.get("t"), dict):
@@ -347,28 +366,222 @@ def extract_choice_preview(slide: dict[str, Any]) -> dict[str, Any] | None:
             if isinstance(ch.get("t"), dict):
                 html = ch["t"].get("h") or ch["t"].get("a") or ""
             t_node = ch.get("t") if isinstance(ch.get("t"), dict) else {}
+            choice_image = image_path_from_storage((ch.get("ia") or {}).get("i", ""))
+            if not choice_image:
+                choice_image = image_path_from_html(html)
             preview["items"].append(
                 {
                     "text": text,
                     "html": html,
                     "format": extract_text_format(t_node.get("h", ""), t_node.get("t"), "content"),
-                    "image": image_path_from_storage((ch.get("ia") or {}).get("i", "")),
+                    "image": choice_image,
                     "isCorrect": bool(ch.get("c")),
-                    "inputType": "radio" if qtype == "MultipleChoice" else "checkbox",
+                    "inputType": (
+                        "truefalse" if qtype == "TrueFalse"
+                        else "radio" if qtype == "MultipleChoice"
+                        else "checkbox"
+                    ),
                 }
             )
     elif qtype == "TypeIn":
         preview["items"] = [{"inputType": "text", "placeholder": "Nhập đáp án..."}]
     elif qtype in ("WordBank", "FillInTheBlank"):
-        preview["items"] = [{"inputType": "blank", "text": strip_html(slide.get("C", {}).get("rt", {}).get("h", ""))[:120]}]
+        rt = slide.get("C", {}).get("rt", {}) or {}
+        preview["richHtml"] = rt.get("h") or rt.get("a") or ""
+        preview["blankKind"] = "wordbank" if qtype == "WordBank" else "fillin"
+        if qtype == "WordBank":
+            preview["extraWords"] = list(slide.get("C", {}).get("ew", []) or [])
+        preview["items"] = [{"inputType": "blank"}]
     elif qtype == "Sequence":
         for ch in slide.get("C", {}).get("chs", []):
-            preview["items"].append({"text": strip_html((ch.get("t") or {}).get("h", "")), "inputType": "sequence"})
+            t_node = ch.get("t") if isinstance(ch.get("t"), dict) else {}
+            preview["items"].append(
+                {
+                    "text": strip_html(t_node.get("h") or t_node.get("a") or ""),
+                    "html": t_node.get("h") or t_node.get("a") or "",
+                    "format": extract_text_format(t_node.get("h", ""), t_node.get("t"), "content"),
+                    "image": image_path_from_storage((ch.get("ia") or {}).get("i", "")),
+                    "inputType": "sequence",
+                    "order": ch.get("o"),
+                }
+            )
+    elif qtype == "Matching":
+        pairs = []
+        for item in slide.get("C", {}).get("m", []):
+            left = item.get("p", {}) or {}
+            right = item.get("r", {}) or {}
+            left_t = left.get("t") if isinstance(left.get("t"), dict) else {}
+            right_t = right.get("t") if isinstance(right.get("t"), dict) else {}
+            left_html = left_t.get("h") or left_t.get("a") or ""
+            right_html = right_t.get("h") or right_t.get("a") or ""
+            left_image = image_path_from_storage((left.get("ia") or {}).get("i", ""))
+            right_image = image_path_from_storage((right.get("ia") or {}).get("i", ""))
+            if not left_image:
+                left_image = image_path_from_html(left_html)
+            if not right_image:
+                right_image = image_path_from_html(right_html)
+            pairs.append(
+                {
+                    "leftText": strip_html(left_html),
+                    "leftHtml": left_html,
+                    "leftFormat": extract_text_format(left_t.get("h", ""), left_t.get("t"), "content"),
+                    "leftImage": left_image,
+                    "rightText": strip_html(right_html),
+                    "rightHtml": right_html,
+                    "rightFormat": extract_text_format(right_t.get("h", ""), right_t.get("t"), "content"),
+                    "rightImage": right_image,
+                }
+            )
+        preview["pairs"] = pairs
+        column_labels: dict[str, Any] = {}
+        for obj in slide.get("a", {}).get("o", []):
+            if obj.get("tp") != "shape":
+                continue
+            rt = obj.get("rt") if isinstance(obj.get("rt"), dict) else {}
+            label = strip_html(rt.get("h") or rt.get("a") or "")
+            if label in ("Cột A", "Cột B"):
+                column_labels[label] = {
+                    "text": label,
+                    "html": rt.get("h") or rt.get("a") or "",
+                    "rect": resolve_object_rect(obj, slide),
+                }
+        if column_labels:
+            preview["columnLabels"] = column_labels
+        responses = [
+            {
+                "text": pair["rightText"],
+                "html": pair["rightHtml"],
+                "format": pair["rightFormat"],
+                "image": pair["rightImage"],
+            }
+            for pair in pairs
+        ]
+        for ch in slide.get("C", {}).get("d", {}).get("chs", []) or []:
+            t_node = ch.get("t") if isinstance(ch.get("t"), dict) else {}
+            responses.append(
+                {
+                    "text": strip_html(t_node.get("h") or t_node.get("a") or ""),
+                    "html": t_node.get("h") or t_node.get("a") or "",
+                    "format": extract_text_format(t_node.get("h", ""), t_node.get("t"), "content"),
+                    "image": image_path_from_storage((ch.get("ia") or {}).get("i", "")),
+                }
+            )
+        preview["responses"] = responses
+        slide_settings = slide.get("s", {}) if isinstance(slide.get("s"), dict) else {}
+        preview["shuffleResponses"] = bool(slide_settings.get("sh", False))
+        preview["shuffleSeed"] = slide.get("i", "")
     else:
         return preview if preview["items"] else None
 
     items = preview.get("items") or []
-    if items and qtype in ("MultipleChoice", "MultipleResponse", "MultipleChoiceText"):
+    pairs = preview.get("pairs") or []
+    if pairs and qtype == "Matching":
+        cr = content.get("r", {}) or {}
+        pad = extract_shape_visual(content).get("padding", {})
+        avail_h = float(cr.get("h", 0)) - float(pad.get("t", 0)) - float(pad.get("b", 0))
+        avail_w = float(cr.get("w", 0)) - float(pad.get("l", 0)) - float(pad.get("r", 0))
+        row_count = len(pairs)
+        row_gap = 12.0
+        if row_count and avail_h > 0:
+            row_h = round((avail_h - max(0, row_count - 1) * row_gap) / row_count, 2)
+        else:
+            row_h = 52.0
+        labels = preview.get("columnLabels") or {}
+        col_gap = 64.0
+        premise_width = round(avail_w * 0.46, 2) if avail_w > 0 else None
+        response_width = round(avail_w * 0.46, 2) if avail_w > 0 else None
+        if labels.get("Cột A", {}).get("rect") and labels.get("Cột B", {}).get("rect"):
+            a_rect = labels["Cột A"]["rect"]
+            b_rect = labels["Cột B"]["rect"]
+            content_x = float(cr.get("x", 0))
+            inner_left = content_x + float(pad.get("l", 10))
+            a_center = float(a_rect["x"]) + float(a_rect["w"]) / 2
+            b_center = float(b_rect["x"]) + float(b_rect["w"]) / 2
+            midpoint = (a_center + b_center) / 2
+            rel_mid = midpoint - inner_left
+            premise_width = round(max(120.0, rel_mid - col_gap / 2), 2)
+            response_width = round(max(120.0, avail_w - rel_mid - col_gap / 2), 2)
+
+        preview["layout"] = {
+            "columns": 2,
+            "rows": row_count,
+            "rowHeight": row_h,
+            "rowGap": 12,
+            "columnGap": col_gap,
+            "premiseWidth": premise_width,
+            "responseWidth": response_width,
+            "choicePadding": 16,
+            "contentPadding": pad,
+            "contentWidth": round(avail_w, 2) if avail_w > 0 else None,
+        }
+    elif items and qtype == "TrueFalse":
+        cr = content.get("r", {}) or {}
+        pad = extract_shape_visual(content).get("padding", {})
+        avail_h = float(cr.get("h", 0)) - float(pad.get("t", 0)) - float(pad.get("b", 0))
+        avail_w = float(cr.get("w", 0)) - float(pad.get("l", 0)) - float(pad.get("r", 0))
+        has_images = any(item.get("image") for item in items)
+        image_only = has_images and all(not (item.get("text") or "").strip() for item in items)
+        preview["layout"] = {
+            "columns": 2,
+            "rows": 1,
+            "rowHeight": round(avail_h, 2) if avail_h > 0 else 52,
+            "rowGap": 0,
+            "radioSize": 23,
+            "choicePadding": 12,
+            "contentPadding": pad,
+            "contentWidth": round(avail_w, 2) if avail_w > 0 else None,
+            "hasImages": has_images,
+            "imageOnly": image_only,
+        }
+    elif items and qtype == "Sequence":
+        cr = content.get("r", {}) or {}
+        pad = extract_shape_visual(content).get("padding", {})
+        avail_h = float(cr.get("h", 0)) - float(pad.get("t", 0)) - float(pad.get("b", 0))
+        avail_w = float(cr.get("w", 0)) - float(pad.get("l", 0)) - float(pad.get("r", 0))
+        row_count = len(items)
+        row_gap = 8.0
+        index_col = 36.0
+        if row_count and avail_h > 0:
+            row_h = round((avail_h - max(0, row_count - 1) * row_gap) / row_count, 2)
+        else:
+            row_h = 52.0
+        preview["layout"] = {
+            "columns": 1,
+            "rows": row_count,
+            "rowHeight": row_h,
+            "rowGap": row_gap,
+            "radioSize": 0,
+            "choicePadding": 16,
+            "indexColumnWidth": index_col,
+            "contentPadding": pad,
+            "contentWidth": round(avail_w, 2) if avail_w > 0 else None,
+        }
+    elif items and qtype == "TypeIn":
+        cr = content.get("r", {}) or {}
+        pad = extract_shape_visual(content).get("padding", {})
+        avail_h = float(cr.get("h", 0)) - float(pad.get("t", 0)) - float(pad.get("b", 0))
+        avail_w = float(cr.get("w", 0)) - float(pad.get("l", 0)) - float(pad.get("r", 0))
+        preview["layout"] = {
+            "columns": 1,
+            "rows": 1,
+            "rowHeight": round(avail_h, 2) if avail_h > 0 else 48,
+            "rowGap": 0,
+            "choicePadding": 0,
+            "contentPadding": pad,
+            "contentWidth": round(avail_w, 2) if avail_w > 0 else None,
+        }
+    elif preview.get("richHtml") and qtype in ("WordBank", "FillInTheBlank"):
+        cr = content.get("r", {}) or {}
+        pad = extract_shape_visual(content).get("padding", {})
+        avail_w = float(cr.get("w", 0)) - float(pad.get("l", 0)) - float(pad.get("r", 0))
+        preview["layout"] = {
+            "columns": 1,
+            "rows": 1,
+            "choicePadding": 20,
+            "contentPadding": pad,
+            "contentWidth": round(avail_w, 2) if avail_w > 0 else None,
+        }
+    elif items and qtype in ("MultipleChoice", "MultipleResponse", "MultipleChoiceText"):
         cr = content.get("r", {}) or {}
         pad = extract_shape_visual(content).get("padding", {})
         avail_h = float(cr.get("h", 0)) - float(pad.get("t", 0)) - float(pad.get("b", 0))

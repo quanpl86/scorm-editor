@@ -15,7 +15,7 @@ from typing import Any
 from xml.etree import ElementTree as ET
 
 from .fonts import extract_font_manifest
-from .layout import apply_question_layout_edit, extract_layout
+from .layout import apply_question_layout_edit, extract_layout, image_path_from_html
 from .typography import (
     apply_html_to_node,
     apply_text_to_node,
@@ -160,12 +160,17 @@ def extract_choices(slide: dict[str, Any]) -> list[dict[str, Any]]:
         else:
             text = str(ch.get("t", ""))
         t_node = ch.get("t") if isinstance(ch.get("t"), dict) else {}
+        choice_html = t_node.get("h") or t_node.get("a") or ""
+        choice_image = image_path_from_storage((ch.get("ia") or {}).get("i", ""))
+        if not choice_image:
+            choice_image = image_path_from_html(choice_html)
         choices.append(
             {
                 "id": ch.get("i", ""),
                 "text": text,
+                "html": choice_html,
                 "format": extract_text_format(t_node.get("h", ""), t_node.get("t"), "content"),
-                "image": image_path_from_storage((ch.get("ia") or {}).get("i", "")),
+                "image": choice_image,
                 "isCorrect": bool(ch.get("c")),
             }
         )
@@ -414,12 +419,14 @@ def slide_to_view(slide: dict[str, Any], group_index: int, question_index: int, 
         "timeLimit": time_limit,
     }
 
-    if qtype in {"MultipleChoice", "MultipleResponse", "MultipleChoiceText"}:
+    if qtype in {"MultipleChoice", "MultipleResponse", "MultipleChoiceText", "TrueFalse", "Sequence"}:
         view["choices"] = extract_choices(slide)
     elif qtype == "Matching":
         view["matchingPairs"] = extract_matching_pairs(slide)
     elif qtype == "Sequence":
         view["sequenceItems"] = extract_sequence_items(slide)
+    elif qtype == "WordBank":
+        view["wordBankWords"] = list(slide.get("C", {}).get("ew", []) or [])
     elif qtype == "TypeIn":
         view["typeInAnswers"] = extract_type_in_answers(slide)
 
@@ -484,8 +491,18 @@ def apply_question_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:
         "MultipleChoice",
         "MultipleResponse",
         "MultipleChoiceText",
+        "TrueFalse",
+        "Sequence",
     }:
         apply_choices(slide, edit["choices"])
+
+    if edit.get("wordBankWords") is not None and slide.get("tp") == "WordBank":
+        slide.setdefault("C", {})["ew"] = [w for w in edit["wordBankWords"] if str(w).strip()]
+
+    if edit.get("richHtml") is not None and slide.get("tp") in {"WordBank", "FillInTheBlank"}:
+        slide.setdefault("C", {})
+        slide["C"].setdefault("rt", {})
+        slide["C"]["rt"]["h"] = edit["richHtml"]
 
     if edit.get("typeInAnswers") is not None and slide.get("tp") == "TypeIn":
         slide.setdefault("C", {})

@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { reflowSlideLayout } from './choiceLayoutUtils'
+import MatchingPreview from './MatchingPreview'
+import {
+  BlankPreview,
+  SequencePreview,
+  TrueFalsePreview,
+  TypeInPreview,
+  WordBankChips,
+} from './QuestionPreviews'
 import { assetUrl } from './api'
+import PanelResizeHandle from './PanelResizeHandle'
 import CanvasFonts from './CanvasFonts'
+import { useResizableWidth } from './useResizableWidth'
 import CanvasIcon from './CanvasIcon'
 import CanvasRichText from './CanvasRichText'
 import TextFormatToolbar from './TextFormatToolbar'
@@ -31,14 +41,6 @@ function ChoicePreview({
 }) {
   if (!preview?.items?.length) return null
   const { items, type } = preview
-
-  if (type === 'TypeIn') {
-    return (
-      <div className={`choice-preview typein ${wysiwyg ? 'wysiwyg fidelity' : ''}`}>
-        <div className="fake-input">Nhập đáp án...</div>
-      </div>
-    )
-  }
 
   const layout = preview.layout
   const hasImages = items.some((item) => item.image)
@@ -94,7 +96,9 @@ function ChoicePreview({
             className={`choice-preview-row ${item.image ? 'has-image' : ''} ${item.inputType === 'checkbox' ? 'is-checkbox' : ''}`}
             style={rowStyle}
           >
-            {item.inputType === 'radio' && <span className="fake-radio" aria-hidden />}
+            {(item.inputType === 'radio' || item.inputType === 'truefalse') && (
+              <span className="fake-radio" aria-hidden />
+            )}
             {item.inputType === 'checkbox' && <span className="fake-checkbox" aria-hidden />}
             {item.inputType === 'sequence' && <span className="fake-drag">⋮⋮</span>}
             {item.image && (
@@ -214,14 +218,23 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
     setObjects((prev) => (JSON.stringify(prev) === JSON.stringify(incoming) ? prev : incoming))
   }, [objectsSnapshot, question?.layout?.objects])
 
+  const rightPanelResize = useResizableWidth('scorm-editor.right-panel-width', 280, { min: 200, max: 440 })
+
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
-    const ro = new ResizeObserver(() => {
-      const w = el.clientWidth - 48
-      setScale(Math.min(w / CANVAS_W, 1.2))
-    })
+    const updateScale = () => {
+      const host = el.querySelector('.canvas-stage-host')
+      const w = (host?.clientWidth ?? el.clientWidth) - 24
+      const h = (host?.clientHeight ?? el.clientHeight) - 24
+      // Giữ canvas chuẩn 720×540 — chỉ thu nhỏ khi viewport không đủ chỗ
+      setScale(Math.min(1, w / CANVAS_W, h / CANVAS_H))
+    }
+    updateScale()
+    const ro = new ResizeObserver(updateScale)
     ro.observe(el)
+    const host = el.querySelector('.canvas-stage-host')
+    if (host) ro.observe(host)
     return () => ro.disconnect()
   }, [])
 
@@ -234,6 +247,11 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
         fontSize: c.format?.fontSize,
       })),
       items: (question?.layout?.choicePreview?.items || []).map((i) => i.text),
+      pairs: (question?.layout?.choicePreview?.pairs || []).map((p) => ({
+        left: p.leftText,
+        right: p.rightText,
+      })),
+      questionType: question?.type,
       questionFormat: question?.questionFormat,
       titleSize: question?.layout?.typography?.titleSize,
       contentSize: question?.layout?.typography?.contentSize,
@@ -241,9 +259,61 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
     [question],
   )
 
+  const resolvePreview = useCallback(() => {
+    const cp = question.layout?.choicePreview
+    if (cp?.pairs?.length || cp?.items?.length || cp?.richHtml) return cp
+    if (question.choices?.length && (question.type === 'TrueFalse' || question.type === 'Sequence')) {
+      return {
+        type: question.type,
+        items: question.choices.map((ch) => ({
+          text: ch.text,
+          html: ch.html || '',
+          format: ch.format,
+          image: ch.image,
+          isCorrect: ch.isCorrect,
+          inputType: question.type === 'TrueFalse' ? 'truefalse' : 'sequence',
+        })),
+        layout: {
+          ...(cp?.layout || {}),
+          hasImages: question.choices.some((ch) => ch.image),
+          imageOnly: question.choices.every((ch) => ch.image && !ch.text?.trim()),
+        },
+      }
+    }
+    if (question.type === 'Matching' && question.matchingPairs?.length) {
+      const pairs = question.matchingPairs.map((p) => ({
+        leftText: p.leftText,
+        rightText: p.rightText,
+        leftHtml: p.leftHtml || '',
+        rightHtml: p.rightHtml || '',
+        leftFormat: p.leftFormat,
+        rightFormat: p.rightFormat,
+        leftImage: p.leftImage,
+        rightImage: p.rightImage,
+      }))
+      return {
+        type: 'Matching',
+        pairs,
+        responses: cp?.responses || pairs.map((p) => ({
+          text: p.rightText,
+          html: p.rightHtml,
+          format: p.rightFormat,
+          image: p.rightImage,
+        })),
+        shuffleResponses: cp?.shuffleResponses ?? false,
+        shuffleSeed: cp?.shuffleSeed || question.id,
+        layout: cp?.layout || {},
+        columnLabels: cp?.columnLabels,
+      }
+    }
+    return cp || null
+  }, [question.choices, question.id, question.layout?.choicePreview, question.matchingPairs, question.type])
+
   const applyReflow = useCallback(
     (sourceObjects, { markDirty = false } = {}) => {
-      const preview = question.layout?.choicePreview
+      const preview = resolvePreview()
+      const canReflow = preview?.items?.length || preview?.pairs?.length || preview?.richHtml
+      if (!canReflow) return false
       const isDirty = !!(
         question._dirtyChoices
         || question._dirtyQuestionText
@@ -279,11 +349,21 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
       }
       return true
     },
-    [onChange, onPatch, question],
+    [onChange, onPatch, question, resolvePreview],
   )
 
   useLayoutEffect(() => {
-    if (!question?.layout?.objects?.length) return
+    const cp = question?.layout?.choicePreview
+    const hasReflowTarget = question?.layout?.objects?.length
+      && (
+        cp?.items?.length
+        || cp?.pairs?.length
+        || cp?.richHtml
+        || question?.type === 'Matching'
+        || (question?.type === 'TrueFalse' && question?.choices?.length)
+        || (question?.type === 'Sequence' && question?.choices?.length)
+      )
+    if (!hasReflowTarget) return
     applyReflow(question.layout?.objects || objects, {
       markDirty: !!(
         question._dirtyChoices
@@ -446,12 +526,21 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
 
   const handleChoiceTextChange = useCallback(
     (idx, text) => {
-      if (!question.choices?.[idx]) return
-      const choices = [...question.choices]
+      const baseChoices = question.choices?.length
+        ? question.choices
+        : (question.layout?.choicePreview?.items || []).map((item, i) => ({
+          id: `choice-${i}`,
+          text: item.text || '',
+          format: item.format,
+          image: item.image,
+          isCorrect: item.isCorrect,
+        }))
+      if (!baseChoices[idx]) return
+      const choices = [...baseChoices]
       choices[idx] = { ...choices[idx], text }
       updateSlide({ choices })
     },
-    [question.choices, updateSlide],
+    [question.choices, question.layout?.choicePreview?.items, updateSlide],
   )
 
   const handleChoiceFocus = useCallback((idx) => {
@@ -572,9 +661,60 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
   const bg = question.layout?.background
   const bgFit = question.layout?.backgroundFit || 'cover'
   const hotspots = question.layout?.hotspots || []
-  const preview = question.layout?.choicePreview
-    ? { ...question.layout.choicePreview, sessionId }
-    : null
+  const preview = useMemo(() => {
+    const cp = question.layout?.choicePreview
+    if (cp?.pairs?.length || cp?.items?.length || cp?.richHtml) {
+      const extraWords = question.wordBankWords || cp?.extraWords
+      return { ...cp, sessionId, ...(extraWords ? { extraWords } : {}) }
+    }
+    if (question.choices?.length && (question.type === 'TrueFalse' || question.type === 'Sequence')) {
+      return {
+        type: question.type,
+        sessionId,
+        items: question.choices.map((ch) => ({
+          text: ch.text,
+          html: ch.html || '',
+          format: ch.format,
+          image: ch.image,
+          isCorrect: ch.isCorrect,
+          inputType: question.type === 'TrueFalse' ? 'truefalse' : 'sequence',
+        })),
+        layout: {
+          ...(cp?.layout || {}),
+          hasImages: question.choices.some((ch) => ch.image),
+          imageOnly: question.choices.every((ch) => ch.image && !ch.text?.trim()),
+        },
+      }
+    }
+    if (question.type === 'Matching' && question.matchingPairs?.length) {
+      const pairs = question.matchingPairs.map((p) => ({
+        leftText: p.leftText,
+        rightText: p.rightText,
+        leftHtml: p.leftHtml || '',
+        rightHtml: p.rightHtml || '',
+        leftFormat: p.leftFormat,
+        rightFormat: p.rightFormat,
+        leftImage: p.leftImage,
+        rightImage: p.rightImage,
+      }))
+      return {
+        type: 'Matching',
+        sessionId,
+        pairs,
+        responses: cp?.responses || pairs.map((p) => ({
+          text: p.rightText,
+          html: p.rightHtml,
+          format: p.rightFormat,
+          image: p.rightImage,
+        })),
+        shuffleResponses: cp?.shuffleResponses ?? false,
+        shuffleSeed: cp?.shuffleSeed || question.id,
+        layout: cp?.layout || {},
+        columnLabels: cp?.columnLabels,
+      }
+    }
+    return cp ? { ...cp, sessionId } : null
+  }, [question.choices, question.layout?.choicePreview, question.matchingPairs, question.type, question.wordBankWords, sessionId])
 
   return (
     <div className="layout-workspace">
@@ -612,6 +752,7 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
           )}
         </div>
 
+        <div className="canvas-stage-host">
         <div
           className="canvas-stage"
           style={{ width: CANVAS_W * scale, height: CANVAS_H * scale }}
@@ -633,6 +774,7 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
 
             {renderOrder.map((obj, zIdx) => {
               if (!obj.r?.w || !obj.r?.h) return null
+
               const isSelected = obj.index === selectedIndex
               const hasError = overlaps.some(
                 (w) => w.severity === 'error' && (w.a === obj.index || w.b === obj.index),
@@ -646,7 +788,7 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
               return (
                 <div
                   key={obj.index}
-                  className={`canvas-object wysiwyg-object ${obj.role} ${visual?.variant || ''} ${isSelected ? 'selected' : ''} ${hasError ? 'has-error' : ''}`}
+                  className={`canvas-object wysiwyg-object ${obj.role} ${visual?.variant || ''} ${question.type === 'Matching' && (obj.text === 'Cột A' || obj.text === 'Cột B') ? 'matching-label' : ''} ${isSelected ? 'selected' : ''} ${hasError ? 'has-error' : ''}`}
                   style={{ left: x, top: y, width: w, height: h, zIndex: zIdx + 1, ...shapeStyle }}
                   onPointerDown={(e) => { e.stopPropagation(); onPointerDown(e, obj.index) }}
                 >
@@ -726,6 +868,49 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
                           }}
                           onEditorMount={registerEditor}
                         />
+                      ) : question.type === 'Matching' ? (
+                        <MatchingPreview
+                          preview={preview}
+                          wysiwyg
+                          sessionId={sessionId}
+                        />
+                      ) : question.type === 'TrueFalse' ? (
+                        <TrueFalsePreview
+                          preview={preview}
+                          wysiwyg
+                          sessionId={sessionId}
+                          choices={question.choices}
+                          typography={typography}
+                          editingChoiceIdx={activeEditKey === 'choice' ? activeChoiceIdx : null}
+                          onChoiceTextChange={handleChoiceTextChange}
+                          onChoiceBlur={(idx, text) => {
+                            setActiveEditKey(null)
+                            setActiveChoiceIdx(null)
+                            syncChoiceHtml(idx, text)
+                          }}
+                          onChoiceFocus={handleChoiceFocus}
+                          onEditorMount={registerEditor}
+                        />
+                      ) : question.type === 'Sequence' ? (
+                        <SequencePreview
+                          preview={preview}
+                          wysiwyg
+                          choices={question.choices}
+                          typography={typography}
+                          editingChoiceIdx={activeEditKey === 'choice' ? activeChoiceIdx : null}
+                          onChoiceTextChange={handleChoiceTextChange}
+                          onChoiceBlur={(idx, text) => {
+                            setActiveEditKey(null)
+                            setActiveChoiceIdx(null)
+                            syncChoiceHtml(idx, text)
+                          }}
+                          onChoiceFocus={handleChoiceFocus}
+                          onEditorMount={registerEditor}
+                        />
+                      ) : question.type === 'TypeIn' ? (
+                        <TypeInPreview preview={preview} wysiwyg />
+                      ) : (question.type === 'WordBank' || question.type === 'FillInTheBlank') ? (
+                        <BlankPreview preview={preview} wysiwyg />
                       ) : (
                         <ChoicePreview
                           preview={preview}
@@ -764,7 +949,7 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
                   {obj.role === 'additionalContent' && (
                     <div className="content-zone wysiwyg-content additional-zone">
                       {preview?.type === 'WordBank' && (
-                        <div className="wordbank-hint">Word bank</div>
+                        <WordBankChips preview={preview} wysiwyg />
                       )}
                     </div>
                   )}
@@ -795,9 +980,16 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
             ))}
           </div>
         </div>
+        </div>
       </div>
 
-      <div className="layout-side">
+      <PanelResizeHandle
+        side="left"
+        label="Kéo để đổi chiều rộng panel thuộc tính"
+        onPointerDown={(e) => rightPanelResize.onPointerDown(e, 'expand-left')}
+      />
+
+      <div className="layout-side" style={{ width: rightPanelResize.width }}>
         <div className="layer-panel">
           <h4>Thành phần</h4>
           {[...renderOrder].reverse().map((obj) => (

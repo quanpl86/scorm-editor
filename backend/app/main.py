@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import shutil
+import zipfile
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from .excel_import import parse_excel_file
 from .fonts import resolve_font_path
 from .preview import build_preview_html, preview_res_root
+from .quiz_builder import IMPORT_TEMPLATE_DIR, MASTER_SCORM, build_quiz_from_excel
 from .scorm_parser import SESSIONS_ROOT, ScormSession, find_index_html, get_session
 
 app = FastAPI(title="SCORM Editor", version="1.0.0")
@@ -33,6 +36,9 @@ app.add_middleware(
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 SAMPLE_ZIP = PROJECT_ROOT / "samples" / "DGSA2025-HP05-B01.zip"
 SAMPLE_DIR = PROJECT_ROOT / "samples" / "DGSA_Level5_Bai1"
+EXCEL_SAMPLE = IMPORT_TEMPLATE_DIR / "Sample_import_template.xls"
+
+EXCEL_SUFFIXES = {".xls", ".xlsx"}
 
 
 class SavePayload(BaseModel):
@@ -69,6 +75,125 @@ async def import_scorm(file: UploadFile = File(...)):
     finally:
         if temp_zip.exists():
             temp_zip.unlink()
+
+
+def _find_excel_file(root: Path) -> Path | None:
+    for path in sorted(root.rglob("*")):
+        if path.is_file() and path.suffix.lower() in EXCEL_SUFFIXES:
+            return path
+    return None
+
+
+def _create_quiz_from_excel(
+    excel_path: Path,
+    *,
+    excel_dir: Path,
+    quiz_title: str | None = None,
+    group_title: str = "Imported Questions",
+) -> dict:
+    if not MASTER_SCORM.exists():
+        raise HTTPException(
+            500,
+            f"Không tìm thấy SCORM mẫu để tạo quiz: {MASTER_SCORM}",
+        )
+
+    rows = parse_excel_file(excel_path)
+    session = ScormSession.create_from_source(MASTER_SCORM)
+    quiz_json, report = build_quiz_from_excel(
+        session.quiz_json,
+        rows,
+        package_root=session.package_root,
+        excel_dir=excel_dir,
+        group_title=group_title,
+        quiz_title=quiz_title,
+    )
+    session.quiz_json = quiz_json
+    session.persist()
+    view = session.get_view()
+    view["importReport"] = report
+    imported = sum(1 for r in report if r.get("status") == "imported")
+    view["importSummary"] = {
+        "total": len(report),
+        "imported": imported,
+        "errors": sum(1 for r in report if r.get("status") == "error"),
+        "skipped": sum(1 for r in report if r.get("status") == "skipped"),
+    }
+    return view
+
+
+@app.post("/api/import/excel")
+async def import_excel(
+    file: UploadFile = File(...),
+    quiz_title: str | None = Form(None),
+    group_title: str = Form("Imported Questions"),
+):
+    if not file.filename:
+        raise HTTPException(400, "Thiếu tên file")
+
+    name = file.filename.lower()
+    content = await file.read()
+    if not content:
+        raise HTTPException(400, "File rỗng")
+
+    temp_root = SESSIONS_ROOT / f"excel_upload_{file.filename}"
+    temp_root.mkdir(parents=True, exist_ok=True)
+
+    try:
+        if name.endswith(".zip"):
+            zip_path = temp_root / file.filename
+            zip_path.write_bytes(content)
+            extract_dir = temp_root / "extracted"
+            extract_dir.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                zf.extractall(extract_dir)
+            excel_path = _find_excel_file(extract_dir)
+            if not excel_path:
+                raise HTTPException(400, "Zip không chứa file .xls hoặc .xlsx")
+            excel_dir = excel_path.parent
+        elif any(name.endswith(ext) for ext in EXCEL_SUFFIXES):
+            excel_path = temp_root / Path(file.filename).name
+            excel_path.write_bytes(content)
+            excel_dir = excel_path.parent
+        else:
+            raise HTTPException(400, "Chỉ hỗ trợ .xls, .xlsx hoặc .zip (Excel + thư mục media)")
+
+        return _create_quiz_from_excel(
+            excel_path,
+            excel_dir=excel_dir,
+            quiz_title=quiz_title,
+            group_title=group_title or "Imported Questions",
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(400, f"Không thể import Excel: {exc}") from exc
+    finally:
+        if temp_root.exists():
+            shutil.rmtree(temp_root, ignore_errors=True)
+
+
+@app.post("/api/import/excel/sample")
+def import_excel_sample(
+    quiz_title: str | None = None,
+    group_title: str = "Imported Questions",
+):
+    if not EXCEL_SAMPLE.exists():
+        raise HTTPException(404, f"File mẫu không tồn tại: {EXCEL_SAMPLE}")
+    try:
+        return _create_quiz_from_excel(
+            EXCEL_SAMPLE,
+            excel_dir=IMPORT_TEMPLATE_DIR,
+            quiz_title=quiz_title or "Sample Import Quiz",
+            group_title=group_title,
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(400, f"Không thể import mẫu Excel: {exc}") from exc
 
 
 @app.post("/api/import/sample")

@@ -92,6 +92,34 @@ function applyDirectionReflow(objects, {
   return { objects: nextObjects, changed: true }
 }
 
+/** Tự scale textbox shape (Cột A/B…) khi resizeShapeToFitText */
+function reflowShapeTextBoxes(objects) {
+  let changed = false
+  const nextObjects = objects.map((o) => {
+    if (o.role !== 'shape' || !o.text?.trim()) return o
+    const autofit = o.visual?.autofit === 'resizeShapeToFitText'
+    if (!autofit) return o
+
+    const fontSize = o.textFormat?.fontSize || 18
+    const neededH = estimateDirectionHeight(o.text, fontSize, o.r, o.visual)
+    const neededW = Math.max(
+      o.r.w,
+      Math.ceil(o.text.length * fontSize * 0.55) + (o.visual?.padding?.l || 10) + (o.visual?.padding?.r || 10),
+    )
+
+    const newH = Math.max(o.r.h, neededH)
+    const newW = neededW > o.r.w + 0.5 ? neededW : o.r.w
+    if (Math.abs(newH - o.r.h) < 0.5 && Math.abs(newW - o.r.w) < 0.5) return o
+
+    changed = true
+    return {
+      ...o,
+      r: clampRect({ ...o.r, h: newH, w: newW }),
+    }
+  })
+  return { objects: nextObjects, changed }
+}
+
 function itemFontSize(item, choices, idx, typography) {
   return item?.format?.fontSize
     || choices?.[idx]?.format?.fontSize
@@ -171,6 +199,68 @@ export function computeChoiceMetrics(preview, choices, typography, contentRect) 
   }
 }
 
+export function computeMatchingMetrics(preview, typography, contentRect) {
+  const pairs = preview?.pairs || []
+  const layout = preview?.layout || {}
+  if (!pairs.length) return null
+
+  const contentPad = layout.contentPadding || { l: 10, r: 10, t: 5, b: 5 }
+  const rowCount = pairs.length
+  const choicePadding = layout.choicePadding ?? 16
+  const rowGap = layout.rowGap ?? 12
+  const portReserve = 40
+
+  const availH = Math.max(0, (contentRect?.h || 0) - contentPad.t - contentPad.b)
+  const contentWidth = layout.contentWidth
+    ?? Math.max(120, (contentRect?.w || 300) - contentPad.l - contentPad.r)
+  const colWidth = layout.premiseWidth || layout.responseWidth || (contentWidth - 24) / 2
+
+  let uniformRowHeight = layout.rowHeight
+    ?? (rowCount > 0 && availH > 0
+      ? Math.round(((availH - Math.max(0, rowCount - 1) * rowGap) / rowCount) * 100) / 100
+      : 52)
+
+  let maxLinesNeeded = 1
+  let maxFontSize = typography?.contentSize || 18
+  pairs.forEach((pair) => {
+    ;['leftText', 'rightText'].forEach((key) => {
+      const text = pair[key] || ''
+      const fmtKey = key === 'leftText' ? 'leftFormat' : 'rightFormat'
+      const fontSize = pair[fmtKey]?.fontSize || maxFontSize
+      maxFontSize = Math.max(maxFontSize, fontSize)
+      const lines = estimateLines(text, fontSize, colWidth - portReserve - choicePadding * 2)
+      maxLinesNeeded = Math.max(maxLinesNeeded, lines)
+    })
+  })
+
+  const lineHeight = 1.28
+  const linesFitInRow = Math.max(1, Math.floor(uniformRowHeight / (maxFontSize * lineHeight)))
+
+  if (maxLinesNeeded > linesFitInRow) {
+    uniformRowHeight = Math.round(
+      (uniformRowHeight * maxLinesNeeded / linesFitInRow) * 100,
+    ) / 100
+  }
+
+  const stackHeight = rowCount * uniformRowHeight + Math.max(0, rowCount - 1) * rowGap
+  const contentHeight = Math.round((stackHeight + contentPad.t + contentPad.b) * 100) / 100
+  const originalContentH = contentRect?.h || 0
+
+  return {
+    rowHeight: uniformRowHeight,
+    rows: rowCount,
+    columns: 2,
+    rowGap,
+    columnGap: layout.columnGap ?? 64,
+    premiseWidth: layout.premiseWidth,
+    responseWidth: layout.responseWidth,
+    stackHeight,
+    contentHeight,
+    contentPad,
+    needsExpansion: contentHeight > originalContentH + 0.5,
+  }
+}
+
 /**
  * Reflow giữ vị trí SCORM gốc; chỉ mở rộng content.h khi text tràn.
  */
@@ -195,7 +285,14 @@ export function reflowSlideLayout(objects, {
   let workingObjects = dirReflow.objects
   let layoutChanged = dirReflow.changed
 
-  if (!choicePreview?.items?.length) {
+  const shapeReflow = reflowShapeTextBoxes(workingObjects)
+  workingObjects = shapeReflow.objects
+  layoutChanged = layoutChanged || shapeReflow.changed
+
+  const isMatching = choicePreview?.type === 'Matching' && choicePreview?.pairs?.length
+  const hasChoices = choicePreview?.items?.length
+
+  if (!hasChoices && !isMatching) {
     return { objects: workingObjects, choicePreview, changed: layoutChanged }
   }
 
@@ -204,7 +301,9 @@ export function reflowSlideLayout(objects, {
     return { objects: workingObjects, choicePreview, changed: layoutChanged }
   }
 
-  const metrics = computeChoiceMetrics(choicePreview, choices, typography, content.r)
+  const metrics = isMatching
+    ? computeMatchingMetrics(choicePreview, typography, content.r)
+    : computeChoiceMetrics(choicePreview, choices, typography, content.r)
   if (!metrics) {
     return { objects: workingObjects, choicePreview, changed: layoutChanged }
   }
@@ -214,11 +313,14 @@ export function reflowSlideLayout(objects, {
     layout: {
       ...choicePreview.layout,
       rowHeight: metrics.rowHeight,
-      rowHeights: metrics.rowHeights,
-      gridRowHeights: metrics.gridRowHeights,
+      ...(metrics.rowHeights ? { rowHeights: metrics.rowHeights } : {}),
+      ...(metrics.gridRowHeights ? { gridRowHeights: metrics.gridRowHeights } : {}),
       rows: metrics.rows,
       columns: metrics.columns,
       rowGap: metrics.rowGap,
+      columnGap: metrics.columnGap,
+      premiseWidth: metrics.premiseWidth,
+      responseWidth: metrics.responseWidth,
     },
   }
 

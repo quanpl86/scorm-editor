@@ -11,6 +11,7 @@ const TYPE_LABELS = {
   WordBank: 'Điền từ',
   FillInTheBlank: 'Điền khuyết',
   TypeIn: 'Gõ đáp án',
+  TrueFalse: 'Đúng/Sai',
   DND: 'Kéo thả',
   ResultSlide: 'Kết quả',
   IntroSlide: 'Mở đầu',
@@ -62,7 +63,7 @@ export default function QuizPreview({ quiz, onBack, onSave, saving }) {
   }, [quiz.introSlide, quiz.resultSlides, activeQuestions])
 
   const playerUrl = useMemo(
-    () => `${previewPlayerUrl(quiz.sessionId)}?t=${reloadKey}`,
+    () => previewPlayerUrl(quiz.sessionId, { reloadKey }),
     [quiz.sessionId, reloadKey],
   )
 

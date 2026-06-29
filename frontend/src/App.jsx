@@ -1,7 +1,19 @@
 import { useCallback, useRef, useState } from 'react'
-import { assetUrl, exportSession, importSample, importZip, saveSession, uploadImage } from './api'
+import {
+  assetUrl,
+  exportSession,
+  importExcel,
+  importExcelSample,
+  importSample,
+  importZip,
+  saveSession,
+  uploadImage,
+} from './api'
 import LayoutCanvas from './LayoutCanvas'
+import PanelResizeHandle from './PanelResizeHandle'
+import QuestionSideView from './QuestionSideView'
 import QuizPreview from './QuizPreview'
+import { useResizableWidth } from './useResizableWidth'
 import TextFormatToolbar, { TextFormatPreview } from './TextFormatToolbar'
 import { buildStyledHtml, defaultFormat } from './textFormatUtils'
 
@@ -15,6 +27,7 @@ const TYPE_LABELS = {
   WordBank: 'Điền từ',
   FillInTheBlank: 'Điền khuyết',
   TypeIn: 'Gõ đáp án',
+  TrueFalse: 'Đúng/Sai',
   DND: 'Kéo thả',
   IntroSlide: 'Giới thiệu',
   ResultSlide: 'Kết quả',
@@ -137,6 +150,8 @@ function buildSlideSavePayload(slide) {
   if (synced._dirtyChoices) payload.choices = synced.choices
   if (synced._dirtyFeedback) payload.feedback = synced.feedback
   if (synced._dirtyTypeIn) payload.typeInAnswers = synced.typeInAnswers
+  if (synced._dirtyWordBank) payload.wordBankWords = synced.wordBankWords
+  if (synced._dirtyRichHtml) payload.richHtml = synced.layout?.choicePreview?.richHtml
   return payload
 }
 
@@ -173,6 +188,7 @@ function applyDirtyFlags(slide, patch) {
   if (fieldChanged(slide, patch, 'choices')) next._dirtyChoices = true
   if (fieldChanged(slide, patch, 'feedback')) next._dirtyFeedback = true
   if (fieldChanged(slide, patch, 'typeInAnswers')) next._dirtyTypeIn = true
+  if (fieldChanged(slide, patch, 'wordBankWords')) next._dirtyWordBank = true
   return next
 }
 
@@ -205,56 +221,144 @@ function editableBadge(level) {
   return <span className="badge badge-readonly">Chỉ xem</span>
 }
 
-function ImportPage({ onImport, loading, error }) {
-  const inputRef = useRef(null)
-  const [drag, setDrag] = useState(false)
+function ImportReport({ report, summary }) {
+  if (!report?.length) return null
+  const statusLabel = {
+    imported: 'Đã import',
+    error: 'Lỗi',
+    skipped: 'Bỏ qua',
+  }
+  return (
+    <div className="import-report">
+      {summary && (
+        <div className="import-report-summary">
+          <span>{summary.imported}/{summary.total} câu import thành công</span>
+          {summary.errors > 0 && <span className="import-report-warn">{summary.errors} lỗi</span>}
+          {summary.skipped > 0 && <span className="import-report-muted">{summary.skipped} bỏ qua</span>}
+        </div>
+      )}
+      <ul className="import-report-list">
+        {report.map((row) => (
+          <li key={row.row} className={`import-report-item import-report-${row.status}`}>
+            <span className="import-report-row">Dòng {row.row}</span>
+            <span className="import-report-type">{row.type}</span>
+            <span className="import-report-status">{statusLabel[row.status] || row.status}</span>
+            {row.question && <span className="import-report-question">{row.question}</span>}
+            {row.errors?.length > 0 && (
+              <span className="import-report-error">{row.errors.join('; ')}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
 
-  const handleFile = async (file) => {
+function ImportPage({ onImport, loading, error, importReport }) {
+  const scormInputRef = useRef(null)
+  const excelInputRef = useRef(null)
+  const [scormDrag, setScormDrag] = useState(false)
+  const [excelDrag, setExcelDrag] = useState(false)
+
+  const handleScormFile = async (file) => {
     if (!file?.name?.toLowerCase().endsWith('.zip')) return
     await onImport(() => importZip(file))
+  }
+
+  const handleExcelFile = async (file) => {
+    const name = file?.name?.toLowerCase() || ''
+    if (!name.endsWith('.xls') && !name.endsWith('.xlsx') && !name.endsWith('.zip')) return
+    await onImport(() => importExcel(file))
   }
 
   return (
     <div className="import-page">
       <div className="import-card">
         <h2>SCORM Editor</h2>
-        <p>Import gói SCORM iSpring Quiz, chỉnh sửa nội dung, và export lại file zip chuẩn LMS.</p>
+        <p>Import gói SCORM iSpring Quiz hoặc tạo quiz mới từ template Excel iSpring QuizMaker.</p>
 
         {error && <div className="error-banner">{error}</div>}
+        {importReport && <ImportReport report={importReport.report} summary={importReport.summary} />}
 
-        <div
-          className={`dropzone ${drag ? 'dragover' : ''}`}
-          onClick={() => inputRef.current?.click()}
-          onDragOver={(e) => { e.preventDefault(); setDrag(true) }}
-          onDragLeave={() => setDrag(false)}
-          onDrop={(e) => {
-            e.preventDefault()
-            setDrag(false)
-            handleFile(e.dataTransfer.files[0])
-          }}
-        >
-          <div className="dropzone-icon">📦</div>
-          <div className="dropzone-text">
-            {loading ? 'Đang xử lý...' : 'Kéo thả file .zip hoặc bấm để chọn'}
+        <section className="import-section">
+          <h3>Tạo quiz từ Excel</h3>
+          <p className="import-section-hint">
+            Định dạng theo{' '}
+            <a
+              href="https://ispringhelpdocs.com/quizmaker9/importing-questions-from-excel-6128674.html"
+              target="_blank"
+              rel="noreferrer"
+            >
+              hướng dẫn iSpring QuizMaker
+            </a>
+            . Hỗ trợ MC, MR, TF, Short Answer, Matching, Sequence, Info Slide.
+          </p>
+          <div
+            className={`dropzone dropzone-excel ${excelDrag ? 'dragover' : ''}`}
+            onClick={() => excelInputRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); setExcelDrag(true) }}
+            onDragLeave={() => setExcelDrag(false)}
+            onDrop={(e) => {
+              e.preventDefault()
+              setExcelDrag(false)
+              handleExcelFile(e.dataTransfer.files[0])
+            }}
+          >
+            <div className="dropzone-icon">📊</div>
+            <div className="dropzone-text">
+              {loading ? 'Đang xử lý...' : 'Kéo thả file .xls / .xlsx hoặc .zip (Excel + media)'}
+            </div>
+            <div className="dropzone-hint">Ảnh đính kèm: đường dẫn tương đối như media\Columbus_ship.jpg</div>
+            <input
+              ref={excelInputRef}
+              type="file"
+              accept=".xls,.xlsx,.zip"
+              hidden
+              onChange={(e) => handleExcelFile(e.target.files[0])}
+            />
           </div>
-          <div className="dropzone-hint">Hỗ trợ SCORM 1.2 từ iSpring Quiz Maker (zip lồng zip)</div>
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".zip"
-            hidden
-            onChange={(e) => handleFile(e.target.files[0])}
-          />
-        </div>
+          <div className="sample-buttons">
+            <button className="btn btn-primary" disabled={loading} onClick={() => onImport(() => importExcelSample())}>
+              Import mẫu Excel (Sample_import_template.xls)
+            </button>
+          </div>
+        </section>
 
-        <div className="sample-buttons">
-          <button className="btn" disabled={loading} onClick={() => onImport(() => importSample('zip'))}>
-            Load mẫu ZIP
-          </button>
-          <button className="btn" disabled={loading} onClick={() => onImport(() => importSample('dir'))}>
-            Load mẫu thư mục
-          </button>
-        </div>
+        <section className="import-section">
+          <h3>Chỉnh sửa SCORM có sẵn</h3>
+          <div
+            className={`dropzone ${scormDrag ? 'dragover' : ''}`}
+            onClick={() => scormInputRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); setScormDrag(true) }}
+            onDragLeave={() => setScormDrag(false)}
+            onDrop={(e) => {
+              e.preventDefault()
+              setScormDrag(false)
+              handleScormFile(e.dataTransfer.files[0])
+            }}
+          >
+            <div className="dropzone-icon">📦</div>
+            <div className="dropzone-text">
+              {loading ? 'Đang xử lý...' : 'Kéo thả file .zip hoặc bấm để chọn'}
+            </div>
+            <div className="dropzone-hint">Hỗ trợ SCORM 1.2 từ iSpring Quiz Maker (zip lồng zip)</div>
+            <input
+              ref={scormInputRef}
+              type="file"
+              accept=".zip"
+              hidden
+              onChange={(e) => handleScormFile(e.target.files[0])}
+            />
+          </div>
+          <div className="sample-buttons">
+            <button className="btn" disabled={loading} onClick={() => onImport(() => importSample('zip'))}>
+              Load mẫu ZIP
+            </button>
+            <button className="btn" disabled={loading} onClick={() => onImport(() => importSample('dir'))}>
+              Load mẫu thư mục
+            </button>
+          </div>
+        </section>
       </div>
     </div>
   )
@@ -414,14 +518,30 @@ function QuestionEditor({ question, sessionId, onChange, onDelete, onImageUpload
         </div>
       )}
 
-      {question.sequenceItems?.length > 0 && (
+      {question.type === 'WordBank' && (
         <div className="editor-section">
-          <h4>Thứ tự (Sequence) — chỉ xem</h4>
-          {question.sequenceItems.map((item, idx) => (
-            <div key={item.id} className="choice-card">
-              <span style={{ fontSize: '0.85rem' }}>{idx + 1}. {item.text}</span>
+          <h4>Từ trong word bank</h4>
+          {(question.wordBankWords || question.layout?.choicePreview?.extraWords || []).map((word, idx) => (
+            <div key={idx} className="field">
+              <input
+                type="text"
+                value={word}
+                onChange={(e) => {
+                  const words = [...(question.wordBankWords || question.layout?.choicePreview?.extraWords || [])]
+                  words[idx] = e.target.value
+                  update({ wordBankWords: words })
+                }}
+              />
             </div>
           ))}
+          <button
+            className="btn btn-sm"
+            onClick={() => update({
+              wordBankWords: [...(question.wordBankWords || question.layout?.choicePreview?.extraWords || []), ''],
+            })}
+          >
+            + Thêm từ
+          </button>
         </div>
       )}
 
@@ -614,7 +734,20 @@ function SpecialSlideEditor({ slide, sessionId, onChange, onImageUpload, hideHea
   )
 }
 
-function EditorWorkspace({ slide, sessionId, fonts, onChange, onPatch, onDelete, onImageUpload }) {
+function EditorWorkspace({
+  slide,
+  quiz,
+  selectedId,
+  sessionId,
+  fonts,
+  saving,
+  onChange,
+  onPatch,
+  onDelete,
+  onImageUpload,
+  onSelectSlide,
+  onSave,
+}) {
   const [tab, setTab] = useState('layout')
   const isSpecial = slide?.slideRole === 'intro' || slide?.slideRole === 'result'
 
@@ -632,8 +765,19 @@ function EditorWorkspace({ slide, sessionId, fonts, onChange, onPatch, onDelete,
         <button type="button" className={tab === 'content' ? 'active' : ''} onClick={() => setTab('content')}>
           {isSpecial ? 'Nội dung' : 'Nội dung & Feedback'}
         </button>
+        <button type="button" className={tab === 'sideview' ? 'active' : ''} onClick={() => setTab('sideview')}>
+          Side View
+        </button>
       </div>
-      {tab === 'layout' ? (
+      {tab === 'sideview' ? (
+        <QuestionSideView
+          quiz={quiz}
+          selectedId={selectedId}
+          onSelectSlide={onSelectSlide}
+          onSave={onSave}
+          saving={saving}
+        />
+      ) : tab === 'layout' ? (
         <LayoutCanvas
           question={slide}
           sessionId={sessionId}
@@ -670,7 +814,9 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const [importReport, setImportReport] = useState(null)
   const [toast, setToast] = useState(null)
+  const sidebarResize = useResizableWidth('scorm-editor.sidebar-width', 320, { min: 240, max: 480 })
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type })
@@ -680,12 +826,23 @@ export default function App() {
   const handleImport = async (fn) => {
     setLoading(true)
     setError(null)
+    setImportReport(null)
     try {
       const data = await fn()
       setQuiz(data)
       setSelectedId(firstSelectableId(data))
       const slideCount = (data.introSlide ? 1 : 0) + (data.resultSlides?.length || 0)
-      showToast(`Đã import ${data.questionCount} câu + ${slideCount} slide đặc biệt`)
+      if (data.importReport) {
+        setImportReport({ report: data.importReport, summary: data.importSummary })
+        const s = data.importSummary
+        showToast(
+          s
+            ? `Excel: ${s.imported}/${s.total} câu import — tổng ${data.questionCount} câu trong quiz`
+            : `Đã import ${data.questionCount} câu`,
+        )
+      } else {
+        showToast(`Đã import ${data.questionCount} câu + ${slideCount} slide đặc biệt`)
+      }
     } catch (err) {
       setError(err.message)
     } finally {
@@ -838,7 +995,12 @@ export default function App() {
         <header className="header">
           <h1><span>SCORM</span> Editor</h1>
         </header>
-        <ImportPage onImport={handleImport} loading={loading} error={error} />
+        <ImportPage
+          onImport={handleImport}
+          loading={loading}
+          error={error}
+          importReport={importReport}
+        />
         {loading && (
           <div className="loading" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)' }}>
             <div className="spinner" /> Đang phân tích gói SCORM...
@@ -886,7 +1048,7 @@ export default function App() {
       </header>
 
       <div className="main">
-        <aside className="sidebar">
+        <aside className="sidebar" style={{ width: sidebarResize.width }}>
           <div className="sidebar-header">
             <h3>Cài đặt Quiz</h3>
             <div className="meta-field">
@@ -977,14 +1139,25 @@ export default function App() {
           </div>
         </aside>
 
+        <PanelResizeHandle
+          side="right"
+          label="Kéo để đổi chiều rộng danh sách câu hỏi"
+          onPointerDown={(e) => sidebarResize.onPointerDown(e, 'expand-right')}
+        />
+
         <EditorWorkspace
           slide={selectedSlide}
+          quiz={quiz}
+          selectedId={selectedId}
           sessionId={quiz.sessionId}
           fonts={quiz.fonts}
+          saving={saving}
           onChange={updateSlide}
           onPatch={patchSlide}
           onDelete={deleteQuestion}
           onImageUpload={handleImageUpload}
+          onSelectSlide={setSelectedId}
+          onSave={persistQuiz}
         />
       </div>
 
