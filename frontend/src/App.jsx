@@ -3,7 +3,7 @@ import { assetUrl, exportSession, importSample, importZip, saveSession, uploadIm
 import LayoutCanvas from './LayoutCanvas'
 import QuizPreview from './QuizPreview'
 import TextFormatToolbar, { TextFormatPreview } from './TextFormatToolbar'
-import { defaultFormat } from './textFormatUtils'
+import { buildStyledHtml, defaultFormat } from './textFormatUtils'
 
 const TYPE_LABELS = {
   MultipleChoice: 'Trắc nghiệm',
@@ -25,13 +25,164 @@ const RESULT_KIND_LABELS = {
   failed: 'Không đạt',
 }
 
+function sanitizeLayoutForSave(layout) {
+  if (!layout) return null
+  return {
+    objects: (layout.objects || []).map(({ index, r }) => ({ index, r })),
+    zOrder: layout.zOrder,
+  }
+}
+
+/** Giữ HTML đúng như canvas trước khi gửi server — tránh rebuild làm lệch font/layout */
+function syncSlideCanvasHtml(slide) {
+  if (!slide?.layout) return slide
+  let next = { ...slide }
+  const typography = slide.layout.typography
+
+  if (slide._dirtyQuestionText || slide._dirtyQuestionFormat) {
+    const dir = slide.layout.objects?.find((o) => o.I === 'direction')
+    if (dir) {
+      const html = buildStyledHtml(
+        slide.questionText,
+        'title',
+        slide.questionFormat,
+        typography,
+        dir.html,
+      )
+      next = {
+        ...next,
+        layout: {
+          ...next.layout,
+          objects: (next.layout.objects || []).map((o) =>
+            o.I === 'direction' ? { ...o, html, text: slide.questionText } : o,
+          ),
+        },
+      }
+      next._canvasQuestionHtml = html
+    }
+  }
+
+  if (slide._dirtySubtitleText || slide._dirtySubtitleFormat) {
+    const content = slide.layout.objects?.find((o) => o.role === 'content')
+    if (content?.html != null || slide.subtitleText != null) {
+      const html = buildStyledHtml(
+        slide.subtitleText || '',
+        'content',
+        slide.subtitleFormat,
+        typography,
+        content?.html,
+      )
+      next = {
+        ...next,
+        layout: {
+          ...next.layout,
+          objects: (next.layout.objects || []).map((o) =>
+            o.role === 'content' && slide.slideRole === 'intro'
+              ? { ...o, html, text: slide.subtitleText }
+              : o,
+          ),
+        },
+      }
+      next._canvasSubtitleHtml = html
+    }
+  }
+
+  if (slide._dirtyChoices && slide.choices?.length) {
+    const preview = slide.layout.choicePreview
+    const items = preview?.items || []
+    const syncedChoices = slide.choices.map((ch, idx) => {
+      const item = items[idx]
+      const html = item?.html
+        ? buildStyledHtml(ch.text, 'content', ch.format, typography, item.html)
+        : buildStyledHtml(ch.text, 'content', ch.format, typography, null)
+      return { ...ch, html }
+    })
+    const syncedItems = items.map((item, idx) => {
+      const ch = slide.choices[idx]
+      if (!ch) return item
+      return {
+        ...item,
+        text: ch.text,
+        html: syncedChoices[idx]?.html || item.html,
+      }
+    })
+    next = {
+      ...next,
+      choices: syncedChoices,
+      layout: {
+        ...next.layout,
+        choicePreview: preview ? { ...preview, items: syncedItems } : preview,
+      },
+    }
+  }
+
+  return next
+}
+
+function buildSlideSavePayload(slide) {
+  if (!slide) return null
+  const synced = syncSlideCanvasHtml(slide)
+  const payload = { id: synced.id }
+  if (synced.deleted) return { ...payload, deleted: true }
+  if (synced.slideRole) payload.slideRole = synced.slideRole
+  if (synced.type) payload.type = synced.type
+
+  if (synced._dirtyQuestionText) payload.questionText = synced.questionText
+  if (synced._dirtyQuestionFormat) payload.questionFormat = synced.questionFormat
+  if (synced._canvasQuestionHtml) payload.questionHtml = synced._canvasQuestionHtml
+  if (synced._dirtySubtitleText) payload.subtitleText = synced.subtitleText
+  if (synced._dirtySubtitleFormat) payload.subtitleFormat = synced.subtitleFormat
+  if (synced._canvasSubtitleHtml) payload.subtitleHtml = synced._canvasSubtitleHtml
+  if (synced._dirtyLayout) payload.layout = sanitizeLayoutForSave(synced.layout)
+  if (synced._dirtyChoices) payload.choices = synced.choices
+  if (synced._dirtyFeedback) payload.feedback = synced.feedback
+  if (synced._dirtyTypeIn) payload.typeInAnswers = synced.typeInAnswers
+  return payload
+}
+
+function clearSlideDirtyFlags(slide) {
+  if (!slide) return slide
+  const next = { ...slide }
+  Object.keys(next).forEach((key) => {
+    if (key.startsWith('_dirty') || key.startsWith('_canvas')) delete next[key]
+  })
+  return next
+}
+
+function clearDirtyFlags(quiz) {
+  if (!quiz) return quiz
+  return {
+    ...quiz,
+    introSlide: clearSlideDirtyFlags(quiz.introSlide),
+    resultSlides: (quiz.resultSlides || []).map(clearSlideDirtyFlags),
+    questions: (quiz.questions || []).map(clearSlideDirtyFlags),
+  }
+}
+
+function fieldChanged(slide, patch, key) {
+  return key in patch && JSON.stringify(slide?.[key]) !== JSON.stringify(patch[key])
+}
+
+function applyDirtyFlags(slide, patch) {
+  const next = { ...slide, ...patch }
+  if (fieldChanged(slide, patch, 'questionText')) next._dirtyQuestionText = true
+  if (fieldChanged(slide, patch, 'questionFormat')) next._dirtyQuestionFormat = true
+  if (fieldChanged(slide, patch, 'subtitleText')) next._dirtySubtitleText = true
+  if (fieldChanged(slide, patch, 'subtitleFormat')) next._dirtySubtitleFormat = true
+  if (fieldChanged(slide, patch, 'layout') || patch._dirtyLayout) next._dirtyLayout = true
+  if (fieldChanged(slide, patch, 'choices')) next._dirtyChoices = true
+  if (fieldChanged(slide, patch, 'feedback')) next._dirtyFeedback = true
+  if (fieldChanged(slide, patch, 'typeInAnswers')) next._dirtyTypeIn = true
+  return next
+}
+
 function buildSavePayload(quiz) {
   return {
     title: quiz.title,
     passingScore: quiz.passingScore,
-    introSlide: quiz.introSlide || null,
-    resultSlides: quiz.resultSlides || [],
-    questions: quiz.questions,
+    introSlide: buildSlideSavePayload(quiz.introSlide),
+    resultSlides: (quiz.resultSlides || []).map(buildSlideSavePayload).filter(Boolean),
+    questions: (quiz.questions || []).map(buildSlideSavePayload),
   }
 }
 
@@ -547,19 +698,21 @@ export default function App() {
   const updateSlide = useCallback((updated) => {
     setQuiz((prev) => {
       if (updated.slideRole === 'intro') {
-        return { ...prev, introSlide: updated }
+        return { ...prev, introSlide: applyDirtyFlags(prev.introSlide || updated, updated) }
       }
       if (updated.slideRole === 'result') {
         return {
           ...prev,
           resultSlides: (prev.resultSlides || []).map((r) =>
-            r.id === updated.id ? updated : r,
+            r.id === updated.id ? applyDirtyFlags(r, updated) : r,
           ),
         }
       }
       return {
         ...prev,
-        questions: prev.questions.map((q) => (q.id === updated.id ? updated : q)),
+        questions: prev.questions.map((q) =>
+          q.id === updated.id ? applyDirtyFlags(q, updated) : q,
+        ),
       }
     })
   }, [])
@@ -568,20 +721,20 @@ export default function App() {
     if (!selectedId) return
     setQuiz((prev) => {
       if (prev.introSlide?.id === selectedId) {
-        return { ...prev, introSlide: { ...prev.introSlide, ...patch } }
+        return { ...prev, introSlide: applyDirtyFlags(prev.introSlide, patch) }
       }
       if (prev.resultSlides?.some((r) => r.id === selectedId)) {
         return {
           ...prev,
           resultSlides: prev.resultSlides.map((r) =>
-            r.id === selectedId ? { ...r, ...patch } : r,
+            r.id === selectedId ? applyDirtyFlags(r, patch) : r,
           ),
         }
       }
       return {
         ...prev,
         questions: prev.questions.map((q) =>
-          q.id === selectedId ? { ...q, ...patch } : q,
+          q.id === selectedId ? applyDirtyFlags(q, patch) : q,
         ),
       }
     })
@@ -604,9 +757,21 @@ export default function App() {
 
   const persistQuiz = async () => {
     if (!quiz) return null
-    const data = await saveSession(quiz.sessionId, buildSavePayload(quiz))
-    setQuiz(data)
-    return data
+    await saveSession(quiz.sessionId, buildSavePayload(quiz))
+    // Giữ nguyên 100% state canvas — không thay bằng dữ liệu server tái trích xuất
+    setQuiz((prev) => {
+      const questions = (prev.questions || [])
+        .filter((q) => !q.deleted)
+        .map((q) => clearSlideDirtyFlags(syncSlideCanvasHtml(q)))
+      return clearDirtyFlags({
+        ...prev,
+        questions,
+        questionCount: questions.length,
+        resultSlides: (prev.resultSlides || []).map(clearSlideDirtyFlags),
+        introSlide: clearSlideDirtyFlags(prev.introSlide),
+      })
+    })
+    return quiz
   }
 
   const handleSave = async () => {

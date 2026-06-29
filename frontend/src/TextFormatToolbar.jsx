@@ -68,6 +68,7 @@ export default function TextFormatToolbar({
             <option value="left">Trái</option>
             <option value="center">Giữa</option>
             <option value="right">Phải</option>
+            <option value="justify">Căn đều</option>
           </select>
         )}
 
@@ -99,8 +100,10 @@ export default function TextFormatToolbar({
 
 export function TextFormatPreview({ text, format, role = 'content' }) {
   const fmt = mergeFormat(format, defaultFormat(role))
+  const fontFamily = fmt.fontFamily
+    || (role === 'title' ? 'fnt6_24031' : 'fnt5_24031')
   const style = {
-    fontFamily: "fnt6_24031, 'Quicksand', sans-serif",
+    fontFamily: `${fontFamily}, 'Quicksand', sans-serif`,
     fontSize: fmt.fontSize ? `${fmt.fontSize}px` : role === 'title' ? '18px' : '16px',
     fontWeight: fmt.bold || role === 'title' ? 700 : 500,
     fontStyle: fmt.italic ? 'italic' : 'normal',
@@ -115,7 +118,6 @@ export function TextFormatPreview({ text, format, role = 'content' }) {
     minHeight: 40,
   }
   if (role === 'content') {
-    style.fontFamily = "fnt5_24031, 'Quicksand', sans-serif"
     style.fontWeight = fmt.bold ? 700 : 500
   }
   return (

@@ -474,6 +474,35 @@ def extract_layout(slide: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def layout_changed(slide: dict[str, Any], layout: dict[str, Any], *, epsilon: float = 0.5) -> bool:
+    """True when incoming layout rects/z-order differ from the slide."""
+    if not layout:
+        return False
+
+    objects = slide.get("a", {}).get("o", [])
+    for obj_update in layout.get("objects", []):
+        idx = obj_update.get("index")
+        if idx is None or idx < 0 or idx >= len(objects):
+            continue
+        incoming = obj_update.get("r", {})
+        current = objects[idx].get("r") or {}
+        if not current.get("w") and not incoming.get("w"):
+            continue
+        for key in ("x", "y", "w", "h"):
+            cur_val = float(current.get(key, 0))
+            new_val = float(incoming.get(key, cur_val))
+            if abs(cur_val - new_val) > epsilon:
+                return True
+
+    z_order = layout.get("zOrder")
+    if z_order and len(z_order) == len(objects):
+        current_order = list(range(len(objects)))
+        if z_order != current_order:
+            return True
+
+    return False
+
+
 def apply_layout(slide: dict[str, Any], layout: dict[str, Any]) -> None:
     objects = slide.get("a", {}).get("o", [])
     for obj_update in layout.get("objects", []):
@@ -493,5 +522,6 @@ def apply_layout(slide: dict[str, Any], layout: dict[str, Any]) -> None:
 
 
 def apply_question_layout_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:
-    if edit.get("layout"):
-        apply_layout(slide, edit["layout"])
+    layout = edit.get("layout")
+    if layout and layout_changed(slide, layout):
+        apply_layout(slide, layout)

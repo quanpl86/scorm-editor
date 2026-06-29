@@ -6,7 +6,7 @@ import CanvasRichText from './CanvasRichText'
 import TextFormatToolbar from './TextFormatToolbar'
 import { applyFormatToElement } from './canvasTextUtils'
 import { shapeBoxStyle, textPaddingStyle, verticalAlignStyle } from './canvasShapeUtils'
-import { defaultFormat, extractTextAlignFromHtml } from './textFormatUtils'
+import { buildStyledHtml, defaultFormat, extractTextAlignFromHtml } from './textFormatUtils'
 import {
   CANVAS_H,
   CANVAS_W,
@@ -24,6 +24,7 @@ function ChoicePreview({
   typography,
   editingChoiceIdx,
   onChoiceTextChange,
+  onChoiceBlur,
   onChoiceFocus,
   onEditorMount,
 }) {
@@ -98,6 +99,7 @@ function ChoicePreview({
                 editing
                 placeholder={`Đáp án ${i + 1}`}
                 onTextChange={(text) => onChoiceTextChange(i, text)}
+                onBlur={() => onChoiceBlur?.(i, choices?.[i]?.text || item.text || '')}
                 onFocus={() => onChoiceFocus?.(i)}
                 onEditorMount={onEditorMount}
               />
@@ -178,6 +180,10 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
   const [activeEditKey, setActiveEditKey] = useState(null)
   const [activeChoiceIdx, setActiveChoiceIdx] = useState(null)
   const [objects, setObjects] = useState(question?.layout?.objects || [])
+  const objectsSnapshot = useMemo(
+    () => JSON.stringify(question?.layout?.objects || []),
+    [question?.layout?.objects],
+  )
 
   useEffect(() => {
     setObjects(question?.layout?.objects || [])
@@ -185,6 +191,11 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
     setActiveEditKey(null)
     setActiveChoiceIdx(null)
   }, [question?.id])
+
+  useEffect(() => {
+    const incoming = question?.layout?.objects || []
+    setObjects((prev) => (JSON.stringify(prev) === JSON.stringify(incoming) ? prev : incoming))
+  }, [objectsSnapshot, question?.layout?.objects])
 
   useEffect(() => {
     const el = containerRef.current
@@ -205,6 +216,7 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
       setObjects(next)
       onChange({
         ...question,
+        _dirtyLayout: true,
         layout: {
           ...question.layout,
           objects: next,
@@ -266,6 +278,62 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
     return null
   }, [activeEditKey, activeChoiceIdx, question])
 
+  const syncDirectionHtml = useCallback(
+    (text, format = question.questionFormat) => {
+      const dir = objects.find((o) => o.I === 'direction')
+      if (!dir) return
+      const html = buildStyledHtml(
+        text,
+        'title',
+        format,
+        typography,
+        dir.html,
+      )
+      const next = objects.map((o) =>
+        o.I === 'direction' ? { ...o, html, text } : o,
+      )
+      setObjects(next)
+      onChange({
+        ...question,
+        questionText: text,
+        _dirtyQuestionText: true,
+        layout: { ...question.layout, objects: next },
+      })
+    },
+    [objects, onChange, question, typography],
+  )
+
+  const syncChoiceHtml = useCallback(
+    (idx, text, format) => {
+      const preview = question.layout?.choicePreview
+      const item = preview?.items?.[idx]
+      const ch = question.choices?.[idx]
+      if (!ch) return
+      const html = buildStyledHtml(
+        text,
+        'content',
+        format ?? ch.format,
+        typography,
+        item?.html,
+      )
+      const choices = [...question.choices]
+      choices[idx] = { ...ch, text, html }
+      const items = (preview?.items || []).map((row, i) =>
+        i === idx ? { ...row, text, html } : row,
+      )
+      onChange({
+        ...question,
+        choices,
+        _dirtyChoices: true,
+        layout: {
+          ...question.layout,
+          choicePreview: preview ? { ...preview, items } : preview,
+        },
+      })
+    },
+    [onChange, question, typography],
+  )
+
   const handleFormatChange = useCallback((fmt) => {
     const el = editingElRef.current
     if (el && activeEdit) {
@@ -274,6 +342,7 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
 
     if (activeEditKey === 'question') {
       updateSlide({ questionFormat: fmt })
+      syncDirectionHtml(question.questionText || '', fmt)
       return
     }
     if (activeEditKey === 'subtitle') {
@@ -285,8 +354,9 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
       if (!choices[activeChoiceIdx]) return
       choices[activeChoiceIdx] = { ...choices[activeChoiceIdx], format: fmt }
       updateSlide({ choices })
+      syncChoiceHtml(activeChoiceIdx, choices[activeChoiceIdx].text || '', fmt)
     }
-  }, [activeEdit, activeEditKey, activeChoiceIdx, question.choices, typography, updateSlide])
+  }, [activeEdit, activeEditKey, activeChoiceIdx, question.choices, question.questionText, syncChoiceHtml, syncDirectionHtml, typography, updateSlide])
 
   const handleChoiceTextChange = useCallback(
     (idx, text) => {
@@ -376,6 +446,7 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
     }
     onChange({
       ...question,
+      _dirtyLayout: true,
       layout: {
         ...question.layout,
         objects,
@@ -532,6 +603,10 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
                         editing={activeEditKey === 'question'}
                         placeholder="Nhập tiêu đề / nội dung chính..."
                         onTextChange={(text) => updateSlide({ questionText: text })}
+                        onBlur={() => {
+                          setActiveEditKey(null)
+                          syncDirectionHtml(question.questionText || obj.text || '')
+                        }}
                         onFocus={() => {
                           setSelectedIndex(obj.index)
                           setActiveEditKey('question')
@@ -573,6 +648,11 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
                           typography={typography}
                           editingChoiceIdx={activeEditKey === 'choice' ? activeChoiceIdx : null}
                           onChoiceTextChange={handleChoiceTextChange}
+                          onChoiceBlur={(idx, text) => {
+                            setActiveEditKey(null)
+                            setActiveChoiceIdx(null)
+                            syncChoiceHtml(idx, text)
+                          }}
                           onChoiceFocus={handleChoiceFocus}
                           onEditorMount={registerEditor}
                         />

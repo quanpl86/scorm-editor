@@ -17,6 +17,7 @@ from xml.etree import ElementTree as ET
 from .fonts import extract_font_manifest
 from .layout import apply_question_layout_edit, extract_layout
 from .typography import (
+    apply_html_to_node,
     apply_text_to_node,
     build_styled_html,
     extract_text_format,
@@ -180,9 +181,16 @@ def apply_choices(slide: dict[str, Any], choices: list[dict[str, Any]]) -> None:
     for choice in choices:
         ch = by_id.get(choice["id"], {"i": choice["id"], "t": {}, "ia": {}})
         if isinstance(ch.get("t"), dict):
-            c_fmt = choice.get("format")
-            if should_apply_text(ch["t"], choice.get("text", ""), c_fmt, "content"):
-                apply_text_to_node(ch["t"], choice["text"], "content", c_fmt)
+            if choice.get("html"):
+                text = choice.get("text", "")
+                if should_apply_text(ch["t"], text, choice.get("format"), "content") or (
+                    ch["t"].get("h") != choice["html"]
+                ):
+                    apply_html_to_node(ch["t"], choice["html"], text, "content")
+            else:
+                c_fmt = choice.get("format")
+                if should_apply_text(ch["t"], choice.get("text", ""), c_fmt, "content"):
+                    apply_text_to_node(ch["t"], choice["text"], "content", c_fmt)
         else:
             ch["t"] = choice["text"]
         if choice.get("image"):
@@ -325,30 +333,50 @@ def extract_result_slides(quiz_json: dict[str, Any]) -> list[dict[str, Any]]:
 
 def apply_special_slide_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:
     slide.setdefault("D", {})
-    if edit.get("questionText") is not None or edit.get("questionFormat"):
+    if edit.get("questionHtml"):
+        text = edit.get("questionText") or strip_html(edit["questionHtml"])
+        if should_apply_text(slide["D"], text, edit.get("questionFormat"), "title") or (
+            slide["D"].get("h") != edit["questionHtml"]
+        ):
+            apply_html_to_node(slide["D"], edit["questionHtml"], text, "title")
+    elif edit.get("questionText") is not None:
         text = edit.get("questionText")
-        if text is None:
-            text = strip_html(slide["D"].get("h", ""))
-        q_fmt = edit.get("questionFormat") or extract_text_format(
+        q_fmt = edit.get("questionFormat") if edit.get("questionFormat") is not None else extract_text_format(
             slide["D"].get("h", ""), slide["D"].get("t"), "title"
         )
         if should_apply_text(slide["D"], text, q_fmt, "title"):
             apply_text_to_node(slide["D"], text, "title", q_fmt)
+    elif edit.get("questionFormat") is not None:
+        text = strip_html(slide["D"].get("h", ""))
+        if should_apply_text(slide["D"], text, edit["questionFormat"], "title"):
+            apply_text_to_node(slide["D"], text, "title", edit["questionFormat"])
 
-    if slide.get("tp") == "IntroSlide" and (
-        edit.get("subtitleText") is not None or edit.get("subtitleFormat")
-    ):
+    if slide.get("tp") == "IntroSlide" and edit.get("subtitleHtml"):
+        slide.setdefault("C", {})
+        slide["C"].setdefault("rt", {})
+        rt = slide["C"]["rt"]
+        sub_text = edit.get("subtitleText") or strip_html(edit["subtitleHtml"])
+        if should_apply_text(rt, sub_text, edit.get("subtitleFormat"), "content") or (
+            rt.get("h") != edit["subtitleHtml"]
+        ):
+            apply_html_to_node(rt, edit["subtitleHtml"], sub_text, "content")
+    elif slide.get("tp") == "IntroSlide" and edit.get("subtitleText") is not None:
         slide.setdefault("C", {})
         slide["C"].setdefault("rt", {})
         rt = slide["C"]["rt"]
         sub_text = edit.get("subtitleText")
         if sub_text is None:
             sub_text = strip_html(rt.get("h", ""))
-        sub_fmt = edit.get("subtitleFormat") or extract_text_format(
+        sub_fmt = edit.get("subtitleFormat") if edit.get("subtitleFormat") is not None else extract_text_format(
             rt.get("h", ""), rt.get("t"), "content"
         )
         if should_apply_text(rt, sub_text, sub_fmt, "content"):
             apply_text_to_node(rt, sub_text, "content", sub_fmt)
+    elif slide.get("tp") == "IntroSlide" and edit.get("subtitleFormat") is not None:
+        rt = slide.get("C", {}).get("rt", {})
+        sub_text = strip_html(rt.get("h", ""))
+        if should_apply_text(rt, sub_text, edit["subtitleFormat"], "content"):
+            apply_text_to_node(rt, sub_text, "content", edit["subtitleFormat"])
 
     if edit.get("layout"):
         apply_question_layout_edit(slide, edit)
@@ -431,15 +459,23 @@ def quiz_to_view(quiz_json: dict[str, Any]) -> dict[str, Any]:
 
 def apply_question_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:
     slide.setdefault("D", {})
-    if edit.get("questionText") is not None or edit.get("questionFormat"):
+    if edit.get("questionHtml"):
+        text = edit.get("questionText") or strip_html(edit["questionHtml"])
+        if should_apply_text(slide["D"], text, edit.get("questionFormat"), "title") or (
+            slide["D"].get("h") != edit["questionHtml"]
+        ):
+            apply_html_to_node(slide["D"], edit["questionHtml"], text, "title")
+    elif edit.get("questionText") is not None:
         text = edit.get("questionText")
-        if text is None:
-            text = strip_html(slide["D"].get("h", ""))
-        q_fmt = edit.get("questionFormat") or extract_text_format(
+        q_fmt = edit.get("questionFormat") if edit.get("questionFormat") is not None else extract_text_format(
             slide["D"].get("h", ""), slide["D"].get("t"), "title"
         )
         if should_apply_text(slide["D"], text, q_fmt, "title"):
             apply_text_to_node(slide["D"], text, "title", q_fmt)
+    elif edit.get("questionFormat") is not None:
+        text = strip_html(slide["D"].get("h", ""))
+        if should_apply_text(slide["D"], text, edit["questionFormat"], "title"):
+            apply_text_to_node(slide["D"], text, "title", edit["questionFormat"])
 
     if edit.get("feedback"):
         set_feedback(slide, edit["feedback"])

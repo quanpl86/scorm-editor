@@ -12,11 +12,18 @@ function uniqueFaces(fonts) {
   return out
 }
 
+function fontsCacheKey(sessionId, fonts) {
+  const faces = uniqueFaces(fonts)
+  return `${sessionId}:${faces.map((f) => `${f.family}|${f.path}|${f.weight || 400}`).join(';')}`
+}
+
 export default function CanvasFonts({ sessionId, fonts }) {
+  const cacheKey = fontsCacheKey(sessionId, fonts)
+
   useEffect(() => {
     if (!sessionId) return undefined
     const style = document.createElement('style')
-    style.setAttribute('data-canvas-fonts', sessionId)
+    style.setAttribute('data-canvas-fonts', cacheKey)
 
     const google = `
 @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
@@ -55,7 +62,7 @@ export default function CanvasFonts({ sessionId, fonts }) {
     style.textContent = google + embedded
     document.head.appendChild(style)
     return () => style.remove()
-  }, [sessionId, fonts])
+  }, [sessionId, cacheKey])
 
   return null
 }

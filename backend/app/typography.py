@@ -240,13 +240,34 @@ def node_plain_text(node: dict[str, Any]) -> str:
     return strip_plain(node.get("h") or node.get("a") or "")
 
 
+def _normalize_format_for_compare(
+    fmt: dict[str, Any] | None,
+    existing: dict[str, Any],
+    role: TextRole,
+) -> dict[str, Any]:
+    """Merge editor defaults with slide HTML so unchanged saves do not rewrite text."""
+    base = default_format_for_role(role)
+    merged = {**base, **existing}
+    if fmt:
+        for key, value in fmt.items():
+            if value is not None:
+                merged[key] = value
+    if merged.get("fontSize") is None:
+        merged["fontSize"] = existing.get("fontSize")
+    if merged.get("fontFamily") is None:
+        merged["fontFamily"] = existing.get("fontFamily")
+    if merged.get("color") in (None, "#000000") and existing.get("color"):
+        merged["color"] = existing["color"]
+    return merged
+
+
 def format_differs(node: dict[str, Any], fmt: dict[str, Any] | None, role: TextRole) -> bool:
     if not fmt:
         return False
     existing = extract_text_format(node.get("h"), node.get("t"), role)
+    incoming = _normalize_format_for_compare(fmt, existing, role)
     for key in ("fontSize", "bold", "italic", "underline", "color", "align", "fontFamily"):
-        value = fmt.get(key)
-        if value is not None and existing.get(key) != value:
+        if incoming.get(key) != existing.get(key):
             return True
     return False
 
@@ -256,6 +277,32 @@ def should_apply_text(node: dict[str, Any], text: str, fmt: dict[str, Any] | Non
     if node_plain_text(node) != plain:
         return True
     return format_differs(node, fmt, role)
+
+
+def apply_html_to_node(
+    node: dict[str, Any],
+    html_text: str,
+    plain_text: str | None = None,
+    role: TextRole = "content",
+) -> None:
+    """Write canvas HTML verbatim — no rebuild (preserves font/layout exactly)."""
+    plain = plain_text if plain_text is not None else strip_plain(html_text)
+    existing_meta = (node.get("t") or {}).get("tf", {})
+    preserved_name = existing_meta.get("f")
+    fmt = extract_text_format(html_text, node.get("t"), role)
+    size = fmt.get("fontSize") or resolve_font_size(plain, role, fmt)
+    family = fmt.get("fontFamily") or extract_font_family_from_html(html_text)
+
+    node["h"] = html_text
+    node["a"] = f"<p>{html.escape(plain)}</p>"
+    node["d"] = [plain] if plain else []
+    node["t"] = build_text_meta(
+        role,
+        int(size),
+        fmt,
+        font_family=family,
+        font_name=preserved_name,
+    )
 
 
 def apply_text_to_node(
