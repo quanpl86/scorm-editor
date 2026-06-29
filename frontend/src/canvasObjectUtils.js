@@ -29,6 +29,7 @@ export function createSlidePictureObject(objects, name) {
     role: 'slidePicture',
     r: defaultPictureRect(objects),
     image: null,
+    imageZoom: true,
     selectable: true,
     locked: false,
     isNew: true,
@@ -47,10 +48,73 @@ export function createImageObject(objects, name, image = null) {
     role: 'image',
     r: defaultPictureRect(objects, { w: 180, h: 130 }),
     image,
+    imageZoom: false,
     selectable: true,
     locked: false,
     isNew: true,
   }
+}
+
+export function defaultImageZoom(role) {
+  return objectMediaRole({ role }) === 'slidePicture'
+}
+
+export function objectMediaRole(obj) {
+  return obj?.role || obj?.tp || ''
+}
+
+export function isImageCanvasObject(obj) {
+  const role = objectMediaRole(obj)
+  return role === 'slidePicture' || role === 'image'
+}
+
+export function resolveSlideAttachment(layout = {}) {
+  if (layout.slideAttachment != null) return layout.slideAttachment || null
+  if (layout.slidePicture != null) return layout.slidePicture || null
+  const frame = (layout.objects || []).find(
+    (o) => isImageCanvasObject(o) && objectMediaRole(o) === 'slidePicture' && o.image,
+  )
+  return frame?.image || null
+}
+
+export function resolveSlideAttachmentZoom(layout = {}) {
+  if (layout.slideAttachmentZoom != null) return !!layout.slideAttachmentZoom
+  const frame = (layout.objects || []).find(
+    (o) => isImageCanvasObject(o) && objectMediaRole(o) === 'slidePicture',
+  )
+  if (frame?.imageZoom != null) return !!frame.imageZoom
+  return true
+}
+
+export function normalizeLayoutObjects(objects, layout = {}) {
+  const slideZoom = layout.slideAttachmentZoom
+  return (objects || []).map((obj) => {
+    if (!isImageCanvasObject(obj)) return obj
+    if (obj.imageZoom != null) return obj
+    const role = objectMediaRole(obj)
+    let imageZoom = defaultImageZoom(role)
+    if (role === 'slidePicture' && slideZoom != null) {
+      imageZoom = !!slideZoom
+    }
+    return { ...obj, imageZoom }
+  })
+}
+
+/** Giữ imageZoom local khi parent trả về objects thiếu field (race sync / save). */
+export function mergeLayoutObjects(incoming, prev, layout = {}) {
+  const normalized = normalizeLayoutObjects(incoming, layout)
+  if (!prev?.length) return normalized
+  const prevMap = new Map(prev.map((o) => [o.index, o]))
+  const rawIncoming = incoming || []
+  return normalized.map((obj) => {
+    if (!isImageCanvasObject(obj)) return obj
+    const prior = prevMap.get(obj.index)
+    const raw = rawIncoming.find((o) => o.index === obj.index)
+    if (prior && raw && raw.imageZoom == null && prior.imageZoom != null) {
+      return { ...obj, imageZoom: prior.imageZoom }
+    }
+    return obj
+  })
 }
 
 export function buildLayoutPatch(question, objects, extra = {}) {
@@ -63,7 +127,52 @@ export function buildLayoutPatch(question, objects, extra = {}) {
     removedIndexes: extra.removedIndexes ?? question.layout?.removedIndexes,
   }
   if (extra.slideAttachment !== undefined) patch.slideAttachment = extra.slideAttachment
+  if (extra.slideAttachmentZoom !== undefined) patch.slideAttachmentZoom = extra.slideAttachmentZoom
   return patch
+}
+
+/** Payload layout gửi server — luôn gồm imageZoom + slideAttachmentZoom. */
+export function sanitizeLayoutForSave(layout) {
+  if (!layout) return null
+  const objects = layout.objects || []
+  const hasSlidePicture = objects.some(
+    (o) => isImageCanvasObject(o) && objectMediaRole(o) === 'slidePicture',
+  )
+  const attachment = resolveSlideAttachment(layout)
+
+  const payload = {
+    objects: objects.map((obj) => {
+      const row = { index: obj.index, r: obj.r }
+      if (obj.remove) row.remove = true
+      if (obj.image != null) row.image = obj.image
+      if (isImageCanvasObject(obj)) {
+        row.imageZoom = !!(obj.imageZoom ?? defaultImageZoom(objectMediaRole(obj)))
+      }
+      return row
+    }),
+    zOrder: layout.zOrder,
+  }
+
+  const added = objects.filter((o) => o.isNew)
+  if (added.length) {
+    payload.addedObjects = added.map((o) => ({
+      tp: o.tp || o.role,
+      role: o.role || o.tp,
+      I: o.I || o.name,
+      name: o.name,
+      r: o.r,
+      image: o.image || null,
+      imageZoom: isImageCanvasObject(o)
+        ? !!(o.imageZoom ?? defaultImageZoom(objectMediaRole(o)))
+        : null,
+    }))
+  }
+
+  if (layout.removedIndexes?.length) payload.removedIndexes = layout.removedIndexes
+  if (attachment) payload.slideAttachment = attachment
+  if (hasSlidePicture) payload.slideAttachmentZoom = resolveSlideAttachmentZoom(layout)
+
+  return payload
 }
 
 export function newImageFilename(file) {

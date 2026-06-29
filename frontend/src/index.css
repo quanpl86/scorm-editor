@@ -897,7 +897,11 @@ button, input, textarea, select {
   background: transparent;
 }
 
-.canvas-inner.fidelity .canvas-object.wysiwyg-object.direction,
+/* direction phải clip trong khung — tránh title nhảy ra ngoài canvas khi sửa */
+.canvas-inner.fidelity .canvas-object.wysiwyg-object.direction {
+  overflow: hidden;
+}
+
 .canvas-inner.fidelity .canvas-object.wysiwyg-object.content {
   overflow: visible;
 }
@@ -974,42 +978,77 @@ button, input, textarea, select {
 
 .direction-html {
   display: flex;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  text-align: center;
   box-sizing: border-box;
-}
-
-.direction-html > div {
   width: 100%;
-  max-height: 100%;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
-.canvas-inner.fidelity .obj-html.direction-html {
-  overflow: visible;
+.direction-html > div,
+.direction-html .canvas-rich-text {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  align-self: stretch;
+  overflow: hidden;
 }
 
+.canvas-inner.fidelity .obj-html.direction-html,
 .canvas-inner.fidelity .direction-html {
   width: 100%;
   height: 100%;
-  overflow: visible;
+  overflow: hidden;
 }
 
-.canvas-inner.fidelity .direction-html > div,
-.canvas-inner.fidelity .direction-html .canvas-rich-text {
+/* Title: preview và editor chiếm cùng một slot cố định — không nhảy khi click */
+.direction-html .canvas-rich-text {
+  position: relative;
+  display: block;
   width: 100%;
-  height: auto;
-  max-height: none;
-  overflow: visible;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
-.canvas-inner.fidelity .direction-html .ispring-html,
-.canvas-inner.fidelity .direction-html .fidelity-html,
-.canvas-inner.fidelity .direction-html .canvas-editable-text {
-  height: auto;
-  max-height: none;
-  overflow: visible;
+.direction-html .canvas-rich-text .canvas-text-preview,
+.direction-html .canvas-rich-text .canvas-editable-text.rich-editor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.direction-html .canvas-editable-text.rich-editor:focus {
+  background: transparent !important;
+  outline: none !important;
+  border-radius: 0;
+  box-shadow: inset 0 0 0 2px rgba(59, 130, 246, 0.45);
+}
+
+.canvas-rich-text {
+  width: 100%;
+  min-height: 0;
+}
+
+.canvas-rich-text .canvas-editable-text.rich-editor {
+  padding: 0;
 }
 
 .canvas-inner.fidelity .direction-html p {
@@ -1017,15 +1056,13 @@ button, input, textarea, select {
   padding-bottom: 2px;
 }
 
-/* Editor typography — chỉ áp dụng khi đang sửa, không ghi đè HTML iSpring */
-.canvas-inner.wysiwyg .direction-html .canvas-editable-text {
-  font-family: fnt6_24031, 'Quicksand', sans-serif;
+/* Editor typography — rich editor dùng --fmt-family, không ghi đè span con */
+.canvas-inner.wysiwyg .direction-html .canvas-editable-text.rich-editor {
   line-height: 1.35;
 }
 
-.canvas-inner.wysiwyg .choice-preview .canvas-editable-text,
-.canvas-inner.wysiwyg .intro-subtitle.canvas-editable-text {
-  font-family: fnt5_24031, 'Quicksand', sans-serif;
+.canvas-inner.wysiwyg .choice-preview .canvas-editable-text.rich-editor,
+.canvas-inner.wysiwyg .intro-subtitle.canvas-editable-text.rich-editor {
   line-height: 1.28;
 }
 
@@ -1084,12 +1121,25 @@ button, input, textarea, select {
   text-align: inherit;
 }
 
-.canvas-inner.fidelity .canvas-rich-text {
-  width: 100%;
+.canvas-inner.fidelity .direction-html .canvas-rich-text {
+  position: relative;
   height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: inherit;
+  max-height: 100%;
+  min-height: 0;
+}
+
+.canvas-inner.fidelity .direction-html .canvas-text-preview,
+.canvas-inner.fidelity .direction-html .canvas-editable-text.rich-editor {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  max-height: 100%;
+}
+
+.canvas-inner.fidelity .canvas-rich-text:not(.direction-editable) {
+  width: 100%;
+  height: auto;
+  display: block;
 }
 
 .canvas-inner.fidelity .shape-label-preview {
@@ -1303,7 +1353,8 @@ button, input, textarea, select {
 .canvas-editable-text {
   width: 100%;
   height: 100%;
-  min-height: 1.5em;
+  min-height: 0;
+  max-height: 100%;
   overflow: auto;
   outline: none;
   cursor: text;
@@ -1312,12 +1363,36 @@ button, input, textarea, select {
   line-height: 1.35;
   padding: 8px 10px;
   box-sizing: border-box;
+}
+
+.canvas-editable-text:not(.rich-editor) {
+  font-family: var(--fmt-family, fnt5_24031), 'Quicksand', sans-serif !important;
   font-size: var(--fmt-size, 16px) !important;
   font-weight: var(--fmt-weight, 500) !important;
   font-style: var(--fmt-style, normal) !important;
   text-decoration: var(--fmt-decoration, none) !important;
   color: var(--fmt-color, #000000) !important;
   text-align: var(--fmt-align, left) !important;
+}
+
+/* Rich editor: không !important — cho phép span/selection giữ màu, cỡ chữ, B/I/U riêng */
+.canvas-editable-text.rich-editor {
+  font-family: var(--fmt-family, fnt5_24031), 'Quicksand', sans-serif;
+  font-size: var(--fmt-size, 16px);
+  font-weight: var(--fmt-weight, 500);
+  font-style: var(--fmt-style, normal);
+  text-decoration: var(--fmt-decoration, none);
+  color: var(--fmt-color, #000000);
+  text-align: var(--fmt-align, left);
+}
+
+.canvas-editable-text.rich-editor p {
+  margin: 0;
+  line-height: inherit;
+}
+
+.canvas-editable-text.rich-editor span[style] {
+  font-family: inherit;
 }
 
 .canvas-editable-text:empty::before {
@@ -1333,21 +1408,35 @@ button, input, textarea, select {
   background: rgba(255, 255, 255, 0.72);
 }
 
+.canvas-editable-text.rich-editor:focus,
+.canvas-rich-text.is-editing .canvas-editable-text:focus {
+  outline: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: inset 0 0 0 2px rgba(59, 130, 246, 0.45);
+}
+
 .direction-html .canvas-editable-text {
   display: block;
   width: 100%;
+  height: 100%;
   max-height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .canvas-inner.fidelity .direction-html .canvas-editable-text {
-  height: auto;
-  max-height: none;
-  overflow: visible;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 0;
 }
 
 .direction-editable {
-  text-align: inherit;
+  width: 100%;
 }
 
 .choice-preview .canvas-editable-text {
@@ -1468,6 +1557,29 @@ button, input, textarea, select {
 .props-media-upload {
   width: 100%;
   text-align: center;
+}
+
+.props-zoom-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.props-zoom-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.props-hint {
+  margin: 6px 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+  line-height: 1.35;
 }
 
 .btn-danger {

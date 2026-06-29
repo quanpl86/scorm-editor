@@ -16,12 +16,45 @@ export default function CanvasRichText({
   onActivate,
   onEditorMount,
 }) {
-  const previewHtml = html || buildStyledHtml(value, role, format, typography, html)
+  const previewText = (value || '').trim()
+  const previewHtml = html?.trim()
+    || (previewText ? buildStyledHtml(previewText, role, format, typography, html) : '')
   const handleActivate = onActivate || onFocus
 
+  const handleTextChange = (payload) => {
+    if (typeof payload === 'object' && payload !== null) {
+      onTextChange?.(payload.text ?? '')
+      return
+    }
+    onTextChange?.(payload)
+  }
+
+  const handleBlur = (payload) => {
+    if (typeof payload === 'object' && payload !== null) {
+      onBlur?.(payload)
+      return
+    }
+    onBlur?.(payload)
+  }
+
   return (
-    <div className={`canvas-rich-text ${className}`.trim()}>
-      {!editing && previewHtml && (
+    <div className={`canvas-rich-text ${editing ? 'is-editing' : ''} ${className}`.trim()}>
+      {editing ? (
+        <CanvasEditableText
+          className="rich-text-editor"
+          value={value}
+          html={html}
+          format={format}
+          role={role}
+          typography={typography}
+          rich
+          placeholder={placeholder}
+          onTextChange={handleTextChange}
+          onFocus={onFocus}
+          onBlur={handleBlur}
+          onEditorMount={onEditorMount}
+        />
+      ) : previewHtml ? (
         <div
           className="ispring-html fidelity-html canvas-text-preview"
           dangerouslySetInnerHTML={{ __html: previewHtml }}
@@ -31,21 +64,7 @@ export default function CanvasRichText({
             handleActivate?.()
           }}
         />
-      )}
-      {editing && (
-        <CanvasEditableText
-          className="rich-text-editor"
-          value={value}
-          format={format}
-          role={role}
-          typography={typography}
-          placeholder={placeholder}
-          onTextChange={onTextChange}
-          onFocus={onFocus}
-          onBlur={onBlur}
-          onEditorMount={onEditorMount}
-        />
-      )}
+      ) : null}
     </div>
   )
 }

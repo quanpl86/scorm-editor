@@ -9,10 +9,10 @@ export default function TextFormatToolbar({
   compact = false,
   preserveFocus = false,
 }) {
-  const fmt = mergeFormat(format, defaultFormat(role))
+  const fmt = mergeFormat(format, {}, role)
   const sizes = role === 'title' ? TITLE_SIZES : CONTENT_SIZES
 
-  const set = (patch) => onChange(mergeFormat(fmt, patch))
+  const set = (patch) => onChange(mergeFormat(fmt, patch, role))
   const keepFocus = preserveFocus
     ? { onMouseDown: (e) => e.preventDefault() }
     : {}
@@ -99,7 +99,7 @@ export default function TextFormatToolbar({
 }
 
 export function TextFormatPreview({ text, format, role = 'content' }) {
-  const fmt = mergeFormat(format, defaultFormat(role))
+  const fmt = mergeFormat(format, {}, role)
   const fontFamily = fmt.fontFamily
     || (role === 'title' ? 'fnt6_24031' : 'fnt5_24031')
   const style = {

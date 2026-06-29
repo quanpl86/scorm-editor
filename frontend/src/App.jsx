@@ -17,6 +17,8 @@ import { useAutoSync } from './useAutoSync'
 import { useQuizHistory } from './useQuizHistory'
 import { useResizableWidth } from './useResizableWidth'
 import TextFormatToolbar, { TextFormatPreview } from './TextFormatToolbar'
+import { extractPlainTextFromHtml } from './richTextUtils'
+import { sanitizeLayoutForSave } from './canvasObjectUtils'
 import { buildStyledHtml, defaultFormat } from './textFormatUtils'
 
 const TYPE_LABELS = {
@@ -40,33 +42,6 @@ const RESULT_KIND_LABELS = {
   failed: 'Không đạt',
 }
 
-function sanitizeLayoutForSave(layout) {
-  if (!layout) return null
-  const payload = {
-    objects: (layout.objects || []).map((obj) => {
-      const row = { index: obj.index, r: obj.r }
-      if (obj.remove) row.remove = true
-      if (obj.image != null) row.image = obj.image
-      return row
-    }),
-    zOrder: layout.zOrder,
-  }
-  const added = (layout.objects || []).filter((o) => o.isNew)
-  if (added.length) {
-    payload.addedObjects = added.map((o) => ({
-      tp: o.tp || o.role,
-      role: o.role,
-      I: o.I || o.name,
-      name: o.name,
-      r: o.r,
-      image: o.image || null,
-    }))
-  }
-  if (layout.removedIndexes?.length) payload.removedIndexes = layout.removedIndexes
-  if (layout.slideAttachment != null) payload.slideAttachment = layout.slideAttachment
-  return payload
-}
-
 /** Giữ HTML đúng như canvas trước khi gửi server — tránh rebuild làm lệch font/layout */
 function syncSlideCanvasHtml(slide) {
   if (!slide?.layout) return slide
@@ -76,13 +51,15 @@ function syncSlideCanvasHtml(slide) {
   if (slide._dirtyQuestionText || slide._dirtyQuestionFormat) {
     const dir = slide.layout.objects?.find((o) => o.I === 'direction')
     if (dir) {
-      const html = buildStyledHtml(
-        slide.questionText,
-        'title',
-        slide.questionFormat,
-        typography,
-        dir.html,
-      )
+      const html = (dir.html?.trim() && extractPlainTextFromHtml(dir.html))
+        ? dir.html
+        : buildStyledHtml(
+          slide.questionText,
+          'title',
+          slide.questionFormat,
+          typography,
+          dir.html,
+        )
       next = {
         ...next,
         layout: {
@@ -99,13 +76,15 @@ function syncSlideCanvasHtml(slide) {
   if (slide._dirtySubtitleText || slide._dirtySubtitleFormat) {
     const content = slide.layout.objects?.find((o) => o.role === 'content')
     if (content?.html != null || slide.subtitleText != null) {
-      const html = buildStyledHtml(
-        slide.subtitleText || '',
-        'content',
-        slide.subtitleFormat,
-        typography,
-        content?.html,
-      )
+      const html = (content?.html?.trim() && extractPlainTextFromHtml(content.html))
+        ? content.html
+        : buildStyledHtml(
+          slide.subtitleText || '',
+          'content',
+          slide.subtitleFormat,
+          typography,
+          content?.html,
+        )
       next = {
         ...next,
         layout: {
@@ -126,9 +105,10 @@ function syncSlideCanvasHtml(slide) {
     const items = preview?.items || []
     const syncedChoices = slide.choices.map((ch, idx) => {
       const item = items[idx]
-      const html = item?.html
-        ? buildStyledHtml(ch.text, 'content', ch.format, typography, item.html)
-        : buildStyledHtml(ch.text, 'content', ch.format, typography, null)
+      const sourceHtml = ch.html || item?.html
+      const html = (sourceHtml?.trim() && extractPlainTextFromHtml(sourceHtml))
+        ? sourceHtml
+        : buildStyledHtml(ch.text, 'content', ch.format, typography, sourceHtml)
       return { ...ch, html }
     })
     const syncedItems = items.map((item, idx) => {
@@ -771,6 +751,7 @@ function EditorWorkspace({
   onSelectSlide,
   onSave,
   onCanvasEditStart,
+  onCanvasEditStateChange,
 }) {
   const [tab, setTab] = useState('layout')
   const isSpecial = slide?.slideRole === 'intro' || slide?.slideRole === 'result'
@@ -812,6 +793,7 @@ function EditorWorkspace({
           onPatch={onPatch}
           onChange={onChange}
           onCanvasEditStart={onCanvasEditStart}
+          onCanvasEditStateChange={onCanvasEditStateChange}
           onImageUpload={onImageUpload}
         />
       ) : isSpecial ? (
@@ -861,6 +843,7 @@ export default function App() {
   const [error, setError] = useState(null)
   const [importReport, setImportReport] = useState(null)
   const [toast, setToast] = useState(null)
+  const [canvasEditing, setCanvasEditing] = useState(false)
   const sidebarResize = useResizableWidth('scorm-editor.sidebar-width', 320, { min: 240, max: 480 })
 
   const applySavedState = useCallback((savedView) => {
@@ -904,6 +887,7 @@ export default function App() {
     quiz,
     buildPayload: buildSavePayload,
     applySavedState,
+    paused: canvasEditing,
   })
 
   const showToast = (msg, type = 'success') => {
@@ -1279,6 +1263,7 @@ export default function App() {
           onSelectSlide={setSelectedId}
           onSave={persistQuiz}
           onCanvasEditStart={beginCanvasEdit}
+          onCanvasEditStateChange={setCanvasEditing}
         />
       </div>
 

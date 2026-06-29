@@ -7,6 +7,7 @@ export function useAutoSync({
   buildPayload,
   applySavedState,
   debounceMs = 700,
+  paused = false,
 }) {
   const [previewRevision, setPreviewRevision] = useState(0)
   const [autoSaving, setAutoSaving] = useState(false)
@@ -15,7 +16,7 @@ export function useAutoSync({
   quizRef.current = quiz
 
   useEffect(() => {
-    if (!quiz || !quizHasDirtyFlags(quiz)) return undefined
+    if (paused || !quiz || !quizHasDirtyFlags(quiz)) return undefined
 
     if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = setTimeout(async () => {
@@ -36,7 +37,7 @@ export function useAutoSync({
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current)
     }
-  }, [quiz, buildPayload, applySavedState, debounceMs])
+  }, [quiz, buildPayload, applySavedState, debounceMs, paused])
 
   const bumpPreviewRevision = () => setPreviewRevision((r) => r + 1)
 

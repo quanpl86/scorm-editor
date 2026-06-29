@@ -36,7 +36,7 @@ function ChoiceBody({
         editing
         placeholder={`Đáp án ${idx + 1}`}
         onTextChange={(next) => onChoiceTextChange(idx, next)}
-        onBlur={(next) => onChoiceBlur?.(idx, next || text)}
+        onBlur={(payload) => onChoiceBlur?.(idx, payload || { text })}
         onFocus={() => onChoiceFocus?.(idx)}
         onEditorMount={onEditorMount}
       />
@@ -222,7 +222,7 @@ export function SequencePreview({
                   editing
                   placeholder={`Dòng ${i + 1}`}
                   onTextChange={(next) => onChoiceTextChange(i, next)}
-                  onBlur={(next) => onChoiceBlur?.(i, next || text)}
+                  onBlur={(payload) => onChoiceBlur?.(i, payload || { text })}
                   onFocus={() => onChoiceFocus?.(i)}
                   onEditorMount={onEditorMount}
                 />

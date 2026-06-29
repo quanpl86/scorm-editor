@@ -17,6 +17,7 @@ export const COLOR_PRESETS = [
 export function defaultFormat(role = 'content') {
   return {
     fontSize: null,
+    fontFamily: null,
     bold: role === 'title',
     italic: false,
     underline: false,
@@ -25,8 +26,8 @@ export function defaultFormat(role = 'content') {
   }
 }
 
-export function mergeFormat(base, patch) {
-  return { ...defaultFormat(), ...base, ...patch }
+export function mergeFormat(base, patch, role = 'content') {
+  return { ...defaultFormat(role), ...(base || {}), ...(patch || {}) }
 }
 
 export function stripPlainFromHtml(htmlText) {
@@ -70,24 +71,59 @@ export function htmlToEditableText(html, fallback = '') {
   return plain || fallback || ''
 }
 
-/** Gộp format slide + object + HTML gốc để không mất căn lề/cỡ chữ khi bấm sửa */
+function isBoldWeight(value) {
+  if (!value) return false
+  const v = String(value).trim().toLowerCase()
+  if (v === 'bold' || v === 'bolder') return true
+  const n = parseInt(v, 10)
+  return !Number.isNaN(n) && n >= 600
+}
+
+/** Trích xuất định dạng từ HTML iSpring (inline style + thẻ cơ bản) */
+export function extractFormatFromHtml(htmlText, role = 'content') {
+  const fmt = defaultFormat(role)
+  if (!htmlText) return fmt
+
+  const align = extractTextAlignFromHtml(htmlText)
+  if (align) fmt.align = align
+
+  const sizeMatch = htmlText.match(/font-size:\s*(\d+)px/i)
+  if (sizeMatch) fmt.fontSize = Number(sizeMatch[1])
+
+  const colorMatch = htmlText.match(/color:\s*(#[0-9a-fA-F]{3,6})/i)
+  if (colorMatch) fmt.color = colorMatch[1]
+
+  const fontFamily = extractFontFamilyFromHtml(htmlText)
+  if (fontFamily) fmt.fontFamily = fontFamily
+
+  const weightMatch = htmlText.match(/font-weight:\s*([^;"']+)/i)
+  if (weightMatch) {
+    fmt.bold = isBoldWeight(weightMatch[1])
+  } else if (/<(?:b|strong)\b/i.test(htmlText)) {
+    fmt.bold = true
+  }
+
+  if (/font-style:\s*italic/i.test(htmlText) || /<(?:i|em)\b/i.test(htmlText)) {
+    fmt.italic = true
+  }
+
+  const decoMatch = htmlText.match(/text-decoration(?:-line)?:\s*([^;"']+)/i)
+  if (decoMatch?.[1]?.includes('underline') || /<u\b/i.test(htmlText)) {
+    fmt.underline = true
+  }
+
+  return fmt
+}
+
+/** Gộp format slide + object + HTML gốc — ưu tiên format đã lưu, HTML bổ sung thiếu sót */
 export function resolveCanvasTextFormat(slideFormat, objFormat, html, role = 'content') {
-  const base = mergeFormat(slideFormat || objFormat, defaultFormat(role))
-  const align = slideFormat?.align || extractTextAlignFromHtml(html) || base.align
-  const next = { ...base, align }
-  if (!next.fontSize && html) {
-    const sizeMatch = html.match(/font-size:\s*(\d+)px/i)
-    if (sizeMatch) next.fontSize = Number(sizeMatch[1])
-  }
-  if (html && (!slideFormat?.color || slideFormat.color === '#000000')) {
-    const colorMatch = html.match(/color:\s*(#[0-9a-fA-F]{3,6})/i)
-    if (colorMatch) next.color = colorMatch[1]
-  }
-  return next
+  const fromHtml = extractFormatFromHtml(html, role)
+  const stored = { ...(objFormat || {}), ...(slideFormat || {}) }
+  return mergeFormat(fromHtml, stored, role)
 }
 
 export function buildStyledHtml(text, role = 'content', format = null, typography = null, sourceHtml = null) {
-  const fmt = mergeFormat(format, defaultFormat(role))
+  const fmt = mergeFormat(format, {}, role)
   const plain = (text || '').trim()
   if (!plain) return ''
 

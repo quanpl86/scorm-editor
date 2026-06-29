@@ -202,6 +202,19 @@ def extract_slide_attachment_image(slide: dict[str, Any]) -> str | None:
     return image_path_from_storage(slide.get("at", {}).get("i", {}).get("i", ""))
 
 
+def extract_slide_attachment_zoom(slide: dict[str, Any]) -> bool:
+    """iSpring: slide.at.i.z — click-to-zoom in player for slidePicture attachment."""
+    return bool(slide.get("at", {}).get("i", {}).get("z", False))
+
+
+def extract_object_image_zoom(obj: dict[str, Any], slide: dict[str, Any]) -> bool:
+    if obj.get("tp") == "slidePicture":
+        return extract_slide_attachment_zoom(slide)
+    if obj.get("tp") == "image":
+        return bool(obj.get("z", False))
+    return False
+
+
 def extract_background_meta(slide: dict[str, Any]) -> dict[str, Any]:
     bg = slide.get("a", {}).get("b", {})
     if bg.get("f") != "pictureFill":
@@ -635,6 +648,9 @@ def extract_layout(slide: dict[str, Any]) -> dict[str, Any]:
                 "role": role,
                 "r": rect,
                 "image": extract_object_image(obj, slide),
+                "imageZoom": extract_object_image_zoom(obj, slide)
+                if role in ("slidePicture", "image")
+                else None,
                 "text": extract_object_text(obj, slide),
                 "html": html_text,
                 "textFormat": extract_text_format(
@@ -678,6 +694,7 @@ def extract_layout(slide: dict[str, Any]) -> dict[str, Any]:
         "backgroundMode": bg_meta["mode"],
         "backgroundFit": bg_meta["objectFit"],
         "slidePicture": extract_slide_attachment_image(slide),
+        "slideAttachmentZoom": extract_slide_attachment_zoom(slide),
         "typography": {
             "titleFont": FONT_TITLE,
             "contentFont": FONT_CONTENT,
@@ -770,14 +787,36 @@ def make_ispring_image(name: str, rect: dict[str, float], image_filename: str | 
     return obj
 
 
-def set_slide_attachment(slide: dict[str, Any], image_filename: str | None) -> None:
+def set_slide_attachment(slide: dict[str, Any], image_filename: str | None, *, zoom: bool = True) -> None:
     if not image_filename:
         slide.pop("at", None)
         return
-    slide["at"] = {"i": {"i": f"storage://images/{image_filename}", "z": True}}
+    slide["at"] = {"i": {"i": f"storage://images/{image_filename}", "z": bool(zoom)}}
 
 
-def set_object_image(obj: dict[str, Any], slide: dict[str, Any], image_filename: str | None) -> None:
+def set_slide_attachment_zoom(slide: dict[str, Any], zoom: bool) -> None:
+    slide.setdefault("at", {})
+    i_node = slide["at"].get("i")
+    if not isinstance(i_node, dict):
+        i_node = {}
+        slide["at"]["i"] = i_node
+    i_node["z"] = bool(zoom)
+
+
+def set_object_image_zoom(obj: dict[str, Any], slide: dict[str, Any], zoom: bool) -> None:
+    if obj.get("tp") == "image":
+        obj["z"] = bool(zoom)
+    elif obj.get("tp") == "slidePicture":
+        set_slide_attachment_zoom(slide, zoom)
+
+
+def set_object_image(
+    obj: dict[str, Any],
+    slide: dict[str, Any],
+    image_filename: str | None,
+    *,
+    zoom: bool | None = None,
+) -> None:
     if not image_filename:
         if obj.get("tp") == "image":
             obj.pop("i", None)
@@ -787,9 +826,13 @@ def set_object_image(obj: dict[str, Any], slide: dict[str, Any], image_filename:
     storage = f"storage://images/{image_filename}"
     if obj.get("tp") == "image":
         obj["i"] = storage
-        obj["z"] = False
+        obj["z"] = bool(zoom) if zoom is not None else False
     elif obj.get("tp") == "slidePicture":
-        set_slide_attachment(slide, image_filename)
+        set_slide_attachment(
+            slide,
+            image_filename,
+            zoom=True if zoom is None else bool(zoom),
+        )
 
 
 def layout_changed(slide: dict[str, Any], layout: dict[str, Any], *, epsilon: float = 0.5) -> bool:
@@ -824,11 +867,24 @@ def layout_changed(slide: dict[str, Any], layout: dict[str, Any], *, epsilon: fl
         return True
     if layout.get("slideAttachment") is not None:
         return True
+
+    attachment_zoom = layout.get("slideAttachmentZoom")
+    if attachment_zoom is not None:
+        if bool(attachment_zoom) != extract_slide_attachment_zoom(slide):
+            return True
+
     for obj_update in layout.get("objects", []):
         if obj_update.get("remove"):
             return True
         if "image" in obj_update:
             return True
+        idx = obj_update.get("index")
+        if idx is None or idx < 0 or idx >= len(objects):
+            continue
+        if "imageZoom" in obj_update:
+            obj = objects[idx]
+            if bool(obj_update["imageZoom"]) != extract_object_image_zoom(obj, slide):
+                return True
 
     return False
 
@@ -885,20 +941,46 @@ def apply_layout_media(slide: dict[str, Any], layout: dict[str, Any]) -> None:
             objects.append(make_ispring_slide_picture(name, rect))
             _bump_slide_object_quota(slide, "slidePicture")
             if spec.get("image"):
-                set_slide_attachment(slide, spec["image"])
+                zoom = spec.get("imageZoom")
+                set_slide_attachment(
+                    slide,
+                    spec["image"],
+                    zoom=True if zoom is None else bool(zoom),
+                )
         elif role == "image" or spec.get("tp") == "image":
-            objects.append(make_ispring_image(name, rect, spec.get("image")))
+            obj = make_ispring_image(name, rect, spec.get("image"))
+            if spec.get("image") and "imageZoom" in spec:
+                obj["z"] = bool(spec["imageZoom"])
+            objects.append(obj)
             _bump_slide_object_quota(slide, "image")
 
+    attachment_zoom = layout.get("slideAttachmentZoom")
     if layout.get("slideAttachment") is not None:
-        set_slide_attachment(slide, layout.get("slideAttachment") or None)
+        filename = layout.get("slideAttachment") or None
+        if filename:
+            current_zoom = attachment_zoom
+            if current_zoom is None:
+                current_zoom = extract_slide_attachment_zoom(slide)
+            set_slide_attachment(slide, filename, zoom=bool(current_zoom))
+        else:
+            slide.pop("at", None)
+    elif attachment_zoom is not None:
+        set_slide_attachment_zoom(slide, bool(attachment_zoom))
 
     for obj_update in layout.get("objects", []):
         idx = obj_update.get("index")
         if idx is None or idx < 0 or idx >= len(objects):
             continue
         if "image" in obj_update:
-            set_object_image(objects[idx], slide, obj_update.get("image"))
+            zoom = obj_update.get("imageZoom")
+            set_object_image(
+                objects[idx],
+                slide,
+                obj_update.get("image"),
+                zoom=zoom,
+            )
+        elif "imageZoom" in obj_update:
+            set_object_image_zoom(objects[idx], slide, bool(obj_update["imageZoom"]))
 
 
 def apply_question_layout_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:

@@ -1,11 +1,19 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
-import { applyFormatToElement } from './canvasTextUtils'
+import { applyBaseEditorStyle } from './canvasTextUtils'
+import {
+  extractPlainTextFromHtml,
+  normalizeEditorHtml,
+  prepareEditorHtml,
+  readEditorPayload,
+} from './richTextUtils'
 
 export default function CanvasEditableText({
   value,
+  html,
   format,
   role = 'content',
   typography = null,
+  rich = true,
   className = '',
   placeholder = 'Nhấn để nhập...',
   onTextChange,
@@ -22,35 +30,62 @@ export default function CanvasEditableText({
     if (!el || mountedRef.current) return
     mountedRef.current = true
     onEditorMount?.(el)
-    const next = value || ''
-    if (el.innerText !== next) {
-      el.innerText = next
+
+    if (rich) {
+      el.innerHTML = prepareEditorHtml(html, value, format, role, typography)
+    } else if (el.innerText !== (value || '')) {
+      el.innerText = value || ''
     }
-    applyFormatToElement(el, format, role, typography)
+
+    applyBaseEditorStyle(el, format, role, typography)
+
     requestAnimationFrame(() => {
       if (!ref.current) return
-      ref.current.focus()
+      const node = ref.current
+      node.scrollTop = 0
+      node.focus({ preventScroll: true })
       const range = document.createRange()
-      range.selectNodeContents(ref.current)
-      range.collapse(false)
+      const startNode = node.firstChild || node
+      const startOffset = startNode.nodeType === Node.TEXT_NODE ? 0 : 0
+      try {
+        range.setStart(startNode, startOffset)
+        range.collapse(true)
+      } catch {
+        range.selectNodeContents(node)
+        range.collapse(true)
+      }
       const sel = window.getSelection()
       sel?.removeAllRanges()
       sel?.addRange(range)
+      node.scrollTop = 0
+      requestAnimationFrame(() => {
+        if (ref.current) ref.current.scrollTop = 0
+      })
     })
-  }, [format, onEditorMount, role, typography, value])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ khởi tạo khi mount editor
+  }, [])
 
   useLayoutEffect(() => {
-    if (!mountedRef.current) return
-    applyFormatToElement(ref.current, format, role, typography)
+    if (!mountedRef.current || !ref.current) return
+    applyBaseEditorStyle(ref.current, format, role, typography)
   }, [format, role, typography])
 
   useEffect(() => {
-    if (focusedRef.current || !ref.current) return
+    if (focusedRef.current || !ref.current || rich) return
     const next = value || ''
     if (ref.current.innerText !== next) {
       ref.current.innerText = next
     }
-  }, [value])
+  }, [rich, value])
+
+  const emitChange = () => {
+    if (!ref.current) return
+    if (rich) {
+      onTextChange?.(readEditorPayload(ref.current))
+      return
+    }
+    onTextChange?.(ref.current.innerText)
+  }
 
   return (
     <div
@@ -67,9 +102,13 @@ export default function CanvasEditableText({
       }}
       onBlur={() => {
         focusedRef.current = false
-        onBlur?.(ref.current?.innerText ?? '')
+        if (rich) {
+          onBlur?.(readEditorPayload(ref.current))
+        } else {
+          onBlur?.(ref.current?.innerText ?? '')
+        }
       }}
-      onInput={(e) => onTextChange?.(e.currentTarget.innerText)}
+      onInput={emitChange}
       onPointerDown={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     />
