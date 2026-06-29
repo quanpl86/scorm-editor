@@ -1,0 +1,23 @@
+# Python
+backend/.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Runtime data
+backend/data/sessions/*
+!backend/data/sessions/.gitkeep
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.log
+
+# Upload temp
+backend/data/upload_*.zip
