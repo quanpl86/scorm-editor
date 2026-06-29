@@ -31,6 +31,18 @@ from .typography import (
 SESSIONS_ROOT = Path(__file__).resolve().parent.parent / "data" / "sessions"
 
 IMAGE_FOLDERS = ("res/data/images", "data/images", "images")
+AUDIO_FOLDERS = ("res/data/audios", "data/audios", "audios")
+VIDEO_FOLDERS = ("res/data/videos", "data/videos", "videos")
+
+MIME_BY_EXT: dict[str, str] = {
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".m4a": "audio/mp4",
+    ".ogg": "audio/ogg",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+}
 
 
 def image_dimensions(path: Path) -> tuple[int, int]:
@@ -65,7 +77,7 @@ def ensure_image_registry(quiz_json: dict[str, Any], package_root: Path) -> None
     """Register uploaded images in rs.i so iSpring player can render them."""
     registry = quiz_json.setdefault("rs", {}).setdefault("i", {})
     raw = json.dumps(quiz_json, ensure_ascii=False)
-    for match in re.finditer(r"storage://images/([^\"'\\s>]+)", raw):
+    for match in re.finditer(r"storage://images/([^\"'\s>]+)", raw):
         filename = match.group(1)
         storage_key = f"storage://images/{filename}"
         if storage_key in registry:
@@ -84,6 +96,54 @@ def ensure_image_registry(quiz_json: dict[str, Any], package_root: Path) -> None
             "v": width,
             "h": height,
         }
+
+
+def _resolve_package_file(filename: str, package_root: Path, folders: tuple[str, ...]) -> Path | None:
+    safe = Path(filename).name
+    for folder in folders:
+        candidate = package_root / folder / safe
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def ensure_audio_registry(quiz_json: dict[str, Any], package_root: Path) -> None:
+    """Register audio files referenced as storage://sounds/... in rs.a."""
+    registry = quiz_json.setdefault("rs", {}).setdefault("a", {})
+    raw = json.dumps(quiz_json, ensure_ascii=False)
+    for match in re.finditer(r"storage://sounds/([^\"'\s>]+)", raw):
+        filename = match.group(1)
+        storage_key = f"storage://sounds/{filename}"
+        if storage_key in registry:
+            continue
+        audio_path = _resolve_package_file(filename, package_root, AUDIO_FOLDERS)
+        if not audio_path:
+            continue
+        mime = MIME_BY_EXT.get(audio_path.suffix.lower(), "audio/mpeg")
+        registry[storage_key] = [{"m": mime, "s": f"data\\audios\\{filename}"}]
+
+
+def ensure_video_registry(quiz_json: dict[str, Any], package_root: Path) -> None:
+    """Register video files referenced as storage://videos/... in rs.v."""
+    registry = quiz_json.setdefault("rs", {}).setdefault("v", {})
+    raw = json.dumps(quiz_json, ensure_ascii=False)
+    for match in re.finditer(r"storage://videos/([^\"'\s>]+)", raw):
+        filename = match.group(1)
+        storage_key = f"storage://videos/{filename}"
+        if storage_key in registry:
+            continue
+        video_path = _resolve_package_file(filename, package_root, VIDEO_FOLDERS)
+        if not video_path:
+            continue
+        mime = MIME_BY_EXT.get(video_path.suffix.lower(), "video/mp4")
+        registry[storage_key] = [{"m": mime, "s": f"data\\videos\\{filename}"}]
+
+
+def ensure_media_registry(quiz_json: dict[str, Any], package_root: Path) -> None:
+    """Register images, audio, and video assets used in quiz JSON."""
+    ensure_image_registry(quiz_json, package_root)
+    ensure_audio_registry(quiz_json, package_root)
+    ensure_video_registry(quiz_json, package_root)
 
 
 def atomic_write_text(path: Path, content: str) -> None:
@@ -108,7 +168,7 @@ def get_package_root(session_id: str) -> Path:
 def resolve_asset_path(session_id: str, filename: str) -> Path:
     package_root = get_package_root(session_id)
     safe = Path(filename).name
-    for folder in IMAGE_FOLDERS:
+    for folder in (*IMAGE_FOLDERS, *AUDIO_FOLDERS, *VIDEO_FOLDERS):
         candidate = package_root / folder / safe
         if candidate.exists():
             return candidate
@@ -206,20 +266,58 @@ def image_path_from_storage(storage_uri: str) -> str | None:
     return match.group(1) if match else None
 
 
+def sound_path_from_storage(storage_uri: str) -> str | None:
+    if not storage_uri:
+        return None
+    match = re.search(r"storage://sounds/(.+)", storage_uri)
+    return match.group(1) if match else None
+
+
+def video_path_from_storage(storage_uri: str) -> str | None:
+    if not storage_uri:
+        return None
+    match = re.search(r"storage://videos/(.+)", storage_uri)
+    return match.group(1) if match else None
+
+
+def _rich_inline_media(v_node: dict[str, Any]) -> tuple[str | None, str | None]:
+    image_name = None
+    video_name = None
+    for item in v_node.get("r", []) or []:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") == "image":
+            image_name = image_path_from_storage(item.get("assetId", "")) or image_name
+        elif item.get("type") == "video":
+            video_name = video_path_from_storage(item.get("assetId", "")) or video_name
+    return image_name, video_name
+
+
 def get_feedback(slide: dict[str, Any]) -> dict[str, Any]:
     fields = {"correct": "c", "incorrect": "i", "attempt": "at", "partial": "pc", "any": "a"}
     result: dict[str, Any] = {"formats": {}}
     feedback = slide.get("s", {}).get("F", {})
     for key, code in fields.items():
-        node = feedback.get(code, {}).get("v", {})
+        block = feedback.get(code, {})
+        node = block.get("v", {})
         text = strip_html(node.get("h") or node.get("a") or "")
         result[key] = text
         if text:
             result["formats"][key] = extract_text_format(node.get("h", ""), None, "feedback")
+        audio_name = sound_path_from_storage((block.get("a") or {}).get("i", ""))
+        if audio_name:
+            result[f"{key}Audio"] = audio_name
+        inline_image, inline_video = _rich_inline_media(node)
+        if inline_image:
+            result[f"{key}Image"] = inline_image
+        if inline_video:
+            result[f"{key}Video"] = inline_video
     return result
 
 
 def set_feedback(slide: dict[str, Any], feedback: dict[str, Any]) -> None:
+    from .media_rich import audio_attachment, embed_rich_image, embed_rich_video
+
     fields = {"correct": "c", "incorrect": "i", "attempt": "at", "partial": "pc", "any": "a"}
     if "s" not in slide:
         slide["s"] = {}
@@ -228,14 +326,35 @@ def set_feedback(slide: dict[str, Any], feedback: dict[str, Any]) -> None:
     formats = feedback.get("formats") or {}
     for key, code in fields.items():
         text = feedback.get(key, "")
-        if not text:
+        audio_name = feedback.get(f"{key}Audio")
+        image_name = feedback.get(f"{key}Image")
+        video_name = feedback.get(f"{key}Video")
+        if not any((text, audio_name, image_name, video_name)):
             continue
-        if code not in slide["s"]["F"]:
-            slide["s"]["F"][code] = {"v": {}}
-        node = slide["s"]["F"][code]["v"]
+
+        block = slide["s"]["F"].setdefault(code, {})
+        node = block.setdefault("v", {})
+        if text or image_name or video_name:
+            node.pop("r", None)
+
         f_fmt = formats.get(key)
-        if should_apply_text(node, text, f_fmt, "feedback"):
+        if text and should_apply_text(node, text, f_fmt, "feedback"):
             apply_text_to_node(node, text, "feedback", f_fmt)
+        elif image_name or video_name:
+            node.setdefault("h", "")
+            node.setdefault("d", [])
+            node.setdefault("t", {})
+
+        if image_name:
+            embed_rich_image(node, image_name)
+        if video_name:
+            poster = image_name
+            if poster:
+                embed_rich_video(node, video_name, poster)
+        if audio_name:
+            block["a"] = audio_attachment(audio_name)
+        elif "a" in block and not audio_name:
+            block.pop("a", None)
 
 
 def extract_choices(slide: dict[str, Any]) -> list[dict[str, Any]]:
@@ -251,6 +370,8 @@ def extract_choices(slide: dict[str, Any]) -> list[dict[str, Any]]:
         choice_image = image_path_from_storage((ch.get("ia") or {}).get("i", ""))
         if not choice_image:
             choice_image = image_path_from_html(choice_html)
+        choice_audio = sound_path_from_storage((ch.get("f") or {}).get("a", {}).get("i", ""))
+        _, choice_video = _rich_inline_media(t_node)
         choices.append(
             {
                 "id": ch.get("i", ""),
@@ -258,6 +379,8 @@ def extract_choices(slide: dict[str, Any]) -> list[dict[str, Any]]:
                 "html": choice_html,
                 "format": extract_text_format(t_node.get("h", ""), t_node.get("t"), "content"),
                 "image": choice_image,
+                "audio": choice_audio,
+                "video": choice_video,
                 "isCorrect": bool(ch.get("c")),
             }
         )
@@ -288,6 +411,29 @@ def apply_choices(slide: dict[str, Any], choices: list[dict[str, Any]]) -> None:
         if choice.get("image"):
             ch.setdefault("ia", {})
             ch["ia"]["i"] = f"storage://images/{choice['image']}"
+        else:
+            ch.pop("ia", None)
+
+        from .media_rich import audio_attachment, embed_rich_image, embed_rich_video
+
+        if choice.get("audio"):
+            ch["f"] = {"a": audio_attachment(choice["audio"])}
+        else:
+            ch.pop("f", None)
+
+        if choice.get("video") and choice.get("image"):
+            if isinstance(ch.get("t"), dict):
+                t_node = ch["t"]
+                t_node.pop("r", None)
+                embed_rich_video(t_node, choice["video"], choice["image"])
+        elif isinstance(ch.get("t"), dict) and not choice.get("video"):
+            t_node = ch["t"]
+            if t_node.get("r"):
+                t_node["r"] = [
+                    item for item in t_node["r"]
+                    if not (isinstance(item, dict) and item.get("type") == "video")
+                ]
+
         ch["c"] = bool(choice.get("isCorrect"))
         new_chs.append(ch)
     slide["C"]["chs"] = new_chs
@@ -340,7 +486,7 @@ def extract_slide_images(slide: dict[str, Any]) -> list[str]:
 
 
 def editable_level(question_type: str) -> str:
-    full = {"MultipleChoice", "MultipleResponse", "MultipleChoiceText", "TypeIn"}
+    full = {"MultipleChoice", "MultipleResponse", "MultipleChoiceText", "TypeIn", "Numeric"}
     partial = {"Matching", "Sequence", "WordBank", "FillInTheBlank", "TrueFalse"}
     if question_type in full:
         return "full"
@@ -519,7 +665,7 @@ def slide_to_view(slide: dict[str, Any], group_index: int, question_index: int, 
         view["sequenceItems"] = extract_sequence_items(slide)
     elif qtype == "WordBank":
         view["wordBankWords"] = list(slide.get("C", {}).get("ew", []) or [])
-    elif qtype == "TypeIn":
+    elif qtype in ("TypeIn", "Numeric"):
         view["typeInAnswers"] = extract_type_in_answers(slide)
 
     view["layout"] = extract_layout(slide)
@@ -671,7 +817,7 @@ def apply_question_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:
         slide["C"].setdefault("rt", {})
         slide["C"]["rt"]["h"] = edit["richHtml"]
 
-    if edit.get("typeInAnswers") is not None and slide.get("tp") == "TypeIn":
+    if edit.get("typeInAnswers") is not None and slide.get("tp") in ("TypeIn", "Numeric"):
         slide.setdefault("C", {})
         slide["C"]["chs"] = [
             {"i": f"ans-{idx}", "t": ans} for idx, ans in enumerate(edit["typeInAnswers"]) if ans.strip()
@@ -841,7 +987,7 @@ class ScormSession:
                     apply_question_edit(slide, questions[sid])
                 new_slides.append(slide)
             group["S"] = new_slides
-        ensure_image_registry(self.quiz_json, self.package_root)
+        ensure_media_registry(self.quiz_json, self.package_root)
         self.persist()
         return self.get_view()
 

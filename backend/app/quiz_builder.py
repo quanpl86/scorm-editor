@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import html
 import json
 import re
 import shutil
@@ -10,8 +11,16 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from .excel_import import ExcelQuestion, resolve_media_path
-from .typography import apply_text_to_node, strip_plain
+from .excel_import import ExcelQuestion, ParsedMediaRefs, SKIP_IMPORT_TYPES, resolve_media_path
+from .media_rich import audio_attachment, embed_rich_image, embed_rich_video
+from .layout import (
+    _blank_object_styles,
+    _bump_slide_object_quota,
+    reflow_imported_slide,
+    set_slide_attachment,
+)
+from .scorm_parser import image_dimensions
+from .typography import FONT_CONTENT, apply_text_to_node, strip_plain
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 MASTER_SCORM = PROJECT_ROOT / "DGSA_Level5_Bài 1_Thế giới 3D diệu kỳ - Huyền Diệu"
@@ -92,20 +101,177 @@ def load_slide_templates() -> dict[str, dict[str, Any]]:
         info.get("C", {}).pop("chs", None)
         templates["InfoSlide"] = info
 
+    if "Numeric" not in templates and "TypeIn" in templates:
+        numeric = copy.deepcopy(templates["TypeIn"])
+        numeric["tp"] = "Numeric"
+        templates["Numeric"] = numeric
+
     return templates
 
 
-def _set_feedback(slide: dict[str, Any], correct: str, incorrect: str) -> None:
-    slide.setdefault("s", {}).setdefault("F", {})
-    for key, code, text in (
-        ("correct", "c", correct),
-        ("incorrect", "i", incorrect),
-    ):
-        if not text:
-            continue
-        slide["s"]["F"].setdefault(code, {"v": {}})
-        node = slide["s"]["F"][code]["v"]
-        apply_text_to_node(node, text, "feedback")
+def _blank_ids_from_html(html_text: str, prefix: str) -> list[str]:
+    return re.findall(rf'id="({prefix}\d+)"', html_text or "")
+
+
+def _upsert_blank_answer(
+    rt: dict[str, Any],
+    blank_id: str,
+    value: str,
+    blank_type: str,
+) -> None:
+    entries = rt.setdefault("r", [])
+    for entry in entries:
+        if entry.get("id") == blank_id:
+            entry["data"] = {"v": [value]}
+            entry["type"] = blank_type
+            return
+    entries.append({"data": {"v": [value]}, "id": blank_id, "type": blank_type})
+
+
+def _upsert_wordbank_answer(rt: dict[str, Any], blank_id: str, value: str) -> None:
+    entries = rt.setdefault("r", [])
+    for entry in entries:
+        if entry.get("id") == blank_id:
+            entry["data"] = {"v": value}
+            entry["type"] = "qmWordBank"
+            return
+    entries.append({"data": {"v": value}, "id": blank_id, "type": "qmWordBank"})
+
+
+def _clear_template_feedback(slide: dict[str, Any]) -> None:
+    feedback = slide.get("s", {}).get("F", {})
+    for code in ("c", "i"):
+        block = feedback.get(code)
+        if isinstance(block, dict):
+            block.pop("a", None)
+
+
+def _apply_feedback_block(
+    slide: dict[str, Any],
+    code: str,
+    refs: ParsedMediaRefs,
+    *,
+    package_root: Path,
+    excel_dir: Path,
+    fallback_media_dirs: list[Path],
+    warnings: list[str],
+) -> None:
+    if not any((refs.text, refs.image, refs.audio, refs.video)):
+        return
+
+    block = slide.setdefault("s", {}).setdefault("F", {}).setdefault(code, {})
+    block.pop("a", None)
+    node = block.setdefault("v", {})
+
+    if refs.text or refs.image or refs.video:
+        node.pop("r", None)
+
+    if refs.text:
+        apply_text_to_node(node, refs.text, "feedback")
+    elif refs.image or refs.video:
+        node.setdefault("h", "")
+        node.setdefault("d", [])
+        node.setdefault("t", {})
+
+    poster_name = _resolve_and_copy_image(
+        refs.image,
+        package_root=package_root,
+        excel_dir=excel_dir,
+        fallback_media_dirs=fallback_media_dirs,
+        warnings=warnings,
+    )
+
+    if refs.video:
+        video_name = _resolve_and_copy_video(
+            refs.video,
+            package_root=package_root,
+            excel_dir=excel_dir,
+            fallback_media_dirs=fallback_media_dirs,
+            warnings=warnings,
+        )
+        if video_name:
+            if not poster_name:
+                warnings.append(
+                    f"Video feedback cần ảnh poster (thêm [image=...] hoặc cột Image): {refs.video}"
+                )
+            else:
+                embed_rich_video(
+                    node,
+                    video_name,
+                    poster_name,
+                    package_root=package_root,
+                )
+    elif poster_name:
+        embed_rich_image(node, poster_name, package_root=package_root)
+
+    if refs.audio:
+        audio_name = _resolve_and_copy_audio(
+            refs.audio,
+            package_root=package_root,
+            excel_dir=excel_dir,
+            fallback_media_dirs=fallback_media_dirs,
+            warnings=warnings,
+        )
+        if audio_name:
+            block["a"] = audio_attachment(audio_name)
+
+
+def _apply_choice_media(
+    ch: dict[str, Any],
+    ans,
+    *,
+    package_root: Path,
+    excel_dir: Path,
+    fallback_media_dirs: list[Path],
+    warnings: list[str],
+) -> None:
+    ch.pop("f", None)
+
+    poster_name = _resolve_and_copy_image(
+        ans.image,
+        package_root=package_root,
+        excel_dir=excel_dir,
+        fallback_media_dirs=fallback_media_dirs,
+        warnings=warnings,
+    )
+    if poster_name:
+        _apply_choice_image(ch, poster_name)
+
+    if ans.audio:
+        audio_name = _resolve_and_copy_audio(
+            ans.audio,
+            package_root=package_root,
+            excel_dir=excel_dir,
+            fallback_media_dirs=fallback_media_dirs,
+            warnings=warnings,
+        )
+        if audio_name:
+            ch["f"] = {"a": audio_attachment(audio_name)}
+
+    if ans.video:
+        video_name = _resolve_and_copy_video(
+            ans.video,
+            package_root=package_root,
+            excel_dir=excel_dir,
+            fallback_media_dirs=fallback_media_dirs,
+            warnings=warnings,
+        )
+        if video_name:
+            if not poster_name:
+                warnings.append(
+                    f"Video đáp án cần ảnh (thêm [image=...] trong Answer): {ans.video}"
+                )
+            else:
+                if not isinstance(ch.get("t"), dict):
+                    ch["t"] = {}
+                t_node = ch["t"]
+                t_node.pop("r", None)
+                embed_rich_video(
+                    t_node,
+                    video_name,
+                    poster_name,
+                    package_root=package_root,
+                )
 
 
 def _set_points(slide: dict[str, Any], points: float | None) -> None:
@@ -131,17 +297,24 @@ def _apply_choice_text(ch: dict[str, Any], text: str, *, is_correct: bool = Fals
         ch["t"] = text
 
 
-def _apply_image(slide: dict[str, Any], image_name: str) -> None:
-    if not image_name:
-        return
-    chs = slide.get("C", {}).get("chs", [])
-    if chs:
-        chs[0].setdefault("ia", {})["i"] = f"storage://images/{image_name}"
-        return
-    for obj in slide.get("a", {}).get("o", []):
-        if obj.get("I") == "content" and obj.get("tp") == "shape":
-            obj.setdefault("rt", {})
-            break
+DEFAULT_PICTURE_RECT = {
+    "x": 243.48242530755715,
+    "y": 152.17981079537654,
+    "w": 233.03514938488576,
+    "h": 190.77184773321883,
+}
+DEFAULT_VIDEO_RECT = {
+    "x": 200.0,
+    "y": 140.0,
+    "w": 320.0,
+    "h": 200.0,
+}
+DEFAULT_AUDIO_RECT = {
+    "x": 200.0,
+    "y": 160.0,
+    "w": 320.0,
+    "h": 48.0,
+}
 
 
 def _copy_image_to_package(src: Path, package_root: Path) -> str:
@@ -152,6 +325,163 @@ def _copy_image_to_package(src: Path, package_root: Path) -> str:
     return dest_name
 
 
+def _copy_audio_to_package(src: Path, package_root: Path) -> str:
+    audios_dir = package_root / "res" / "data" / "audios"
+    audios_dir.mkdir(parents=True, exist_ok=True)
+    dest_name = f"snd-import-{uuid.uuid4().hex[:12]}{src.suffix.lower()}"
+    shutil.copy2(src, audios_dir / dest_name)
+    return dest_name
+
+
+def _copy_video_to_package(src: Path, package_root: Path) -> str:
+    videos_dir = package_root / "res" / "data" / "videos"
+    videos_dir.mkdir(parents=True, exist_ok=True)
+    dest_name = f"vid-import-{uuid.uuid4().hex[:12]}{src.suffix.lower()}"
+    shutil.copy2(src, videos_dir / dest_name)
+    return dest_name
+
+
+def _media_warning(label: str, ref: str) -> str:
+    return f"Không tìm thấy {label}: {ref}"
+
+
+def _resolve_and_copy_image(
+    ref: str | None,
+    *,
+    package_root: Path,
+    excel_dir: Path,
+    fallback_media_dirs: list[Path],
+    warnings: list[str],
+) -> str | None:
+    if not ref:
+        return None
+    media_src = resolve_media_path(ref, excel_dir, fallback_media_dirs)
+    if not media_src or not media_src.exists():
+        warnings.append(_media_warning("ảnh", ref))
+        return None
+    return _copy_image_to_package(media_src, package_root)
+
+
+def _resolve_and_copy_audio(
+    ref: str | None,
+    *,
+    package_root: Path,
+    excel_dir: Path,
+    fallback_media_dirs: list[Path],
+    warnings: list[str],
+) -> str | None:
+    if not ref:
+        return None
+    media_src = resolve_media_path(ref, excel_dir, fallback_media_dirs)
+    if not media_src or not media_src.exists():
+        warnings.append(_media_warning("audio", ref))
+        return None
+    return _copy_audio_to_package(media_src, package_root)
+
+
+def _resolve_and_copy_video(
+    ref: str | None,
+    *,
+    package_root: Path,
+    excel_dir: Path,
+    fallback_media_dirs: list[Path],
+    warnings: list[str],
+) -> str | None:
+    if not ref:
+        return None
+    media_src = resolve_media_path(ref, excel_dir, fallback_media_dirs)
+    if not media_src or not media_src.exists():
+        warnings.append(_media_warning("video", ref))
+        return None
+    return _copy_video_to_package(media_src, package_root)
+
+
+def _clear_template_attachments(slide: dict[str, Any]) -> None:
+    slide.pop("at", None)
+
+
+def _ensure_slide_object(
+    slide: dict[str, Any],
+    object_type: str,
+    name: str,
+    rect: dict[str, float],
+) -> None:
+    objects = slide.setdefault("a", {}).setdefault("o", [])
+    if any(obj.get("tp") == object_type for obj in objects):
+        return
+    objects.append(
+        {
+            "tp": object_type,
+            "I": name,
+            "k": False,
+            "r": {
+                "x": float(rect["x"]),
+                "y": float(rect["y"]),
+                "w": max(40.0, float(rect["w"])),
+                "h": max(40.0, float(rect["h"])),
+            },
+            "s": "rectangle",
+            "S": _blank_object_styles(),
+            "b": 0.3,
+        }
+    )
+    _bump_slide_object_quota(slide, object_type)
+
+
+def _apply_question_image(slide: dict[str, Any], image_name: str) -> None:
+    set_slide_attachment(slide, image_name, zoom=True)
+    _ensure_slide_object(
+        slide,
+        "slidePicture",
+        "Slide Picture 1",
+        DEFAULT_PICTURE_RECT,
+    )
+
+
+def _apply_choice_image(ch: dict[str, Any], image_name: str) -> None:
+    ch.setdefault("ia", {})["i"] = f"storage://images/{image_name}"
+
+
+def _apply_slide_audio(slide: dict[str, Any], audio_name: str) -> None:
+    slide.setdefault("at", {})
+    slide["at"]["a"] = {
+        "i": f"storage://sounds/{audio_name}",
+        "a": True,
+        "pe": False,
+        "pl": 1,
+        "pb": True,
+        "r": "",
+    }
+    _ensure_slide_object(slide, "slideAudio", "Slide Audio 1", DEFAULT_AUDIO_RECT)
+
+
+def _apply_slide_video(
+    slide: dict[str, Any],
+    video_name: str,
+    poster_name: str,
+    *,
+    package_root: Path,
+) -> None:
+    video_path = package_root / "res" / "data" / "videos" / video_name
+    width, height = 640, 360
+    if video_path.is_file():
+        width, height = image_dimensions(video_path)
+
+    slide.setdefault("at", {})
+    slide["at"]["v"] = {
+        "i": f"storage://videos/{video_name}",
+        "pi": f"storage://images/{poster_name}",
+        "w": width,
+        "h": height,
+        "a": True,
+        "pe": False,
+        "pl": 1,
+        "pb": True,
+        "r": "",
+    }
+    _ensure_slide_object(slide, "slideVideo", "Slide Video 1", DEFAULT_VIDEO_RECT)
+
+
 def _apply_row_to_slide(
     slide: dict[str, Any],
     row: ExcelQuestion,
@@ -159,19 +489,78 @@ def _apply_row_to_slide(
     package_root: Path,
     excel_dir: Path,
     fallback_media_dirs: list[Path],
-) -> None:
+) -> list[str]:
+    warnings: list[str] = []
     slide["i"] = _new_id()
     slide["tp"] = row.ispring_type
+    _clear_template_attachments(slide)
+    _clear_template_feedback(slide)
     slide.setdefault("D", {})
-    apply_text_to_node(slide["D"], row.question_text, "title")
-    _set_feedback(slide, row.correct_feedback, row.incorrect_feedback)
+    if row.question_text:
+        apply_text_to_node(slide["D"], row.question_text, "title")
+    _apply_feedback_block(
+        slide,
+        "c",
+        row.correct_feedback,
+        package_root=package_root,
+        excel_dir=excel_dir,
+        fallback_media_dirs=fallback_media_dirs,
+        warnings=warnings,
+    )
+    _apply_feedback_block(
+        slide,
+        "i",
+        row.incorrect_feedback,
+        package_root=package_root,
+        excel_dir=excel_dir,
+        fallback_media_dirs=fallback_media_dirs,
+        warnings=warnings,
+    )
     _set_points(slide, row.points)
 
-    image_name = None
-    if row.image:
-        media_src = resolve_media_path(row.image, excel_dir, fallback_media_dirs)
-        if media_src and media_src.exists():
-            image_name = _copy_image_to_package(media_src, package_root)
+    question_image = _resolve_and_copy_image(
+        row.image,
+        package_root=package_root,
+        excel_dir=excel_dir,
+        fallback_media_dirs=fallback_media_dirs,
+        warnings=warnings,
+    )
+    if question_image:
+        _apply_question_image(slide, question_image)
+
+    audio_name = _resolve_and_copy_audio(
+        row.audio,
+        package_root=package_root,
+        excel_dir=excel_dir,
+        fallback_media_dirs=fallback_media_dirs,
+        warnings=warnings,
+    )
+    if audio_name:
+        _apply_slide_audio(slide, audio_name)
+
+    video_name = _resolve_and_copy_video(
+        row.video,
+        package_root=package_root,
+        excel_dir=excel_dir,
+        fallback_media_dirs=fallback_media_dirs,
+        warnings=warnings,
+    )
+    if video_name:
+        poster_name = question_image
+        if not poster_name:
+            poster_name = _resolve_and_copy_image(
+                row.image,
+                package_root=package_root,
+                excel_dir=excel_dir,
+                fallback_media_dirs=fallback_media_dirs,
+                warnings=warnings,
+            )
+        if poster_name:
+            _apply_slide_video(slide, video_name, poster_name, package_root=package_root)
+        else:
+            warnings.append(
+                f"Video {row.video} cần ảnh câu hỏi (poster) — bỏ qua gắn video"
+            )
 
     tp = row.ispring_type
     slide.setdefault("C", {})
@@ -181,11 +570,19 @@ def _apply_row_to_slide(
         chs = []
         for ans in row.answers:
             ch = copy.deepcopy(template)
+            ch.pop("ia", None)
+            ch.pop("f", None)
             _apply_choice_text(ch, ans.text, is_correct=ans.is_correct)
+            _apply_choice_media(
+                ch,
+                ans,
+                package_root=package_root,
+                excel_dir=excel_dir,
+                fallback_media_dirs=fallback_media_dirs,
+                warnings=warnings,
+            )
             chs.append(ch)
         slide["C"]["chs"] = chs
-        if image_name and chs:
-            chs[0].setdefault("ia", {})["i"] = f"storage://images/{image_name}"
 
     elif tp == "Sequence":
         template = _choice_template(slide["C"].get("chs", []))
@@ -223,46 +620,57 @@ def _apply_row_to_slide(
         ]
 
     elif tp == "WordBank":
-        words = [ans.text for ans in row.answers if ans.text]
-        slide["C"]["ew"] = words
         rt = slide["C"].setdefault("rt", {})
-        blank_id = re.search(r'id="(qmWordBank\d+)"', rt.get("h", ""))
-        blank_span = (
-            f'<span id="{blank_id.group(1)}"></span>'
-            if blank_id
-            else '<span id="qmWordBank0"></span>'
+        blank_ids = _blank_ids_from_html(rt.get("h", ""), "qmWordBank")
+        blank_id = blank_ids[0] if blank_ids else "qmWordBank0"
+        correct = next((a.text for a in row.answers if a.is_correct and a.text), None)
+        if not correct:
+            correct = next((a.text for a in row.answers if a.text), "")
+        extra_words = [a.text for a in row.answers if a.text and a.text != correct]
+        slide["C"]["ew"] = extra_words
+        plain = strip_plain(row.question_text)
+        blank_span = f'<span id="{blank_id}"></span>'
+        rich_html = (
+            f'<p style="font-size:18px;font-family:{FONT_CONTENT};color:#000000">'
+            f'<span>{html.escape(plain)}</span>​{blank_span}​</p>'
         )
-        html = (
-            f'<p style="font-size:18px;font-family:fnt5_24031;color:#000000">'
-            f'<span>{row.question_text}</span>​{blank_span}​</p>'
-        )
-        apply_text_to_node(rt, strip_plain(row.question_text), "content")
-        rt["h"] = html
+        apply_text_to_node(rt, plain, "content")
+        rt["h"] = rich_html
+        rt["d"] = [plain, {"id": blank_id}]
+        if correct:
+            _upsert_wordbank_answer(rt, blank_id, correct)
 
     elif tp == "FillInTheBlank":
         rt = slide["C"].setdefault("rt", {})
-        blank_id = re.search(r'id="(qmFillInTheBlank\d+)"', rt.get("h", ""))
-        blank_span = (
-            f'<span id="{blank_id.group(1)}"></span>'
-            if blank_id
-            else '<span id="qmFillInTheBlank0"></span>'
-        )
+        blank_ids = _blank_ids_from_html(rt.get("h", ""), "qmFillInTheBlank")
+        blank_id = blank_ids[0] if blank_ids else "qmFillInTheBlank0"
         answers = [ans.text for ans in row.answers if ans.text]
-        extra = f" {answers[0]}" if answers else ""
-        html = (
-            f'<p style="font-size:18px;font-family:fnt5_24031;color:#000000">'
-            f'​{blank_span}​<span>{row.question_text}{extra}</span></p>'
+        plain = strip_plain(row.question_text)
+        blank_span = f'<span id="{blank_id}"></span>'
+        rich_html = (
+            f'<p style="font-size:18px;font-family:{FONT_CONTENT};color:#000000">'
+            f'<span>{html.escape(plain)}</span>​{blank_span}​</p>'
         )
-        apply_text_to_node(rt, strip_plain(row.question_text), "content")
-        rt["h"] = html
+        apply_text_to_node(rt, plain, "content")
+        rt["h"] = rich_html
+        rt["d"] = [plain, {"id": blank_id}]
+        if answers:
+            _upsert_blank_answer(rt, blank_id, answers[0], "qmFillInTheBlank")
+
+    elif tp == "Numeric":
+        slide["C"]["chs"] = [
+            {"i": _new_id(), "t": ans.text}
+            for ans in row.answers
+            if ans.text
+        ]
 
     elif tp == "InfoSlide":
         body = row.answers[0].text if row.answers else row.question_text
         slide.setdefault("D", {})
         apply_text_to_node(slide["D"], body, "content")
 
-    if image_name:
-        _apply_image(slide, image_name)
+    reflow_imported_slide(slide)
+    return warnings
 
 
 def build_quiz_from_excel(
@@ -293,12 +701,13 @@ def build_quiz_from_excel(
             })
             continue
 
-        if row.ispring_type == "Numeric":
+        skip_reason = SKIP_IMPORT_TYPES.get(row.ispring_type)
+        if skip_reason:
             report.append({
                 "row": row.row_index,
                 "type": row.excel_type,
                 "status": "skipped",
-                "errors": ["Numeric chưa hỗ trợ import"],
+                "errors": [skip_reason],
             })
             continue
 
@@ -314,7 +723,7 @@ def build_quiz_from_excel(
 
         slide = copy.deepcopy(template)
         try:
-            _apply_row_to_slide(
+            warnings = _apply_row_to_slide(
                 slide,
                 row,
                 package_root=package_root,
@@ -322,13 +731,16 @@ def build_quiz_from_excel(
                 fallback_media_dirs=fallback_dirs,
             )
             new_slides.append(slide)
-            report.append({
+            entry: dict[str, Any] = {
                 "row": row.row_index,
                 "type": row.excel_type,
                 "status": "imported",
                 "slideId": slide["i"],
-                "question": row.question_text[:80],
-            })
+                "question": (row.question_text or row.image or "")[:80],
+            }
+            if warnings:
+                entry["warnings"] = warnings
+            report.append(entry)
         except Exception as exc:
             report.append({
                 "row": row.row_index,

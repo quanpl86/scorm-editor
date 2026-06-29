@@ -455,8 +455,9 @@ def extract_choice_preview(slide: dict[str, Any]) -> dict[str, Any] | None:
                     ),
                 }
             )
-    elif qtype == "TypeIn":
-        preview["items"] = [{"inputType": "text", "placeholder": "Nhập đáp án..."}]
+    elif qtype in ("TypeIn", "Numeric"):
+        placeholder = "Nhập số..." if qtype == "Numeric" else "Nhập đáp án..."
+        preview["items"] = [{"inputType": "numeric" if qtype == "Numeric" else "text", "placeholder": placeholder}]
     elif qtype in ("WordBank", "FillInTheBlank"):
         rt = slide.get("C", {}).get("rt", {}) or {}
         preview["richHtml"] = rt.get("h") or rt.get("a") or ""
@@ -633,7 +634,7 @@ def extract_choice_preview(slide: dict[str, Any]) -> dict[str, Any] | None:
             "contentPadding": pad,
             "contentWidth": round(avail_w, 2) if avail_w > 0 else None,
         }
-    elif items and qtype == "TypeIn":
+    elif items and qtype in ("TypeIn", "Numeric"):
         cr = content.get("r", {}) or {}
         pad = extract_shape_visual(content).get("padding", {})
         avail_h = float(cr.get("h", 0)) - float(pad.get("t", 0)) - float(pad.get("b", 0))
@@ -1057,3 +1058,186 @@ def apply_question_layout_edit(slide: dict[str, Any], edit: dict[str, Any]) -> N
         apply_choice_columns(slide, layout["choiceColumns"])
     apply_layout_media(slide, layout)
     apply_layout(slide, layout)
+
+
+IMPORT_MARGIN = 24.0
+IMPORT_GAP = 12.0
+CORNER_PICTURE_SIZE = (180.0, 135.0)
+CENTER_PICTURE_MAX_H = 160.0
+
+
+def _slide_object_by_tp(slide: dict[str, Any], object_type: str) -> dict[str, Any] | None:
+    for obj in slide.get("a", {}).get("o", []):
+        if obj.get("tp") == object_type:
+            return obj
+    return None
+
+
+def _slide_object_by_name(slide: dict[str, Any], name: str) -> dict[str, Any] | None:
+    for obj in slide.get("a", {}).get("o", []):
+        if obj.get("I") == name:
+            return obj
+    return None
+
+
+def _rect_bottom(rect: dict[str, float]) -> float:
+    return float(rect.get("y", 0)) + float(rect.get("h", 0))
+
+
+def _rects_overlap_error(a: dict[str, float], b: dict[str, float]) -> bool:
+    return rects_overlap(rect_tuple(a), rect_tuple(b))
+
+
+def _prune_orphan_slide_picture(slide: dict[str, Any]) -> None:
+    if slide.get("at", {}).get("i", {}).get("i"):
+        return
+    objects = slide.get("a", {}).get("o", [])
+    if not objects:
+        return
+    slide["a"]["o"] = [o for o in objects if o.get("tp") != "slidePicture"]
+
+
+def _place_corner_picture(picture: dict[str, Any], *, top_y: float) -> None:
+    w, h = CORNER_PICTURE_SIZE
+    picture.setdefault("r", {})
+    picture["r"]["w"] = w
+    picture["r"]["h"] = h
+    picture["r"]["x"] = round(CANVAS_W - IMPORT_MARGIN - w, 2)
+    picture["r"]["y"] = round(top_y, 2)
+
+
+def _place_center_picture(picture: dict[str, Any], *, top_y: float, max_h: float = CENTER_PICTURE_MAX_H) -> float:
+    r = picture.setdefault("r", {})
+    pic_w = float(r.get("w", 200))
+    pic_h = float(r.get("h", 150))
+    if pic_h > max_h:
+        scale = max_h / pic_h
+        pic_h = max_h
+        pic_w = max(80, pic_w * scale)
+    max_w = CANVAS_W - 2 * IMPORT_MARGIN
+    if pic_w > max_w:
+        scale = max_w / pic_w
+        pic_w = max_w
+        pic_h = max(60, pic_h * scale)
+    r["w"] = round(pic_w, 2)
+    r["h"] = round(pic_h, 2)
+    r["x"] = round((CANVAS_W - pic_w) / 2, 2)
+    r["y"] = round(top_y, 2)
+    return _rect_bottom(r)
+
+
+def _sync_matching_column_labels(slide: dict[str, Any], content_top: float) -> None:
+    content = _slide_object_by_name(slide, "content")
+    if not content:
+        return
+    labels: list[tuple[str, dict[str, Any]]] = []
+    for obj in slide.get("a", {}).get("o", []):
+        if obj.get("tp") != "shape":
+            continue
+        rt = obj.get("rt") if isinstance(obj.get("rt"), dict) else {}
+        label = strip_html(rt.get("h") or rt.get("a") or "")
+        if label in ("Cột A", "Cột B"):
+            labels.append((label, obj))
+    if len(labels) < 2:
+        return
+    labels.sort(key=lambda item: item[1].get("r", {}).get("x", 0))
+    label_h = 28.0
+    label_y = round(max(IMPORT_MARGIN, content_top - label_h - 6), 2)
+    inner_left = float(content.get("r", {}).get("x", IMPORT_MARGIN)) + 10
+    inner_w = float(content.get("r", {}).get("w", CANVAS_W - 2 * IMPORT_MARGIN)) - 20
+    col_w = round(inner_w * 0.46, 2)
+    gap = 64.0
+    for idx, (_, obj) in enumerate(labels[:2]):
+        obj.setdefault("r", {})
+        obj["r"]["y"] = label_y
+        obj["r"]["h"] = label_h
+        obj["r"]["w"] = col_w
+        obj["r"]["x"] = round(inner_left + idx * (col_w + gap), 2)
+
+
+def _resolve_import_media_overlap(slide: dict[str, Any]) -> None:
+    direction = _slide_object_by_name(slide, "direction")
+    content = _slide_object_by_name(slide, "content")
+    picture = _slide_object_by_tp(slide, "slidePicture")
+    if not direction or not content:
+        return
+
+    has_image = bool(slide.get("at", {}).get("i", {}).get("i"))
+    if picture and not has_image:
+        objects = slide.get("a", {}).get("o", [])
+        slide["a"]["o"] = [o for o in objects if o is not picture]
+        picture = None
+
+    dir_r = direction.setdefault("r", {})
+    dir_r["x"] = IMPORT_MARGIN
+    dir_r["w"] = CANVAS_W - 2 * IMPORT_MARGIN
+    dir_r["y"] = IMPORT_MARGIN
+
+    cursor_y = _rect_bottom(dir_r) + IMPORT_GAP
+    qtype = slide.get("tp", "")
+
+    content_r = content.setdefault("r", {})
+
+    if picture and has_image:
+        tall_content = float(content_r.get("h", 0)) > 220
+        if qtype in ("Matching", "Sequence"):
+            cursor_y = _place_center_picture(picture, top_y=cursor_y, max_h=96) + IMPORT_GAP
+        elif tall_content:
+            _place_corner_picture(picture, top_y=dir_r["y"] + dir_r["h"] + IMPORT_GAP)
+            content_r["w"] = round(float(picture["r"]["x"]) - IMPORT_MARGIN - IMPORT_GAP, 2)
+            cursor_y = round(_rect_bottom(dir_r) + IMPORT_GAP, 2)
+        else:
+            cursor_y = _place_center_picture(picture, top_y=cursor_y) + IMPORT_GAP
+
+    if _rect_bottom(dir_r) + IMPORT_GAP > float(content_r.get("y", 0)) - 1:
+        content_r["y"] = round(cursor_y, 2)
+
+    if picture and has_image and _rects_overlap_error(content_r, picture["r"]):
+        content_r["y"] = round(_rect_bottom(picture["r"]) + IMPORT_GAP, 2)
+
+    content_r["x"] = IMPORT_MARGIN
+    content_r["w"] = CANVAS_W - 2 * IMPORT_MARGIN
+    max_content_h = CANVAS_H - float(content_r["y"]) - IMPORT_MARGIN
+    if float(content_r.get("h", 0)) > max_content_h:
+        content_r["h"] = round(max(48, max_content_h), 2)
+
+    if qtype == "Matching":
+        _sync_matching_column_labels(slide, float(content_r["y"]))
+
+    additional = _slide_object_by_name(slide, "additionalContent")
+    if additional:
+        ar = additional.setdefault("r", {})
+        ar["y"] = round(_rect_bottom(content_r) + 10, 2)
+        ar["h"] = round(min(float(ar.get("h", 60)), CANVAS_H - ar["y"] - 8), 2)
+
+    for media_tp, default_h in (("slideAudio", 48.0), ("slideVideo", 120.0)):
+        media_obj = _slide_object_by_tp(slide, media_tp)
+        if not media_obj:
+            continue
+        mr = media_obj.setdefault("r", {})
+        mr["x"] = IMPORT_MARGIN
+        mr["w"] = CANVAS_W - 2 * IMPORT_MARGIN
+        mr["h"] = default_h
+        mr["y"] = round(dir_r["y"] + dir_r["h"] + IMPORT_GAP, 2)
+
+
+def reflow_imported_slide(slide: dict[str, Any]) -> None:
+    """Reflow canvas regions after Excel import — typography, choice columns, media overlap."""
+    from .typography import apply_slide_typography
+
+    qtype = slide.get("tp", "")
+    if qtype in ("ResultSlide", "IntroSlide", "InstructionsSlide"):
+        return
+
+    _prune_orphan_slide_picture(slide)
+
+    chs = slide.get("C", {}).get("chs", [])
+    if qtype in CHOICE_COLUMN_TYPES and chs:
+        has_images = any((ch.get("ia") or {}).get("i") for ch in chs)
+        if qtype == "TrueFalse":
+            apply_choice_columns(slide, 2)
+        elif "cc" not in (slide.get("s") or {}):
+            apply_choice_columns(slide, infer_choice_columns(slide, len(chs), has_images))
+
+    apply_slide_typography(slide, auto_layout=True)
+    _resolve_import_media_overlap(slide)

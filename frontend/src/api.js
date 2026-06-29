@@ -14,6 +14,16 @@ export async function importSample(source = 'zip') {
   return res.json()
 }
 
+export async function fetchExcelTemplates() {
+  const res = await fetch(`${API}/import/excel/templates`)
+  if (!res.ok) throw new Error((await res.json()).detail || 'Không tải được danh sách template')
+  return res.json()
+}
+
+export function excelTemplateDownloadUrl(templateId) {
+  return `${API}/import/excel/templates/${templateId}`
+}
+
 export async function importExcel(file, { quizTitle, groupTitle } = {}) {
   const form = new FormData()
   form.append('file', file)
@@ -31,6 +41,26 @@ export async function importExcelSample({ quizTitle, groupTitle } = {}) {
   const qs = params.toString()
   const res = await fetch(`${API}/import/excel/sample${qs ? `?${qs}` : ''}`, { method: 'POST' })
   if (!res.ok) throw new Error((await res.json()).detail || 'Import mẫu Excel thất bại')
+  return res.json()
+}
+
+export async function importExcelFibWbSample({ quizTitle, groupTitle } = {}) {
+  const params = new URLSearchParams()
+  if (quizTitle) params.set('quiz_title', quizTitle)
+  if (groupTitle) params.set('group_title', groupTitle)
+  const qs = params.toString()
+  const res = await fetch(`${API}/import/excel/fib-wb-sample${qs ? `?${qs}` : ''}`, { method: 'POST' })
+  if (!res.ok) throw new Error((await res.json()).detail || 'Import mẫu FIB/WB thất bại')
+  return res.json()
+}
+
+export async function importExcelMediaSample({ quizTitle, groupTitle } = {}) {
+  const params = new URLSearchParams()
+  if (quizTitle) params.set('quiz_title', quizTitle)
+  if (groupTitle) params.set('group_title', groupTitle)
+  const qs = params.toString()
+  const res = await fetch(`${API}/import/excel/media-sample${qs ? `?${qs}` : ''}`, { method: 'POST' })
+  if (!res.ok) throw new Error((await res.json()).detail || 'Import mẫu audio/video thất bại')
   return res.json()
 }
 

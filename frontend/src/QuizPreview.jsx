@@ -11,6 +11,7 @@ const TYPE_LABELS = {
   WordBank: 'Điền từ',
   FillInTheBlank: 'Điền khuyết',
   TypeIn: 'Gõ đáp án',
+  Numeric: 'Nhập số',
   TrueFalse: 'Đúng/Sai',
   DND: 'Kéo thả',
   ResultSlide: 'Kết quả',

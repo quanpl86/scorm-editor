@@ -176,16 +176,23 @@ function itemFontSize(item, choices, idx, typography) {
  * Mô hình SCORM Slide View: mọi hàng đáp án cùng chiều cao = availH / rows.
  * Chỉ tăng đồng đều khi có text cần nhiều dòng hơn slot hiện tại.
  */
+function choiceHasImage(item, choices, idx) {
+  return !!(item?.image || choices?.[idx]?.image)
+}
+
 export function computeChoiceMetrics(preview, choices, typography, contentRect) {
   const items = preview?.items || []
   const layout = preview?.layout || {}
   if (!items.length) return null
 
   const contentPad = layout.contentPadding || { l: 10, r: 10, t: 5, b: 5 }
-  const cols = clampChoiceColumns(layout.columns ?? 1)
+  const qtype = preview?.type || ''
+  const cols = clampChoiceColumns(layout.columns ?? 1, qtype)
   const rowCount = Math.ceil(items.length / cols)
   const choicePadding = layout.choicePadding ?? 10
-  const radioReserve = 41
+  const isSequence = qtype === 'Sequence'
+  const isTrueFalse = qtype === 'TrueFalse'
+  const radioReserve = isSequence ? (layout.indexColumnWidth ?? 36) + 8 : 41
 
   const availH = Math.max(0, (contentRect?.h || 0) - contentPad.t - contentPad.b)
   const contentWidth = layout.contentWidth
@@ -198,6 +205,14 @@ export function computeChoiceMetrics(preview, choices, typography, contentRect) 
       : 46)
 
   let uniformRowHeight = scormRowHeight
+
+  const hasImages = layout.hasImages
+    ?? items.some((item, i) => choiceHasImage(item, choices, i))
+  const imageOnly = layout.imageOnly
+    ?? (hasImages && items.every((item, i) => {
+      const text = item.text || choices?.[i]?.text || ''
+      return choiceHasImage(item, choices, i) && !text.trim()
+    }))
 
   let maxLinesNeeded = 1
   let maxFontSize = typography?.contentSize || 16
@@ -223,9 +238,17 @@ export function computeChoiceMetrics(preview, choices, typography, contentRect) 
     ) / 100
   }
 
+  if (isTrueFalse && hasImages) {
+    const imageRowMin = imageOnly
+      ? Math.max(80, Math.min(120, colWidth * 0.55))
+      : Math.max(64, uniformRowHeight)
+    uniformRowHeight = Math.max(uniformRowHeight, imageRowMin)
+  }
+
+  const rowGap = isSequence ? (layout.rowGap ?? 8) : SCORM_ROW_GAP
   const rowHeights = items.map(() => uniformRowHeight)
   const gridRowHeights = Array.from({ length: rowCount }, () => uniformRowHeight)
-  const stackHeight = rowCount * uniformRowHeight
+  const stackHeight = rowCount * uniformRowHeight + Math.max(0, rowCount - 1) * rowGap
   const contentHeight = Math.round((stackHeight + contentPad.t + contentPad.b) * 100) / 100
   const originalContentH = contentRect?.h || 0
 
@@ -235,7 +258,7 @@ export function computeChoiceMetrics(preview, choices, typography, contentRect) 
     gridRowHeights,
     rows: rowCount,
     columns: cols,
-    rowGap: SCORM_ROW_GAP,
+    rowGap,
     stackHeight,
     contentHeight,
     contentPad,

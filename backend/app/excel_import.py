@@ -29,6 +29,11 @@ EXCEL_TYPE_MAP: dict[str, str] = {
     "IS": "InfoSlide",
     "NUMG": "Numeric",
     "NUM": "Numeric",
+    "DND": "DND",
+    "DIB": "DIB",
+    "HS": "Hotspot",
+    "ESSAY": "Essay",
+    "LIKERT": "LikertScale",
 }
 
 SUPPORTED_TYPES = {
@@ -41,7 +46,39 @@ SUPPORTED_TYPES = {
     "FillInTheBlank",
     "WordBank",
     "InfoSlide",
+    "Numeric",
 }
+
+# Parsed from Excel but not injectable — clear skip reason in import report
+SKIP_IMPORT_TYPES: dict[str, str] = {
+    "DND": "Kéo thả (DND) — chỉnh layout trên Canvas SCORM gốc, không import từ Excel",
+    "DIB": "Drag in Blank — chưa hỗ trợ import Excel",
+    "Hotspot": "Hotspot — chỉnh trên Canvas SCORM gốc, không import từ Excel",
+    "Essay": "Essay — chưa hỗ trợ import Excel",
+    "LikertScale": "Likert Scale — chưa hỗ trợ import Excel",
+}
+
+
+IMAGE_EXTS = frozenset({"jpg", "jpeg", "png", "gif", "bmp", "webp"})
+AUDIO_EXTS = frozenset({"mp3", "wav", "m4a", "ogg"})
+VIDEO_EXTS = frozenset({"mp4", "webm", "mov"})
+
+MEDIA_TAG_RE = re.compile(
+    r"\[(?P<tag>image|audio|video|sound)\s*=\s*(?P<path>[^\]]+)\]",
+    re.IGNORECASE,
+)
+MEDIA_EXT_RE = re.compile(
+    r"\[(?P<path>[^\]]+\.(?P<ext>[A-Za-z0-9]+))\]",
+    re.IGNORECASE,
+)
+
+
+@dataclass
+class ParsedMediaRefs:
+    text: str = ""
+    image: str | None = None
+    audio: str | None = None
+    video: str | None = None
 
 
 @dataclass
@@ -50,6 +87,9 @@ class ParsedAnswer:
     is_correct: bool = False
     premise: str | None = None
     response: str | None = None
+    image: str | None = None
+    audio: str | None = None
+    video: str | None = None
 
 
 @dataclass
@@ -62,8 +102,8 @@ class ExcelQuestion:
     video: str | None = None
     audio: str | None = None
     answers: list[ParsedAnswer] = field(default_factory=list)
-    correct_feedback: str = ""
-    incorrect_feedback: str = ""
+    correct_feedback: ParsedMediaRefs = field(default_factory=ParsedMediaRefs)
+    incorrect_feedback: ParsedMediaRefs = field(default_factory=ParsedMediaRefs)
     points: float | None = None
     errors: list[str] = field(default_factory=list)
 
@@ -72,6 +112,45 @@ def _cell_str(value: Any) -> str:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return ""
     return str(value).strip()
+
+
+def _media_kind_for_ext(ext: str) -> str | None:
+    key = ext.lower().lstrip(".")
+    if key in IMAGE_EXTS:
+        return "image"
+    if key in AUDIO_EXTS:
+        return "audio"
+    if key in VIDEO_EXTS:
+        return "video"
+    return None
+
+
+def parse_media_brackets(raw: str) -> ParsedMediaRefs:
+    """Parse iSpring Excel optional params in brackets: [image=path], [audio=path], [path.jpg]."""
+    text = raw.strip()
+    refs = ParsedMediaRefs()
+
+    for match in MEDIA_TAG_RE.finditer(text):
+        tag = match.group("tag").lower()
+        if tag == "sound":
+            tag = "audio"
+        path = match.group("path").strip()
+        if tag in ("image", "audio", "video") and path:
+            setattr(refs, tag, path)
+        text = text.replace(match.group(0), "", 1).strip()
+
+    for match in MEDIA_EXT_RE.finditer(text):
+        ext = match.group("ext")
+        kind = _media_kind_for_ext(ext)
+        if not kind:
+            continue
+        path = match.group("path").strip()
+        if path and getattr(refs, kind) is None:
+            setattr(refs, kind, path)
+        text = text.replace(match.group(0), "", 1).strip()
+
+    refs.text = text.strip()
+    return refs
 
 
 def _parse_answer_cell(raw: str, excel_type: str) -> ParsedAnswer | None:
@@ -85,22 +164,32 @@ def _parse_answer_cell(raw: str, excel_type: str) -> ParsedAnswer | None:
         left, right = text.split("|", 1)
         return ParsedAnswer(text=text, premise=left.strip(), response=right.strip())
 
-    if excel_type == "NUMG":
+    if excel_type in ("NUMG", "NUM"):
         numeric = text.lstrip("=").strip()
-        return ParsedAnswer(text=numeric, is_correct=True)
+        if numeric:
+            return ParsedAnswer(text=numeric, is_correct=True)
+        return None
 
     is_correct = text.startswith("*")
     body = text.lstrip("*").strip()
-    if not body:
+    media = parse_media_brackets(body)
+
+    if not media.text and not any((media.image, media.audio, media.video)):
         return None
-    return ParsedAnswer(text=body, is_correct=is_correct)
+    return ParsedAnswer(
+        text=media.text,
+        is_correct=is_correct,
+        image=media.image,
+        audio=media.audio,
+        video=media.video,
+    )
 
 
 def _validate_question(q: ExcelQuestion) -> None:
     tp = q.ispring_type
     n = len([a for a in q.answers if a.text or a.premise])
 
-    if not q.question_text and tp != "InfoSlide":
+    if not q.question_text and tp != "InfoSlide" and not q.image:
         q.errors.append("Thiếu nội dung câu hỏi")
 
     if tp == "MultipleChoice" and n < 2:
@@ -119,6 +208,14 @@ def _validate_question(q: ExcelQuestion) -> None:
         q.errors.append("Sequence cần ít nhất 2 mục")
     elif tp == "TypeIn" and n < 1:
         q.errors.append("Short answer cần ít nhất 1 đáp án chấp nhận")
+    elif tp == "Numeric" and n < 1:
+        q.errors.append("Numeric cần ít nhất 1 đáp án (=số, ví dụ =5)")
+    elif tp == "FillInTheBlank" and n < 1:
+        q.errors.append("FIB cần ít nhất 1 đáp án cho ô trống")
+    elif tp == "WordBank" and n < 2:
+        q.errors.append("WB cần ít nhất 2 từ (1 đúng * + 1 nhiễu)")
+    elif tp == "WordBank" and not any(a.is_correct for a in q.answers):
+        q.errors.append("WB cần 1 đáp án đúng (prefix *)")
 
 
 def parse_excel_file(path: Path, *, sheet_index: int = 0) -> list[ExcelQuestion]:
@@ -195,11 +292,21 @@ def parse_excel_file(path: Path, *, sheet_index: int = 0) -> list[ExcelQuestion]
             video=_cell_str(row.get(video_col)) if video_col else None,
             audio=_cell_str(row.get(audio_col)) if audio_col else None,
             answers=answers,
-            correct_feedback=_cell_str(row.get(correct_fb)) if correct_fb else "",
-            incorrect_feedback=_cell_str(row.get(incorrect_fb)) if incorrect_fb else "",
+            correct_feedback=(
+                parse_media_brackets(_cell_str(row.get(correct_fb)))
+                if correct_fb
+                else ParsedMediaRefs()
+            ),
+            incorrect_feedback=(
+                parse_media_brackets(_cell_str(row.get(incorrect_fb)))
+                if incorrect_fb
+                else ParsedMediaRefs()
+            ),
             points=points,
         )
-        if ispring_type not in SUPPORTED_TYPES and ispring_type != "Numeric":
+        if ispring_type in SKIP_IMPORT_TYPES:
+            pass
+        elif ispring_type not in SUPPORTED_TYPES:
             q.errors.append(f"Loại {ispring_type} chưa hỗ trợ import")
         else:
             _validate_question(q)

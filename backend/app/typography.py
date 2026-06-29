@@ -389,10 +389,11 @@ def auto_layout_text_regions(slide: dict[str, Any], title_size: int | None = Non
         if qtype in ("MultipleChoice", "MultipleResponse", "MultipleChoiceText") and choice_count:
             from .layout import extract_choice_columns, infer_choice_columns
 
+            has_images = any((ch.get("ia") or {}).get("i") for ch in slide.get("C", {}).get("chs", []))
             if "cc" in (slide.get("s") or {}):
                 cols = extract_choice_columns(slide)
             else:
-                cols = infer_choice_columns(slide, choice_count, False)
+                cols = infer_choice_columns(slide, choice_count, has_images)
             rows = math.ceil(choice_count / cols)
             longest = max(
                 (
@@ -402,9 +403,71 @@ def auto_layout_text_regions(slide: dict[str, Any], title_size: int | None = Non
                 key=len,
                 default="",
             )
-            row_h = max(28, estimate_text_height(longest, row_size, r.get("w", 400) / cols, padding=12))
+            col_w = max(120, r.get("w", 400) / cols)
+            row_h = max(28, estimate_text_height(longest, row_size, col_w, padding=12))
+            if has_images:
+                row_h = max(row_h, 72)
             est_h = rows * row_h + 16
-        elif qtype == "TypeIn":
+        elif qtype == "TrueFalse" and choice_count:
+            from .layout import extract_choice_columns
+
+            cols = extract_choice_columns(slide)
+            rows = math.ceil(choice_count / cols)
+            chs = slide.get("C", {}).get("chs", [])
+            has_images = any((ch.get("ia") or {}).get("i") for ch in chs)
+            image_only = has_images and all(
+                not strip_plain(
+                    (ch.get("t") or {}).get("h", "") if isinstance(ch.get("t"), dict) else str(ch.get("t", ""))
+                )
+                for ch in chs
+            )
+            col_w = max(120, r.get("w", 400) / cols)
+            longest = max(
+                (
+                    strip_plain((ch.get("t") or {}).get("h", "") if isinstance(ch.get("t"), dict) else str(ch.get("t", "")))
+                    for ch in chs
+                ),
+                key=len,
+                default="",
+            )
+            if image_only:
+                row_h = max(80, min(120, (r.get("w", 400) / cols) * 0.55))
+            else:
+                row_h = max(36, estimate_text_height(longest, row_size, col_w, padding=12))
+                if has_images:
+                    row_h = max(row_h, 64)
+            est_h = rows * row_h + 16
+        elif qtype == "Sequence" and choice_count:
+            longest = max(
+                (
+                    strip_plain((ch.get("t") or {}).get("h", "") if isinstance(ch.get("t"), dict) else str(ch.get("t", "")))
+                    for ch in slide.get("C", {}).get("chs", [])
+                ),
+                key=len,
+                default="",
+            )
+            row_h = max(40, estimate_text_height(longest, row_size, r.get("w", 300), padding=16))
+            est_h = choice_count * row_h + max(0, choice_count - 1) * 8 + 16
+        elif qtype == "Matching":
+            pairs = slide.get("C", {}).get("m", [])
+            pair_count = len(pairs)
+            longest = ""
+            for pair in pairs:
+                for side in ("p", "r"):
+                    node = pair.get(side, {}).get("t", {})
+                    if isinstance(node, dict):
+                        text = strip_plain(node.get("h") or node.get("a") or "")
+                        if len(text) > len(longest):
+                            longest = text
+            row_h = max(48, estimate_text_height(longest or "Sample", row_size, r.get("w", 400) * 0.46, padding=16))
+            est_h = pair_count * row_h + max(0, pair_count - 1) * 12 + 16
+        elif qtype in ("WordBank", "FillInTheBlank"):
+            rt = slide.get("C", {}).get("rt", {}) or {}
+            rich = strip_plain(rt.get("h") or rt.get("a") or "")
+            est_h = estimate_text_height(rich or question, row_size, r.get("w", 400), padding=24)
+            if qtype == "WordBank":
+                est_h += 48
+        elif qtype in ("TypeIn", "Numeric"):
             est_h = 56
         else:
             est_h = max(80, r.get("h", 100))

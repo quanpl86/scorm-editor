@@ -3,6 +3,10 @@ import {
   assetUrl,
   exportSession,
   importExcel,
+  excelTemplateDownloadUrl,
+  fetchExcelTemplates,
+  importExcelFibWbSample,
+  importExcelMediaSample,
   importExcelSample,
   importSample,
   importZip,
@@ -38,6 +42,7 @@ const TYPE_LABELS = {
   WordBank: 'Điền từ',
   FillInTheBlank: 'Điền khuyết',
   TypeIn: 'Gõ đáp án',
+  Numeric: 'Nhập số',
   TrueFalse: 'Đúng/Sai',
   DND: 'Kéo thả',
   IntroSlide: 'Giới thiệu',
@@ -412,31 +417,110 @@ function ReportingSettings({ reporting, onChange }) {
   )
 }
 
-function ImportReport({ report, summary }) {
+const EXCEL_COLUMN_GUIDE = [
+  { col: 'Question Type', desc: 'Loại câu: MC, MR, TF, TI, NUMG, FIB, WB, MG, SEQ, IS' },
+  { col: 'Question Text', desc: 'Nội dung câu hỏi' },
+  { col: 'Image / Video / Audio', desc: 'Đường dẫn file media (tương đối file Excel, ví dụ media\\ảnh.jpg)' },
+  { col: 'Answer 1–10', desc: 'Đáp án; * = đúng; MG dùng premise|response; NUMG dùng =số hoặc số' },
+  { col: 'Correct / Incorrect Feedback', desc: 'Nhận xét đúng/sai; hỗ trợ [image=], [audio=], [video=]' },
+  { col: 'Points', desc: 'Điểm từng câu (tùy chọn)' },
+]
+
+function ImportReport({ report, summary, questions, onSelectSlide, onDismiss, compact }) {
   if (!report?.length) return null
   const statusLabel = {
     imported: 'Đã import',
     error: 'Lỗi',
     skipped: 'Bỏ qua',
   }
+  const slideIndexById = Object.fromEntries(
+    (questions || []).map((q) => [q.id, q.questionIndex + 1]),
+  )
+
+  const mediaWarnings = summary?.mediaWarnings?.length
+    ? summary.mediaWarnings
+    : report.flatMap((row) => (row.warnings || []).map((msg) => ({
+        row: row.row,
+        type: row.type,
+        slideId: row.slideId,
+        message: msg,
+      })))
+
   return (
-    <div className="import-report">
-      {summary && (
-        <div className="import-report-summary">
-          <span>{summary.imported}/{summary.total} câu import thành công</span>
-          {summary.errors > 0 && <span className="import-report-warn">{summary.errors} lỗi</span>}
-          {summary.skipped > 0 && <span className="import-report-muted">{summary.skipped} bỏ qua</span>}
-        </div>
+    <div className={`import-report ${compact ? 'import-report-compact' : ''}`}>
+      <div className="import-report-header">
+        {summary && (
+          <div className="import-report-summary">
+            <span className="import-report-summary-main">
+              {summary.imported}/{summary.total} câu import thành công
+            </span>
+            {summary.quizTitle && (
+              <span className="import-report-muted">Quiz: {summary.quizTitle}</span>
+            )}
+            {summary.groupTitle && (
+              <span className="import-report-muted">Nhóm: {summary.groupTitle}</span>
+            )}
+            {summary.errors > 0 && <span className="import-report-warn">{summary.errors} lỗi</span>}
+            {summary.skipped > 0 && <span className="import-report-muted">{summary.skipped} bỏ qua</span>}
+            {mediaWarnings.length > 0 && (
+              <span className="import-report-warn">{mediaWarnings.length} cảnh báo media</span>
+            )}
+          </div>
+        )}
+        {onDismiss && (
+          <button type="button" className="btn btn-sm import-report-dismiss" onClick={onDismiss}>
+            Đóng
+          </button>
+        )}
+      </div>
+
+      {mediaWarnings.length > 0 && (
+        <details className="import-report-media-details" open={!compact}>
+          <summary>Cảnh báo media ({mediaWarnings.length})</summary>
+          <ul className="import-report-media-list">
+            {mediaWarnings.map((w, idx) => (
+              <li key={`${w.row}-${idx}`}>
+                <span className="import-report-row">Dòng {w.row}</span>
+                <span className="import-report-type">{w.type}</span>
+                <span className="import-report-warn">{w.message}</span>
+                {w.slideId && onSelectSlide && slideIndexById[w.slideId] && (
+                  <button
+                    type="button"
+                    className="import-report-slide-link"
+                    onClick={() => onSelectSlide(w.slideId)}
+                  >
+                    Mở slide #{slideIndexById[w.slideId]}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
+
       <ul className="import-report-list">
         {report.map((row) => (
           <li key={row.row} className={`import-report-item import-report-${row.status}`}>
             <span className="import-report-row">Dòng {row.row}</span>
             <span className="import-report-type">{row.type}</span>
             <span className="import-report-status">{statusLabel[row.status] || row.status}</span>
+            {row.status === 'imported' && row.slideId && onSelectSlide && (
+              <button
+                type="button"
+                className="import-report-slide-link"
+                onClick={() => onSelectSlide(row.slideId)}
+              >
+                {slideIndexById[row.slideId]
+                  ? `Mở slide #${slideIndexById[row.slideId]}`
+                  : 'Mở slide'}
+              </button>
+            )}
             {row.question && <span className="import-report-question">{row.question}</span>}
             {row.errors?.length > 0 && (
               <span className="import-report-error">{row.errors.join('; ')}</span>
+            )}
+            {row.warnings?.length > 0 && !mediaWarnings.length && (
+              <span className="import-report-warn">{row.warnings.join('; ')}</span>
             )}
           </li>
         ))}
@@ -445,22 +529,39 @@ function ImportReport({ report, summary }) {
   )
 }
 
-function ImportPage({ onImport, loading, error, importReport }) {
+function ImportPage({ onImport, loading, loadingMessage, error, importReport }) {
   const scormInputRef = useRef(null)
   const excelInputRef = useRef(null)
   const [scormDrag, setScormDrag] = useState(false)
   const [excelDrag, setExcelDrag] = useState(false)
+  const [quizTitle, setQuizTitle] = useState('')
+  const [groupTitle, setGroupTitle] = useState('Imported Questions')
+  const [templates, setTemplates] = useState([])
+  const [templatesError, setTemplatesError] = useState(null)
+
+  const excelOpts = {
+    quizTitle: quizTitle.trim() || undefined,
+    groupTitle: groupTitle.trim() || undefined,
+  }
+
+  useEffect(() => {
+    fetchExcelTemplates()
+      .then((data) => setTemplates(data.templates || []))
+      .catch((err) => setTemplatesError(err.message))
+  }, [])
 
   const handleScormFile = async (file) => {
     if (!file?.name?.toLowerCase().endsWith('.zip')) return
-    await onImport(() => importZip(file))
+    await onImport(() => importZip(file), { kind: 'scorm' })
   }
 
   const handleExcelFile = async (file) => {
     const name = file?.name?.toLowerCase() || ''
     if (!name.endsWith('.xls') && !name.endsWith('.xlsx') && !name.endsWith('.zip')) return
-    await onImport(() => importExcel(file))
+    await onImport(() => importExcel(file, excelOpts), { kind: 'excel' })
   }
+
+  const runExcelSample = (fn) => onImport(fn, { kind: 'excel' })
 
   return (
     <div className="import-page">
@@ -468,7 +569,11 @@ function ImportPage({ onImport, loading, error, importReport }) {
         <h2>SCORM Editor</h2>
         <p>Import gói SCORM iSpring Quiz hoặc tạo quiz mới từ template Excel iSpring QuizMaker.</p>
 
-        {error && <div className="error-banner">{error}</div>}
+        {error && (
+          <div className="error-banner" role="alert">
+            <strong>Import thất bại.</strong> {error}
+          </div>
+        )}
         {importReport && <ImportReport report={importReport.report} summary={importReport.summary} />}
 
         <section className="import-section">
@@ -482,22 +587,87 @@ function ImportPage({ onImport, loading, error, importReport }) {
             >
               hướng dẫn iSpring QuizMaker
             </a>
-            . Hỗ trợ MC, MR, TF, Short Answer, Matching, Sequence, Info Slide.
+            . Hỗ trợ MC, MR, TF, Short Answer, Numeric, FIB, Word Bank, Matching, Sequence, Info Slide.
           </p>
+
+          <div className="import-form-fields">
+            <label className="import-field">
+              <span>Tên quiz (tùy chọn)</span>
+              <input
+                type="text"
+                value={quizTitle}
+                onChange={(e) => setQuizTitle(e.target.value)}
+                placeholder="Ví dụ: Kiểm tra Toán lớp 5"
+                disabled={loading}
+              />
+            </label>
+            <label className="import-field">
+              <span>Tên nhóm câu hỏi</span>
+              <input
+                type="text"
+                value={groupTitle}
+                onChange={(e) => setGroupTitle(e.target.value)}
+                placeholder="Imported Questions"
+                disabled={loading}
+              />
+            </label>
+          </div>
+
+          <details className="import-column-guide">
+            <summary>Hướng dẫn cột Excel</summary>
+            <table>
+              <thead>
+                <tr>
+                  <th>Cột</th>
+                  <th>Mô tả</th>
+                </tr>
+              </thead>
+              <tbody>
+                {EXCEL_COLUMN_GUIDE.map((row) => (
+                  <tr key={row.col}>
+                    <td>{row.col}</td>
+                    <td>{row.desc}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </details>
+
+          <div className="import-template-downloads">
+            <span className="import-template-label">Tải file mẫu:</span>
+            {templatesError && <span className="import-report-warn">{templatesError}</span>}
+            {templates.map((tpl) => (
+              <a
+                key={tpl.id}
+                className="import-template-link"
+                href={excelTemplateDownloadUrl(tpl.id)}
+                download={tpl.filename}
+              >
+                {tpl.filename}
+              </a>
+            ))}
+          </div>
+
           <div
-            className={`dropzone dropzone-excel ${excelDrag ? 'dragover' : ''}`}
-            onClick={() => excelInputRef.current?.click()}
-            onDragOver={(e) => { e.preventDefault(); setExcelDrag(true) }}
+            className={`dropzone dropzone-excel ${excelDrag ? 'dragover' : ''} ${loading ? 'is-loading' : ''}`}
+            onClick={() => !loading && excelInputRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); if (!loading) setExcelDrag(true) }}
             onDragLeave={() => setExcelDrag(false)}
             onDrop={(e) => {
               e.preventDefault()
               setExcelDrag(false)
-              handleExcelFile(e.dataTransfer.files[0])
+              if (!loading) handleExcelFile(e.dataTransfer.files[0])
             }}
           >
+            {loading && loadingMessage?.kind === 'excel' && (
+              <div className="dropzone-loading">
+                <div className="spinner" />
+                <span>{loadingMessage.text}</span>
+              </div>
+            )}
             <div className="dropzone-icon">📊</div>
             <div className="dropzone-text">
-              {loading ? 'Đang xử lý...' : 'Kéo thả file .xls / .xlsx hoặc .zip (Excel + media)'}
+              {loading ? 'Đang import Excel...' : 'Kéo thả file .xls / .xlsx hoặc .zip (Excel + media)'}
             </div>
             <div className="dropzone-hint">Ảnh đính kèm: đường dẫn tương đối như media\Columbus_ship.jpg</div>
             <input
@@ -505,12 +675,31 @@ function ImportPage({ onImport, loading, error, importReport }) {
               type="file"
               accept=".xls,.xlsx,.zip"
               hidden
+              disabled={loading}
               onChange={(e) => handleExcelFile(e.target.files[0])}
             />
           </div>
           <div className="sample-buttons">
-            <button className="btn btn-primary" disabled={loading} onClick={() => onImport(() => importExcelSample())}>
-              Import mẫu Excel (Sample_import_template.xls)
+            <button
+              className="btn btn-primary"
+              disabled={loading}
+              onClick={() => runExcelSample(() => importExcelSample(excelOpts))}
+            >
+              Import mẫu Excel
+            </button>
+            <button
+              className="btn"
+              disabled={loading}
+              onClick={() => runExcelSample(() => importExcelMediaSample(excelOpts))}
+            >
+              Import mẫu Audio/Video
+            </button>
+            <button
+              className="btn"
+              disabled={loading}
+              onClick={() => runExcelSample(() => importExcelFibWbSample(excelOpts))}
+            >
+              Import mẫu FIB / WB / Numeric
             </button>
           </div>
         </section>
@@ -518,19 +707,25 @@ function ImportPage({ onImport, loading, error, importReport }) {
         <section className="import-section">
           <h3>Chỉnh sửa SCORM có sẵn</h3>
           <div
-            className={`dropzone ${scormDrag ? 'dragover' : ''}`}
-            onClick={() => scormInputRef.current?.click()}
-            onDragOver={(e) => { e.preventDefault(); setScormDrag(true) }}
+            className={`dropzone ${scormDrag ? 'dragover' : ''} ${loading ? 'is-loading' : ''}`}
+            onClick={() => !loading && scormInputRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); if (!loading) setScormDrag(true) }}
             onDragLeave={() => setScormDrag(false)}
             onDrop={(e) => {
               e.preventDefault()
               setScormDrag(false)
-              handleScormFile(e.dataTransfer.files[0])
+              if (!loading) handleScormFile(e.dataTransfer.files[0])
             }}
           >
+            {loading && loadingMessage?.kind === 'scorm' && (
+              <div className="dropzone-loading">
+                <div className="spinner" />
+                <span>{loadingMessage.text}</span>
+              </div>
+            )}
             <div className="dropzone-icon">📦</div>
             <div className="dropzone-text">
-              {loading ? 'Đang xử lý...' : 'Kéo thả file .zip hoặc bấm để chọn'}
+              {loading ? 'Đang mở SCORM...' : 'Kéo thả file .zip hoặc bấm để chọn'}
             </div>
             <div className="dropzone-hint">Hỗ trợ SCORM 1.2 từ iSpring Quiz Maker (zip lồng zip)</div>
             <input
@@ -538,14 +733,15 @@ function ImportPage({ onImport, loading, error, importReport }) {
               type="file"
               accept=".zip"
               hidden
+              disabled={loading}
               onChange={(e) => handleScormFile(e.target.files[0])}
             />
           </div>
           <div className="sample-buttons">
-            <button className="btn" disabled={loading} onClick={() => onImport(() => importSample('zip'))}>
+            <button className="btn" disabled={loading} onClick={() => onImport(() => importSample('zip'), { kind: 'scorm' })}>
               Load mẫu ZIP
             </button>
-            <button className="btn" disabled={loading} onClick={() => onImport(() => importSample('dir'))}>
+            <button className="btn" disabled={loading} onClick={() => onImport(() => importSample('dir'), { kind: 'scorm' })}>
               Load mẫu thư mục
             </button>
           </div>
@@ -696,14 +892,28 @@ function QuestionEditor({ question, sessionId, onChange, onDelete, onImageUpload
                   </div>
                 </div>
               )}
+              {ch.audio && (
+                <div className="field">
+                  <label>Audio đáp án</label>
+                  <audio controls src={assetUrl(sessionId, ch.audio)} style={{ width: '100%', maxWidth: 320 }} />
+                  <span className="image-name">{ch.audio}</span>
+                </div>
+              )}
+              {ch.video && (
+                <div className="field">
+                  <label>Video đáp án</label>
+                  <video controls src={assetUrl(sessionId, ch.video)} style={{ width: '100%', maxWidth: 320 }} />
+                  <span className="image-name">{ch.video}</span>
+                </div>
+              )}
             </div>
           ))}
         </div>
       )}
 
-      {question.typeInAnswers?.length > 0 && (
+      {(question.type === 'TypeIn' || question.type === 'Numeric') && question.typeInAnswers?.length > 0 && (
         <div className="editor-section">
-          <h4>Đáp án chấp nhận (Type In)</h4>
+          <h4>{question.type === 'Numeric' ? 'Đáp án số (Numeric)' : 'Đáp án chấp nhận (Type In)'}</h4>
           {question.typeInAnswers.map((ans, idx) => (
             <div key={idx} className="field">
               <input
@@ -804,6 +1014,37 @@ function QuestionEditor({ question, sessionId, onChange, onDelete, onImageUpload
                 },
               })}
             />
+            {question.feedback?.[`${key}Audio`] && (
+              <div className="field">
+                <label>Audio feedback</label>
+                <audio
+                  controls
+                  src={assetUrl(sessionId, question.feedback[`${key}Audio`])}
+                  style={{ width: '100%', maxWidth: 320 }}
+                />
+                <span className="image-name">{question.feedback[`${key}Audio`]}</span>
+              </div>
+            )}
+            {question.feedback?.[`${key}Image`] && (
+              <div className="field">
+                <label>Ảnh feedback</label>
+                <div className="image-card" style={{ maxWidth: 200 }}>
+                  <img src={assetUrl(sessionId, question.feedback[`${key}Image`])} alt="" />
+                  <span className="image-name">{question.feedback[`${key}Image`]}</span>
+                </div>
+              </div>
+            )}
+            {question.feedback?.[`${key}Video`] && (
+              <div className="field">
+                <label>Video feedback</label>
+                <video
+                  controls
+                  src={assetUrl(sessionId, question.feedback[`${key}Video`])}
+                  style={{ width: '100%', maxWidth: 320 }}
+                />
+                <span className="image-name">{question.feedback[`${key}Video`]}</span>
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -1109,6 +1350,7 @@ export default function App() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [importReport, setImportReport] = useState(null)
+  const [loadingMessage, setLoadingMessage] = useState(null)
   const [toast, setToast] = useState(null)
   const [canvasEditing, setCanvasEditing] = useState(false)
   const sidebarResize = useResizableWidth('scorm-editor.sidebar-width', 320, { min: 240, max: 480 })
@@ -1163,14 +1405,19 @@ export default function App() {
     setTimeout(() => setToast(null), 3000)
   }
 
-  const handleImport = async (fn) => {
+  const handleImport = async (fn, { kind = 'scorm' } = {}) => {
     setLoading(true)
     setError(null)
     setImportReport(null)
+    setLoadingMessage({
+      kind,
+      text: kind === 'excel' ? 'Đang đọc Excel và tạo quiz...' : 'Đang phân tích gói SCORM...',
+    })
     try {
       const data = await fn()
       resetHistory(data)
-      setSelectedId(firstSelectableId(data))
+      const firstImported = data.importReport?.find((r) => r.status === 'imported' && r.slideId)
+      setSelectedId(firstImported?.slideId || firstSelectableId(data))
       const slideCount = (data.introSlide ? 1 : 0) + (data.resultSlides?.length || 0)
       if (data.importReport) {
         setImportReport({ report: data.importReport, summary: data.importSummary })
@@ -1187,6 +1434,7 @@ export default function App() {
       setError(err.message)
     } finally {
       setLoading(false)
+      setLoadingMessage(null)
     }
   }
 
@@ -1346,14 +1594,10 @@ export default function App() {
         <ImportPage
           onImport={handleImport}
           loading={loading}
+          loadingMessage={loadingMessage}
           error={error}
           importReport={importReport}
         />
-        {loading && (
-          <div className="loading" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)' }}>
-            <div className="spinner" /> Đang phân tích gói SCORM...
-          </div>
-        )}
       </div>
     )
   }
@@ -1402,7 +1646,15 @@ export default function App() {
             </button>
           </div>
           {autoSaving && <span className="auto-sync-badge">Đang đồng bộ...</span>}
-          <button className="btn" onClick={() => { resetHistory(null); setSelectedId(null); setWorkspaceMode('edit') }}>
+          <button
+            className="btn"
+            onClick={() => {
+              resetHistory(null)
+              setSelectedId(null)
+              setImportReport(null)
+              setWorkspaceMode('edit')
+            }}
+          >
             Import mới
           </button>
           <button className="btn" disabled={saving} onClick={handleOpenPreview}>
@@ -1416,6 +1668,19 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {importReport && (
+        <div className="import-report-banner">
+          <ImportReport
+            report={importReport.report}
+            summary={importReport.summary}
+            questions={quiz.questions}
+            onSelectSlide={setSelectedId}
+            onDismiss={() => setImportReport(null)}
+            compact
+          />
+        </div>
+      )}
 
       <div className="main">
         <aside className="sidebar" style={{ width: sidebarResize.width }}>

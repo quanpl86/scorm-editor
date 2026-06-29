@@ -6,6 +6,7 @@ import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
+from typing import Any
 from urllib.parse import unquote
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -21,6 +22,7 @@ from .quiz_builder import IMPORT_TEMPLATE_DIR, MASTER_SCORM, build_quiz_from_exc
 from .scorm_parser import (
     SESSIONS_ROOT,
     ScormSession,
+    ensure_media_registry,
     find_index_html,
     get_package_root,
     get_session,
@@ -48,6 +50,26 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 SAMPLE_ZIP = PROJECT_ROOT / "samples" / "DGSA2025-HP05-B01.zip"
 SAMPLE_DIR = PROJECT_ROOT / "samples" / "DGSA_Level5_Bai1"
 EXCEL_SAMPLE = IMPORT_TEMPLATE_DIR / "Sample_import_template.xls"
+EXCEL_MEDIA_SAMPLE = IMPORT_TEMPLATE_DIR / "Media_import_sample.xlsx"
+EXCEL_FIB_WB_SAMPLE = IMPORT_TEMPLATE_DIR / "FIB_WB_import_sample.xlsx"
+
+EXCEL_TEMPLATES: dict[str, dict[str, str]] = {
+    "sample": {
+        "path": str(EXCEL_SAMPLE),
+        "label": "Sample_import_template.xls",
+        "description": "Mẫu đầy đủ MC/MR/TF/TI/MG/SEQ/IS/NUMG",
+    },
+    "media": {
+        "path": str(EXCEL_MEDIA_SAMPLE),
+        "label": "Media_import_sample.xlsx",
+        "description": "Mẫu audio/video mầm non",
+    },
+    "fib-wb": {
+        "path": str(EXCEL_FIB_WB_SAMPLE),
+        "label": "FIB_WB_import_sample.xlsx",
+        "description": "Mẫu FIB, Word Bank, Numeric",
+    },
+}
 
 EXCEL_SUFFIXES = {".xls", ".xlsx"}
 
@@ -120,17 +142,58 @@ def _create_quiz_from_excel(
         quiz_title=quiz_title,
     )
     session.quiz_json = quiz_json
+    ensure_media_registry(session.quiz_json, session.package_root)
     session.persist()
     view = session.get_view()
     view["importReport"] = report
     imported = sum(1 for r in report if r.get("status") == "imported")
+    media_warnings: list[dict[str, Any]] = []
+    for row in report:
+        for warning in row.get("warnings") or []:
+            media_warnings.append({
+                "row": row.get("row"),
+                "type": row.get("type"),
+                "slideId": row.get("slideId"),
+                "message": warning,
+            })
+
     view["importSummary"] = {
         "total": len(report),
         "imported": imported,
         "errors": sum(1 for r in report if r.get("status") == "error"),
         "skipped": sum(1 for r in report if r.get("status") == "skipped"),
+        "warnings": len(media_warnings),
+        "mediaWarnings": media_warnings,
+        "groupTitle": group_title,
+        "quizTitle": quiz_title or view.get("title"),
     }
     return view
+
+
+@app.get("/api/import/excel/templates")
+def list_excel_templates():
+    items = []
+    for key, meta in EXCEL_TEMPLATES.items():
+        path = Path(meta["path"])
+        if path.is_file():
+            items.append({
+                "id": key,
+                "filename": meta["label"],
+                "description": meta["description"],
+                "downloadUrl": f"/api/import/excel/templates/{key}",
+            })
+    return {"templates": items}
+
+
+@app.get("/api/import/excel/templates/{template_id}")
+def download_excel_template(template_id: str):
+    meta = EXCEL_TEMPLATES.get(template_id)
+    if not meta:
+        raise HTTPException(404, f"Không có template: {template_id}")
+    path = Path(meta["path"])
+    if not path.is_file():
+        raise HTTPException(404, f"File template không tồn tại: {meta['label']}")
+    return FileResponse(path, filename=meta["label"])
 
 
 @app.post("/api/import/excel")
@@ -206,6 +269,52 @@ def import_excel_sample(
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:
         raise HTTPException(400, f"Không thể import mẫu Excel: {exc}") from exc
+
+
+@app.post("/api/import/excel/fib-wb-sample")
+def import_excel_fib_wb_sample(
+    quiz_title: str | None = None,
+    group_title: str = "FIB / WB / Numeric",
+):
+    """Import mẫu Fill-in-the-Blank, Word Bank và Numeric."""
+    if not EXCEL_FIB_WB_SAMPLE.exists():
+        raise HTTPException(404, f"File mẫu không tồn tại: {EXCEL_FIB_WB_SAMPLE}")
+    try:
+        return _create_quiz_from_excel(
+            EXCEL_FIB_WB_SAMPLE,
+            excel_dir=IMPORT_TEMPLATE_DIR,
+            quiz_title=quiz_title or "Mẫu FIB / WB / Numeric",
+            group_title=group_title,
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(400, f"Không thể import mẫu FIB/WB: {exc}") from exc
+
+
+@app.post("/api/import/excel/media-sample")
+def import_excel_media_sample(
+    quiz_title: str | None = None,
+    group_title: str = "Media Test (Mầm non)",
+):
+    """Import mẫu audio + video cho nội dung mầm non (voice, video bài học)."""
+    if not EXCEL_MEDIA_SAMPLE.exists():
+        raise HTTPException(404, f"File mẫu media không tồn tại: {EXCEL_MEDIA_SAMPLE}")
+    try:
+        return _create_quiz_from_excel(
+            EXCEL_MEDIA_SAMPLE,
+            excel_dir=IMPORT_TEMPLATE_DIR,
+            quiz_title=quiz_title or "Mẫu Audio Video (Mầm non)",
+            group_title=group_title,
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(400, f"Không thể import mẫu media Excel: {exc}") from exc
 
 
 @app.post("/api/import/sample")
