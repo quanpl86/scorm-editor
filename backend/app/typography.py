@@ -387,7 +387,12 @@ def auto_layout_text_regions(slide: dict[str, Any], title_size: int | None = Non
         row_size = pick_content_size("M" * 20, resolved_title)
 
         if qtype in ("MultipleChoice", "MultipleResponse", "MultipleChoiceText") and choice_count:
-            cols = 1 if choice_count <= 2 else 2
+            from .layout import extract_choice_columns, infer_choice_columns
+
+            if "cc" in (slide.get("s") or {}):
+                cols = extract_choice_columns(slide)
+            else:
+                cols = infer_choice_columns(slide, choice_count, False)
             rows = math.ceil(choice_count / cols)
             longest = max(
                 (

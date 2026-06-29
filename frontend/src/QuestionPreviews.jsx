@@ -1,4 +1,5 @@
 import { assetUrl } from './api'
+import { clampChoiceColumns } from './choiceLayoutUtils'
 import CanvasRichText from './CanvasRichText'
 import { injectBlankSlots } from './blankHtmlUtils'
 
@@ -100,6 +101,8 @@ export function TrueFalsePreview({
   if (!sourceItems.length) return null
 
   const layout = preview?.layout || {}
+  const cols = clampChoiceColumns(layout.columns ?? 2, 'TrueFalse')
+  const rowCount = Math.max(1, Math.ceil(sourceItems.length / cols))
   const rowHeight = layout.rowHeight || 52
   const choicePadding = layout.choicePadding ?? 12
   const hasImages = sourceItems.some((item, i) => resolveChoiceItem(item, choices?.[i], i).image)
@@ -108,17 +111,19 @@ export function TrueFalsePreview({
 
   const gridStyle = wysiwyg
     ? {
-        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-        gridTemplateRows: `${rowHeight}px`,
-        gap: '0 16px',
+        gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+        gridTemplateRows: cols === 1
+          ? `repeat(${rowCount}, ${rowHeight}px)`
+          : `${rowHeight}px`,
+        gap: cols === 1 ? '8px 0' : '0 16px',
         height: '100%',
-        alignContent: 'center',
+        alignContent: cols === 1 ? 'start' : 'center',
       }
     : undefined
 
   return (
     <div
-      className={`truefalse-preview ${hasImages ? 'has-images' : ''} ${imageOnly ? 'image-only' : ''} ${wysiwyg ? 'wysiwyg fidelity' : ''}`}
+      className={`truefalse-preview ${hasImages ? 'has-images' : ''} ${imageOnly ? 'image-only' : ''} ${wysiwyg ? 'wysiwyg fidelity' : ''} ${cols === 1 ? 'cols-1' : 'cols-2'}`}
       style={gridStyle}
     >
       {sourceItems.map((item, i) => {

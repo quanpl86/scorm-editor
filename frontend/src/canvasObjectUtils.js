@@ -100,20 +100,44 @@ export function normalizeLayoutObjects(objects, layout = {}) {
   })
 }
 
-/** Giữ imageZoom local khi parent trả về objects thiếu field (race sync / save). */
+function hasRicherText(prior, incoming) {
+  if (!prior) return false
+  const priorHtml = prior.html?.trim()
+  const incomingHtml = incoming?.html?.trim()
+  if (priorHtml && priorHtml !== incomingHtml) {
+    if (!incomingHtml || priorHtml.length > incomingHtml.length) return true
+  }
+  if (prior.textFormat && JSON.stringify(prior.textFormat) !== JSON.stringify(incoming?.textFormat)) {
+    return true
+  }
+  return false
+}
+
+/** Giữ field local khi parent trả về objects thiếu / cũ (race sync / save). */
 export function mergeLayoutObjects(incoming, prev, layout = {}) {
   const normalized = normalizeLayoutObjects(incoming, layout)
   if (!prev?.length) return normalized
   const prevMap = new Map(prev.map((o) => [o.index, o]))
   const rawIncoming = incoming || []
   return normalized.map((obj) => {
-    if (!isImageCanvasObject(obj)) return obj
     const prior = prevMap.get(obj.index)
     const raw = rawIncoming.find((o) => o.index === obj.index)
-    if (prior && raw && raw.imageZoom == null && prior.imageZoom != null) {
-      return { ...obj, imageZoom: prior.imageZoom }
+    let merged = obj
+
+    if (isImageCanvasObject(obj) && prior && raw && raw.imageZoom == null && prior.imageZoom != null) {
+      merged = { ...merged, imageZoom: prior.imageZoom }
     }
-    return obj
+
+    if (prior && (obj.role === 'direction' || obj.role === 'content') && hasRicherText(prior, obj)) {
+      merged = {
+        ...merged,
+        html: prior.html ?? merged.html,
+        text: prior.text ?? merged.text,
+        textFormat: prior.textFormat ?? merged.textFormat,
+      }
+    }
+
+    return merged
   })
 }
 
@@ -171,6 +195,13 @@ export function sanitizeLayoutForSave(layout) {
   if (layout.removedIndexes?.length) payload.removedIndexes = layout.removedIndexes
   if (attachment) payload.slideAttachment = attachment
   if (hasSlidePicture) payload.slideAttachmentZoom = resolveSlideAttachmentZoom(layout)
+
+  const choiceColumns = layout.choiceColumns ?? layout.choicePreview?.layout?.columns
+  if (choiceColumns != null) {
+    const maxCols = layout.choicePreview?.type === 'TrueFalse' ? 2 : 4
+    const cols = Math.max(1, Math.min(maxCols, Math.round(Number(choiceColumns) || 1)))
+    payload.choiceColumns = cols
+  }
 
   return payload
 }

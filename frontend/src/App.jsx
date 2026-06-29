@@ -9,6 +9,13 @@ import {
   saveSession,
   uploadImage,
 } from './api'
+import {
+  clampChoiceColumns,
+  maxChoiceColumns,
+  patchChoiceColumnsLayout,
+  resolveChoiceColumns,
+  supportsChoiceColumns,
+} from './choiceLayoutUtils'
 import LayoutCanvas from './LayoutCanvas'
 import PanelResizeHandle from './PanelResizeHandle'
 import QuestionSideView from './QuestionSideView'
@@ -413,6 +420,37 @@ function QuestionEditor({ question, sessionId, onChange, onDelete, onImageUpload
       {question.choices?.length > 0 && (
         <div className="editor-section">
           <h4>Đáp án ({question.choices.length})</h4>
+          {supportsChoiceColumns(question.type) && (
+            <div className="field choice-columns-field">
+              <label>Hiển thị đáp án</label>
+              <div className="choice-columns-picker" role="group" aria-label="Số cột đáp án">
+                {Array.from({ length: maxChoiceColumns(question.type) }, (_, i) => i + 1).map((n) => {
+                  const cols = resolveChoiceColumns(question.layout, question.type)
+                  return (
+                    <button
+                      key={n}
+                      type="button"
+                      className={`btn btn-sm choice-col-btn ${cols === n ? 'active' : ''}`}
+                      onClick={() => {
+                        const result = patchChoiceColumnsLayout(
+                          question,
+                          question.layout?.objects,
+                          n,
+                        )
+                        if (!result) return
+                        update({
+                          _dirtyLayout: true,
+                          layout: result.layout,
+                        })
+                      }}
+                    >
+                      {n} cột
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
           {question.choices.map((ch, idx) => (
             <div key={ch.id || idx} className="choice-card">
               <div className="choice-header">

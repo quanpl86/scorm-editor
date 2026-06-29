@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { reflowSlideLayout } from './choiceLayoutUtils'
+import {
+  clampChoiceColumns,
+  maxChoiceColumns,
+  mergeChoicePreviewColumns,
+  patchChoiceColumnsLayout,
+  reflowSlideLayout,
+  resolveChoiceColumns,
+  supportsChoiceColumns,
+} from './choiceLayoutUtils'
 import MatchingPreview from './MatchingPreview'
 import {
   BlankPreview,
@@ -14,6 +22,7 @@ import {
   canDeleteCanvasObject,
   createImageObject,
   createSlidePictureObject,
+  mergeLayoutObjects,
   normalizeLayoutObjects,
 } from './canvasObjectUtils'
 import PanelResizeHandle from './PanelResizeHandle'
@@ -53,6 +62,7 @@ function ChoicePreview({
   wysiwyg,
   choices,
   typography,
+  questionType,
   editingChoiceIdx,
   onChoiceTextChange,
   onChoiceBlur,
@@ -64,7 +74,10 @@ function ChoicePreview({
 
   const layout = preview.layout
   const hasImages = items.some((item) => item.image)
-  const cols = layout?.columns ?? (hasImages ? (items.length <= 2 ? 1 : 2) : 1)
+  const cols = clampChoiceColumns(
+    layout?.columns ?? (hasImages ? (items.length <= 2 ? 1 : 2) : 1),
+    questionType,
+  )
   const rowHeights = layout?.rowHeights
   const gridRowHeights = layout?.gridRowHeights
   const rowHeight = layout?.rowHeight
@@ -177,6 +190,33 @@ function ChoicePreview({
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function ChoiceColumnsPanel({ columns, onChange, disabled, maxColumns = 4 }) {
+  const options = Array.from({ length: maxColumns }, (_, i) => i + 1)
+  return (
+    <div className="props-choice-columns">
+      <h4>Hiển thị đáp án</h4>
+      <p className="props-hint">
+        {maxColumns === 2
+          ? 'Đúng/Sai: 1 cột (xếp dọc) hoặc 2 cột (cạnh nhau).'
+          : 'Số cột trong vùng đáp án (giống iSpring Quiz Maker).'}
+      </p>
+      <div className="choice-columns-picker" role="group" aria-label="Số cột đáp án">
+        {options.map((n) => (
+          <button
+            key={n}
+            type="button"
+            className={`btn btn-sm choice-col-btn ${columns === n ? 'active' : ''}`}
+            disabled={disabled}
+            onClick={() => onChange(n)}
+          >
+            {n} cột
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
@@ -301,6 +341,10 @@ export default function LayoutCanvas({
   const [objects, setObjects] = useState(() =>
     normalizeLayoutObjects(question?.layout?.objects || [], question?.layout),
   )
+  const objectsRef = useRef(objects)
+  objectsRef.current = objects
+  const suppressReflowRef = useRef(0)
+  const [pendingChoiceColumns, setPendingChoiceColumns] = useState(null)
   const objectsSnapshot = useMemo(
     () => JSON.stringify(question?.layout?.objects || []),
     [question?.layout?.objects],
@@ -308,22 +352,42 @@ export default function LayoutCanvas({
 
   useLayoutEffect(() => {
     setObjects(normalizeLayoutObjects(question?.layout?.objects || [], question?.layout))
+    setPendingChoiceColumns(null)
     setSelectedIndex(null)
     setActiveEditKey(null)
     setActiveChoiceIdx(null)
   }, [question?.id])
 
   useEffect(() => {
-    if (activeEditKey || question?._dirtyLayout) return
+    if (
+      activeEditKey
+      || pendingChoiceColumns != null
+      || question?._dirtyLayout
+      || question?._dirtyQuestionFormat
+      || question?._dirtyQuestionText
+      || question?._dirtySubtitleFormat
+      || question?._dirtySubtitleText
+      || question?._dirtyChoices
+    ) return
     const incoming = question?.layout?.objects || []
     const layout = question?.layout
-    const normalized = normalizeLayoutObjects(incoming, layout)
-    setObjects((prev) => (JSON.stringify(prev) === JSON.stringify(normalized) ? prev : normalized))
-  }, [activeEditKey, objectsSnapshot, question?._dirtyLayout, question?.layout?.objects, question?.layout?.slideAttachmentZoom])
-
-  useEffect(() => {
-    onCanvasEditStateChange?.(!!activeEditKey)
-  }, [activeEditKey, onCanvasEditStateChange])
+    setObjects((prev) => {
+      const merged = mergeLayoutObjects(incoming, prev, layout)
+      return JSON.stringify(prev) === JSON.stringify(merged) ? prev : merged
+    })
+  }, [
+    activeEditKey,
+    objectsSnapshot,
+    pendingChoiceColumns,
+    question?._dirtyChoices,
+    question?._dirtyLayout,
+    question?._dirtyQuestionFormat,
+    question?._dirtyQuestionText,
+    question?._dirtySubtitleFormat,
+    question?._dirtySubtitleText,
+    question?.layout?.objects,
+    question?.layout?.slideAttachmentZoom,
+  ])
 
   useEffect(() => () => onCanvasEditStateChange?.(false), [onCanvasEditStateChange])
 
@@ -361,7 +425,6 @@ export default function LayoutCanvas({
         right: p.rightText,
       })),
       questionType: question?.type,
-      questionFormat: question?.questionFormat,
       titleSize: question?.layout?.typography?.titleSize,
       contentSize: question?.layout?.typography?.contentSize,
     }),
@@ -369,10 +432,15 @@ export default function LayoutCanvas({
   )
 
   const resolvePreview = useCallback(() => {
+    const layoutWithCols = pendingChoiceColumns != null
+      ? { ...question.layout, choiceColumns: pendingChoiceColumns }
+      : question.layout
     const cp = question.layout?.choicePreview
-    if (cp?.pairs?.length || cp?.items?.length || cp?.richHtml) return cp
+    if (cp?.pairs?.length || cp?.items?.length || cp?.richHtml) {
+      return mergeChoicePreviewColumns(cp, layoutWithCols, question.type, pendingChoiceColumns)
+    }
     if (question.choices?.length && (question.type === 'TrueFalse' || question.type === 'Sequence')) {
-      return {
+      const base = {
         type: question.type,
         items: question.choices.map((ch) => ({
           text: ch.text,
@@ -388,6 +456,9 @@ export default function LayoutCanvas({
           imageOnly: question.choices.every((ch) => ch.image && !ch.text?.trim()),
         },
       }
+      return question.type === 'TrueFalse'
+        ? mergeChoicePreviewColumns(base, layoutWithCols, question.type, pendingChoiceColumns)
+        : base
     }
     if (question.type === 'Matching' && question.matchingPairs?.length) {
       const pairs = question.matchingPairs.map((p) => ({
@@ -415,8 +486,16 @@ export default function LayoutCanvas({
         columnLabels: cp?.columnLabels,
       }
     }
-    return cp || null
-  }, [question.choices, question.id, question.layout?.choicePreview, question.matchingPairs, question.type])
+    return cp ? mergeChoicePreviewColumns(cp, layoutWithCols, question.type, pendingChoiceColumns) : null
+  }, [
+    pendingChoiceColumns,
+    question.choices,
+    question.id,
+    question.layout,
+    question.layout?.choicePreview,
+    question.matchingPairs,
+    question.type,
+  ])
 
   const applyReflow = useCallback(
     (sourceObjects, { markDirty = false } = {}) => {
@@ -440,11 +519,19 @@ export default function LayoutCanvas({
         },
       )
       if (!changed) return false
+      const savedCols = pendingChoiceColumns
+        ?? resolveChoiceColumns(question.layout, question.type)
+      const mergedCp = mergeChoicePreviewColumns(cp, {
+        ...question.layout,
+        choiceColumns: savedCols,
+      }, question.type, savedCols)
+      suppressReflowRef.current = 2
       setObjects(reflowed)
       const layoutPatch = {
         ...question.layout,
         objects: reflowed,
-        choicePreview: cp,
+        choicePreview: mergedCp,
+        choiceColumns: savedCols,
         overlaps: detectOverlapsLocal(reflowed),
       }
       if (onPatch) {
@@ -458,11 +545,16 @@ export default function LayoutCanvas({
       }
       return true
     },
-    [onChange, onPatch, question, resolvePreview],
+    [onChange, onPatch, pendingChoiceColumns, question, resolvePreview],
   )
 
   useLayoutEffect(() => {
     if (activeEditKey) return
+    if (suppressReflowRef.current > 0) {
+      suppressReflowRef.current -= 1
+      return
+    }
+    if (question._dirtyLayout || pendingChoiceColumns != null) return
     const cp = question?.layout?.choicePreview
     const hasReflowTarget = question?.layout?.objects?.length
       && (
@@ -474,8 +566,15 @@ export default function LayoutCanvas({
         || (question?.type === 'Sequence' && question?.choices?.length)
       )
     if (!hasReflowTarget) return
+    const hasLocalEdits = !!(
+      question._dirtyChoices
+      || question._dirtyQuestionText
+      || question._dirtyQuestionFormat
+      || question._dirtySubtitleText
+      || question._dirtySubtitleFormat
+    )
     const sourceObjects = normalizeLayoutObjects(
-      question.layout?.objects || [],
+      hasLocalEdits ? objectsRef.current : (question.layout?.objects || []),
       question.layout,
     )
     applyReflow(sourceObjects, {
@@ -486,7 +585,7 @@ export default function LayoutCanvas({
       ),
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps -- reflow keyed by content, not object refs
-  }, [reflowKey, activeEditKey])
+  }, [reflowKey, activeEditKey, pendingChoiceColumns, question._dirtyLayout])
 
   const overlaps = detectOverlapsLocal(objects)
   const selected = objects.find((o) => o.index === selectedIndex)
@@ -510,6 +609,7 @@ export default function LayoutCanvas({
         ...extra,
       })
       const normalized = normalizeLayoutObjects(next, layout)
+      suppressReflowRef.current = 2
       setObjects(normalized)
       pushLayoutPatch({ ...layout, objects: normalized })
     },
@@ -535,6 +635,24 @@ export default function LayoutCanvas({
     commitLayoutState(next, extra)
     onImageUpload?.(filename, file)
   }, [commitLayoutState, objects, onImageUpload, sessionId])
+
+  const choiceColumns = pendingChoiceColumns
+    ?? resolveChoiceColumns(question.layout, question.type)
+  const choiceColumnMax = maxChoiceColumns(question.type)
+  const showChoiceColumns = supportsChoiceColumns(question.type)
+    && (question.choices?.length || question.layout?.choicePreview?.items?.length)
+
+  const handleChoiceColumnsChange = useCallback((columns) => {
+    const cols = clampChoiceColumns(columns, question.type)
+    setPendingChoiceColumns(cols)
+    const result = patchChoiceColumnsLayout(question, objects, cols)
+    if (!result) return
+    suppressReflowRef.current = 4
+    pushLayoutPatch({
+      ...result.layout,
+      overlaps: detectOverlapsLocal(result.objects),
+    })
+  }, [objects, pushLayoutPatch, question])
 
   const handleImageZoomChange = useCallback((zoom) => {
     if (selectedIndex == null) return
@@ -719,6 +837,10 @@ export default function LayoutCanvas({
   const formatToolbarTarget = activeEdit || selectedFormatTarget
 
   useEffect(() => {
+    onCanvasEditStateChange?.(!!activeEditKey || !!selectedFormatTarget)
+  }, [activeEditKey, onCanvasEditStateChange, selectedFormatTarget])
+
+  useEffect(() => {
     if (!activeEdit || !editingElRef.current) {
       setLiveFormat(null)
       return undefined
@@ -755,18 +877,31 @@ export default function LayoutCanvas({
         text = typeof payload === 'string' ? payload : (payload?.text ?? '')
         html = buildStyledHtml(text, 'title', format, typography, dir.html)
       }
-      const next = objects.map((o) =>
+      let next = objects.map((o) =>
         o.I === 'direction' ? { ...o, html, text, textFormat: format } : o,
       )
-      setObjects(next)
-      onChange({
-        ...question,
+      const reflowed = reflowSlideLayout(next, {
         questionText: text,
-        _dirtyQuestionText: true,
-        layout: { ...question.layout, objects: next },
+        choices: question.choices,
+        choicePreview: question.layout?.choicePreview,
+        typography,
+        questionFormat: format,
+        preservePositions: true,
+      })
+      if (reflowed.changed) next = reflowed.objects
+      suppressReflowRef.current = 2
+      setObjects(next)
+      updateSlide({
+        questionText: text,
+        questionFormat: format,
+        layout: {
+          ...question.layout,
+          objects: next,
+          ...(reflowed.changed ? { choicePreview: reflowed.choicePreview } : {}),
+        },
       })
     },
-    [objects, onChange, question, typography],
+    [objects, question.choices, question.layout, question.questionFormat, typography, updateSlide],
   )
 
   const syncSubtitleHtml = useCallback(
@@ -782,18 +917,31 @@ export default function LayoutCanvas({
         text = typeof payload === 'string' ? payload : (payload?.text ?? '')
         html = buildStyledHtml(text, 'content', format, typography, content.html)
       }
-      const next = objects.map((o) =>
+      let next = objects.map((o) =>
         o.role === 'content' ? { ...o, html, text, textFormat: format } : o,
       )
+      const reflowed = reflowSlideLayout(next, {
+        questionText: question.questionText,
+        choices: question.choices,
+        choicePreview: question.layout?.choicePreview,
+        typography,
+        questionFormat: question.questionFormat,
+        preservePositions: true,
+      })
+      if (reflowed.changed) next = reflowed.objects
+      suppressReflowRef.current = 2
       setObjects(next)
-      onChange({
-        ...question,
+      updateSlide({
         subtitleText: text,
-        _dirtySubtitleText: true,
-        layout: { ...question.layout, objects: next },
+        subtitleFormat: format,
+        layout: {
+          ...question.layout,
+          objects: next,
+          ...(reflowed.changed ? { choicePreview: reflowed.choicePreview } : {}),
+        },
       })
     },
-    [objects, onChange, question, typography],
+    [objects, question.choices, question.layout, question.questionFormat, question.questionText, question.subtitleFormat, typography, updateSlide],
   )
 
   const syncChoiceHtml = useCallback(
@@ -817,17 +965,15 @@ export default function LayoutCanvas({
       const items = (preview?.items || []).map((row, i) =>
         i === idx ? { ...row, text, html } : row,
       )
-      onChange({
-        ...question,
+      updateSlide({
         choices,
-        _dirtyChoices: true,
         layout: {
           ...question.layout,
           choicePreview: preview ? { ...preview, items } : preview,
         },
       })
     },
-    [onChange, question, typography],
+    [question.choices, question.layout, typography, updateSlide],
   )
 
   const handleFormatChange = useCallback((fmt) => {
@@ -847,26 +993,20 @@ export default function LayoutCanvas({
 
     if (target.key === 'question') {
       if (activeEdit && el) {
-        const payload = readEditorPayload(el)
-        updateSlide({ questionFormat: fmt, questionText: payload.text, _dirtyQuestionFormat: true })
-        syncDirectionHtml(payload, fmt)
+        syncDirectionHtml(readEditorPayload(el), fmt)
       } else {
         const dir = objects.find((o) => o.I === 'direction')
         const liveText = question.questionText ?? htmlToEditableText(dir?.html, dir?.text || '')
-        updateSlide({ questionFormat: fmt, _dirtyQuestionFormat: true })
         syncDirectionHtml(liveText, fmt)
       }
       return
     }
     if (target.key === 'subtitle') {
       if (activeEdit && el) {
-        const payload = readEditorPayload(el)
-        updateSlide({ subtitleFormat: fmt, subtitleText: payload.text })
-        syncSubtitleHtml(payload, fmt)
+        syncSubtitleHtml(readEditorPayload(el), fmt)
       } else {
         const content = objects.find((o) => o.role === 'content')
         const liveText = question.subtitleText ?? htmlToEditableText(content?.html, content?.text || '')
-        updateSlide({ subtitleFormat: fmt })
         syncSubtitleHtml(liveText, fmt)
       }
       return
@@ -877,13 +1017,8 @@ export default function LayoutCanvas({
       const choices = [...(question.choices || [])]
       if (!choices[idx]) return
       if (activeEdit && el) {
-        const payload = readEditorPayload(el)
-        choices[idx] = { ...choices[idx], format: fmt, text: payload.text }
-        updateSlide({ choices })
-        syncChoiceHtml(idx, payload, fmt)
+        syncChoiceHtml(idx, readEditorPayload(el), fmt)
       } else {
-        choices[idx] = { ...choices[idx], format: fmt }
-        updateSlide({ choices })
         syncChoiceHtml(idx, choices[idx].text || '', fmt)
       }
     }
@@ -1047,13 +1182,22 @@ export default function LayoutCanvas({
   const bgFit = question.layout?.backgroundFit || 'cover'
   const hotspots = question.layout?.hotspots || []
   const preview = useMemo(() => {
+    const layoutWithCols = pendingChoiceColumns != null
+      ? { ...question.layout, choiceColumns: pendingChoiceColumns }
+      : question.layout
     const cp = question.layout?.choicePreview
     if (cp?.pairs?.length || cp?.items?.length || cp?.richHtml) {
       const extraWords = question.wordBankWords || cp?.extraWords
-      return { ...cp, sessionId, ...(extraWords ? { extraWords } : {}) }
+      const merged = mergeChoicePreviewColumns(
+        { ...cp, sessionId, ...(extraWords ? { extraWords } : {}) },
+        layoutWithCols,
+        question.type,
+        pendingChoiceColumns,
+      )
+      return merged
     }
     if (question.choices?.length && (question.type === 'TrueFalse' || question.type === 'Sequence')) {
-      return {
+      const base = {
         type: question.type,
         sessionId,
         items: question.choices.map((ch) => ({
@@ -1070,6 +1214,9 @@ export default function LayoutCanvas({
           imageOnly: question.choices.every((ch) => ch.image && !ch.text?.trim()),
         },
       }
+      return question.type === 'TrueFalse'
+        ? mergeChoicePreviewColumns(base, layoutWithCols, question.type, pendingChoiceColumns)
+        : base
     }
     if (question.type === 'Matching' && question.matchingPairs?.length) {
       const pairs = question.matchingPairs.map((p) => ({
@@ -1098,8 +1245,17 @@ export default function LayoutCanvas({
         columnLabels: cp?.columnLabels,
       }
     }
-    return cp ? { ...cp, sessionId } : null
-  }, [question.choices, question.layout?.choicePreview, question.matchingPairs, question.type, question.wordBankWords, sessionId])
+    return cp ? mergeChoicePreviewColumns({ ...cp, sessionId }, layoutWithCols, question.type, pendingChoiceColumns) : null
+  }, [
+    pendingChoiceColumns,
+    question.choices,
+    question.layout,
+    question.layout?.choicePreview,
+    question.matchingPairs,
+    question.type,
+    question.wordBankWords,
+    sessionId,
+  ])
 
   return (
     <div className="layout-workspace">
@@ -1260,7 +1416,6 @@ export default function LayoutCanvas({
                           )
                           if (typeof payload === 'object' && payload?.html) {
                             syncDirectionHtml(payload, fmt)
-                            updateSlide({ questionText: payload.text, questionFormat: fmt })
                           } else {
                             const latest = payload || question.questionText || obj.text || ''
                             syncDirectionHtml(latest, fmt)
@@ -1317,7 +1472,6 @@ export default function LayoutCanvas({
                             )
                             if (typeof payload === 'object' && payload?.html) {
                               syncSubtitleHtml(payload, fmt)
-                              updateSlide({ subtitleText: payload.text, subtitleFormat: fmt })
                             } else {
                               const latest = payload || question.subtitleText || obj.text || ''
                               syncSubtitleHtml(latest, fmt)
@@ -1375,6 +1529,7 @@ export default function LayoutCanvas({
                         <ChoicePreview
                           preview={preview}
                           wysiwyg
+                          questionType={question.type}
                           choices={question.choices}
                           typography={typography}
                           editingChoiceIdx={activeEditKey === 'choice' ? activeChoiceIdx : null}
@@ -1471,6 +1626,14 @@ export default function LayoutCanvas({
             </button>
           ))}
         </div>
+
+        {showChoiceColumns && (
+          <ChoiceColumnsPanel
+            columns={choiceColumns}
+            maxColumns={choiceColumnMax}
+            onChange={handleChoiceColumnsChange}
+          />
+        )}
 
         <PropertiesPanel
           obj={selected}

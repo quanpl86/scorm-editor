@@ -1,5 +1,50 @@
 import { CANVAS_H, clampRect } from './layoutUtils'
 
+export const CHOICE_COLUMN_TYPES = new Set([
+  'MultipleChoice',
+  'MultipleResponse',
+  'MultipleChoiceText',
+  'TrueFalse',
+])
+
+export function supportsChoiceColumns(questionType) {
+  return CHOICE_COLUMN_TYPES.has(questionType)
+}
+
+export function maxChoiceColumns(questionType = '') {
+  return questionType === 'TrueFalse' ? 2 : 4
+}
+
+export function clampChoiceColumns(columns, questionType = '') {
+  const n = Number(columns)
+  const max = maxChoiceColumns(questionType)
+  if (!Number.isFinite(n)) return 1
+  return Math.max(1, Math.min(max, Math.round(n)))
+}
+
+export function resolveChoiceColumns(layout = {}, questionType = '') {
+  if (!supportsChoiceColumns(questionType)) return 1
+  const raw = layout.choiceColumns ?? layout.choicePreview?.layout?.columns
+  return clampChoiceColumns(raw ?? 1, questionType)
+}
+
+/** Đồng bộ columns vào choicePreview — ưu tiên layout.choiceColumns. */
+export function mergeChoicePreviewColumns(preview, layout, questionType, columnsOverride = null) {
+  if (!preview?.items?.length) return preview
+  const cols = clampChoiceColumns(
+    columnsOverride ?? layout?.choiceColumns ?? preview?.layout?.columns ?? 1,
+    questionType,
+  )
+  return {
+    ...preview,
+    layout: {
+      ...(preview.layout || {}),
+      columns: cols,
+      rows: Math.max(1, Math.ceil(preview.items.length / cols)),
+    },
+  }
+}
+
 const CONTENT_ADDITIONAL_GAP = 10
 
 /** Khớp iSpring Slide View: chia đều vùng content, không thêm row-gap */
@@ -137,8 +182,8 @@ export function computeChoiceMetrics(preview, choices, typography, contentRect) 
   if (!items.length) return null
 
   const contentPad = layout.contentPadding || { l: 10, r: 10, t: 5, b: 5 }
-  const cols = layout.columns ?? 1
-  const rowCount = layout.rows ?? Math.ceil(items.length / cols)
+  const cols = clampChoiceColumns(layout.columns ?? 1)
+  const rowCount = Math.ceil(items.length / cols)
   const choicePadding = layout.choicePadding ?? 10
   const radioReserve = 41
 
@@ -336,7 +381,9 @@ export function reflowSlideLayout(objects, {
   }
 
   const originalContent = { ...content.r }
-  const contentH = Math.max(originalContent.h, metrics.contentHeight)
+  const contentH = preservePositions
+    ? Math.max(originalContent.h, metrics.contentHeight)
+    : metrics.contentHeight
 
   let nextObjects = workingObjects.map((o) => {
     if (o.role === 'content') {
@@ -384,5 +431,49 @@ export function reflowSlideLayout(objects, {
     objects: nextObjects,
     choicePreview: updatedPreview,
     changed: layoutChanged || previewChanged || objectsChanged,
+  }
+}
+
+function resolveChoicePreviewSource(question) {
+  const cp = question?.layout?.choicePreview
+  if (cp?.items?.length) return cp
+  if (!question?.choices?.length) return null
+  return {
+    type: question.type,
+    items: question.choices.map((ch) => ({
+      text: ch.text,
+      html: ch.html || '',
+      format: ch.format,
+      image: ch.image,
+      isCorrect: ch.isCorrect,
+      inputType: question.type === 'TrueFalse' ? 'truefalse' : 'radio',
+    })),
+    layout: cp?.layout || {},
+  }
+}
+
+/**
+ * Đổi số cột đáp án — chỉ cập nhật metadata (CSS grid), KHÔNG resize vùng content.
+ * Gọi reflowSlideLayout ở đây làm content.h phình ra mỗi lần (đặc biệt True/False).
+ */
+export function patchChoiceColumnsLayout(question, sourceObjects, columns) {
+  const qtype = question?.type || ''
+  const cols = clampChoiceColumns(columns, qtype)
+  const cp = resolveChoicePreviewSource(question)
+  if (!cp?.items?.length) return null
+
+  const updatedCp = mergeChoicePreviewColumns(cp, question?.layout, qtype, cols)
+  const objects = sourceObjects || question?.layout?.objects || []
+
+  return {
+    objects,
+    choicePreview: updatedCp,
+    choiceColumns: cols,
+    layout: {
+      ...question.layout,
+      objects,
+      choicePreview: updatedCp,
+      choiceColumns: cols,
+    },
   }
 }

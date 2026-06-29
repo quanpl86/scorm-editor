@@ -1582,6 +1582,33 @@ button, input, textarea, select {
   line-height: 1.35;
 }
 
+.props-choice-columns {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.props-choice-columns h4 {
+  margin: 0 0 6px;
+  font-size: 0.9rem;
+}
+
+.choice-columns-field {
+  margin-bottom: 14px;
+}
+
+.choice-columns-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.choice-col-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 .btn-danger {
   color: #fecaca;
   border-color: rgba(239, 68, 68, 0.45);
@@ -1778,7 +1805,11 @@ button, input, textarea, select {
   display: grid;
   align-content: center;
   box-sizing: border-box;
-  overflow: visible;
+  overflow: hidden;
+}
+
+.truefalse-preview.wysiwyg.cols-1 {
+  align-content: start;
 }
 
 .truefalse-preview .truefalse-choice {

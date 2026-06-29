@@ -365,6 +365,51 @@ def extract_hotspots(slide: dict[str, Any]) -> list[dict[str, Any]]:
     return result
 
 
+CHOICE_COLUMN_TYPES = frozenset({
+    "MultipleChoice",
+    "MultipleResponse",
+    "MultipleChoiceText",
+    "TrueFalse",
+})
+
+
+def _choice_column_max(slide: dict[str, Any]) -> int:
+    return 2 if slide.get("tp") == "TrueFalse" else 4
+
+
+def extract_choice_columns(slide: dict[str, Any]) -> int:
+    """iSpring Quiz Maker: slide.s.cc — số cột hiển thị đáp án (MC 1–4, TF 1–2)."""
+    max_cols = _choice_column_max(slide)
+    cc = slide.get("s", {}).get("cc")
+    if isinstance(cc, int) and 1 <= cc <= max_cols:
+        return cc
+    if isinstance(cc, str) and cc.isdigit():
+        val = int(cc)
+        if 1 <= val <= max_cols:
+            return val
+    if slide.get("tp") == "TrueFalse":
+        return 2
+    return 1
+
+
+def infer_choice_columns(slide: dict[str, Any], count: int, has_images: bool) -> int:
+    qtype = slide.get("tp", "")
+    if qtype == "TrueFalse":
+        return 2
+    if has_images:
+        return 1 if count <= 2 else 2
+    if qtype == "MultipleResponse":
+        return 1 if count <= 3 else 2
+    return 1
+
+
+def apply_choice_columns(slide: dict[str, Any], columns: int) -> None:
+    if slide.get("tp") not in CHOICE_COLUMN_TYPES:
+        return
+    max_cols = _choice_column_max(slide)
+    slide.setdefault("s", {})["cc"] = max(1, min(max_cols, int(columns)))
+
+
 def extract_choice_preview(slide: dict[str, Any]) -> dict[str, Any] | None:
     qtype = slide.get("tp", "")
     content = next((o for o in slide.get("a", {}).get("o", []) if o.get("I") == "content"), None)
@@ -539,10 +584,13 @@ def extract_choice_preview(slide: dict[str, Any]) -> dict[str, Any] | None:
         avail_w = float(cr.get("w", 0)) - float(pad.get("l", 0)) - float(pad.get("r", 0))
         has_images = any(item.get("image") for item in items)
         image_only = has_images and all(not (item.get("text") or "").strip() for item in items)
+        cols = extract_choice_columns(slide)
+        rows = math.ceil(len(items) / cols) if cols else len(items)
+        row_h = round(avail_h / rows, 2) if rows and avail_h > 0 else 52
         preview["layout"] = {
-            "columns": 2,
-            "rows": 1,
-            "rowHeight": round(avail_h, 2) if avail_h > 0 else 52,
+            "columns": cols,
+            "rows": rows,
+            "rowHeight": row_h,
             "rowGap": 0,
             "radioSize": 23,
             "choicePadding": 12,
@@ -599,7 +647,7 @@ def extract_choice_preview(slide: dict[str, Any]) -> dict[str, Any] | None:
             "contentPadding": pad,
             "contentWidth": round(avail_w, 2) if avail_w > 0 else None,
         }
-    elif items and qtype in ("MultipleChoice", "MultipleResponse", "MultipleChoiceText"):
+    elif items and qtype in CHOICE_COLUMN_TYPES:
         cr = content.get("r", {}) or {}
         pad = extract_shape_visual(content).get("padding", {})
         avail_h = float(cr.get("h", 0)) - float(pad.get("t", 0)) - float(pad.get("b", 0))
@@ -607,12 +655,10 @@ def extract_choice_preview(slide: dict[str, Any]) -> dict[str, Any] | None:
         has_images = any(item.get("image") for item in items)
         count = len(items)
 
-        if has_images:
-            cols = 1 if count <= 2 else 2
-        elif qtype == "MultipleResponse":
-            cols = 1 if count <= 3 else 2
+        if "cc" in (slide.get("s") or {}):
+            cols = extract_choice_columns(slide)
         else:
-            cols = 1
+            cols = infer_choice_columns(slide, count, has_images)
 
         rows = math.ceil(count / cols) if cols else count
         row_h = round(avail_h / rows, 2) if rows and avail_h > 0 else None
@@ -688,6 +734,9 @@ def extract_layout(slide: dict[str, Any]) -> dict[str, Any]:
     if not content_size:
         content_size = pick_content_size(question_text, title_size)
 
+    qtype = slide.get("tp", "")
+    choice_columns = extract_choice_columns(slide) if qtype in CHOICE_COLUMN_TYPES else None
+
     return {
         "canvas": {"w": CANVAS_W, "h": CANVAS_H},
         "background": bg_meta["image"],
@@ -695,6 +744,7 @@ def extract_layout(slide: dict[str, Any]) -> dict[str, Any]:
         "backgroundFit": bg_meta["objectFit"],
         "slidePicture": extract_slide_attachment_image(slide),
         "slideAttachmentZoom": extract_slide_attachment_zoom(slide),
+        "choiceColumns": choice_columns,
         "typography": {
             "titleFont": FONT_TITLE,
             "contentFont": FONT_CONTENT,
@@ -868,6 +918,11 @@ def layout_changed(slide: dict[str, Any], layout: dict[str, Any], *, epsilon: fl
     if layout.get("slideAttachment") is not None:
         return True
 
+    choice_columns = layout.get("choiceColumns")
+    if choice_columns is not None and slide.get("tp") in CHOICE_COLUMN_TYPES:
+        if int(choice_columns) != extract_choice_columns(slide):
+            return True
+
     attachment_zoom = layout.get("slideAttachmentZoom")
     if attachment_zoom is not None:
         if bool(attachment_zoom) != extract_slide_attachment_zoom(slide):
@@ -987,5 +1042,7 @@ def apply_question_layout_edit(slide: dict[str, Any], edit: dict[str, Any]) -> N
     layout = edit.get("layout")
     if not layout or not layout_changed(slide, layout):
         return
+    if layout.get("choiceColumns") is not None:
+        apply_choice_columns(slide, layout["choiceColumns"])
     apply_layout_media(slide, layout)
     apply_layout(slide, layout)
