@@ -244,7 +244,6 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
   const applyReflow = useCallback(
     (sourceObjects, { markDirty = false } = {}) => {
       const preview = question.layout?.choicePreview
-      if (!preview?.items?.length) return false
       const isDirty = !!(
         question._dirtyChoices
         || question._dirtyQuestionText
@@ -257,6 +256,7 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
           choices: question.choices,
           choicePreview: preview,
           typography: question.layout?.typography,
+          questionFormat: question.questionFormat,
           preservePositions: !isDirty,
         },
       )
@@ -283,7 +283,7 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
   )
 
   useLayoutEffect(() => {
-    if (!question?.layout?.choicePreview?.items?.length) return
+    if (!question?.layout?.objects?.length) return
     applyReflow(question.layout?.objects || objects, {
       markDirty: !!(
         question._dirtyChoices
