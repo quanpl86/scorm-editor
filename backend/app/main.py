@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import shutil
+import ssl
+import urllib.error
+import urllib.request
 import zipfile
 from pathlib import Path
+from urllib.parse import unquote
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -12,7 +16,7 @@ from pydantic import BaseModel
 
 from .excel_import import parse_excel_file
 from .fonts import resolve_font_path
-from .preview import build_preview_html, preview_res_root
+from .preview import build_preview_html, is_report_proxy_target_allowed, preview_res_root
 from .quiz_builder import IMPORT_TEMPLATE_DIR, MASTER_SCORM, build_quiz_from_excel
 from .scorm_parser import (
     SESSIONS_ROOT,
@@ -51,6 +55,7 @@ EXCEL_SUFFIXES = {".xls", ".xlsx"}
 class SavePayload(BaseModel):
     title: str | None = None
     passingScore: int | None = None
+    reporting: dict | None = None
     introSlide: dict | None = None
     resultSlides: list[dict] = []
     questions: list[dict] = []
@@ -295,6 +300,49 @@ def preview_player(session_id: str):
         return HTMLResponse(html, headers={"Cache-Control": "no-store"})
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc)) from exc
+
+
+def _proxy_urlopen(req: urllib.request.Request, *, timeout: int = 45):
+    try:
+        return urllib.request.urlopen(req, timeout=timeout)
+    except urllib.error.URLError as exc:
+        reason = str(getattr(exc, "reason", exc))
+        if "CERTIFICATE_VERIFY_FAILED" not in reason:
+            raise
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return urllib.request.urlopen(req, timeout=timeout, context=ctx)
+
+
+@app.post("/api/session/{session_id}/preview/report-proxy")
+async def preview_report_proxy(session_id: str, url: str, request: Request):
+    """Forward iSpring quiz report POSTs server-side (avoids browser CORS in preview)."""
+    try:
+        session = get_session(session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+    target = unquote(url).strip()
+    if not target.startswith(("http://", "https://")):
+        raise HTTPException(400, "URL không hợp lệ")
+    if not is_report_proxy_target_allowed(target, session.quiz_json):
+        raise HTTPException(403, "URL báo cáo không được phép")
+
+    body = await request.body()
+    content_type = request.headers.get("content-type", "application/x-www-form-urlencoded")
+    proxy_req = urllib.request.Request(target, data=body, method="POST")
+    proxy_req.add_header("Content-Type", content_type)
+
+    try:
+        with _proxy_urlopen(proxy_req, timeout=45) as resp:
+            payload = resp.read()
+            return Response(content=payload, status_code=resp.status, media_type=resp.headers.get_content_type())
+    except urllib.error.HTTPError as exc:
+        detail = exc.read()
+        return Response(content=detail, status_code=exc.code)
+    except Exception as exc:
+        raise HTTPException(502, f"Không gửi được báo cáo: {exc}") from exc
 
 
 @app.get("/api/session/{session_id}/preview/res/{path:path}")

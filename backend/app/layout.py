@@ -372,6 +372,15 @@ CHOICE_COLUMN_TYPES = frozenset({
     "TrueFalse",
 })
 
+SHUFFLE_QUESTION_TYPES = frozenset({
+    "MultipleChoice",
+    "MultipleResponse",
+    "MultipleChoiceText",
+    "TrueFalse",
+    "Sequence",
+    "Matching",
+})
+
 
 def _choice_column_max(slide: dict[str, Any]) -> int:
     return 2 if slide.get("tp") == "TrueFalse" else 4
@@ -530,11 +539,13 @@ def extract_choice_preview(slide: dict[str, Any]) -> dict[str, Any] | None:
                 }
             )
         preview["responses"] = responses
+    else:
+        return preview if preview["items"] else None
+
+    if qtype in SHUFFLE_QUESTION_TYPES:
         slide_settings = slide.get("s", {}) if isinstance(slide.get("s"), dict) else {}
         preview["shuffleResponses"] = bool(slide_settings.get("sh", False))
         preview["shuffleSeed"] = slide.get("i", "")
-    else:
-        return preview if preview["items"] else None
 
     items = preview.get("items") or []
     pairs = preview.get("pairs") or []

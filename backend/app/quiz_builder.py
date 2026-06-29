@@ -111,7 +111,11 @@ def _set_feedback(slide: dict[str, Any], correct: str, incorrect: str) -> None:
 def _set_points(slide: dict[str, Any], points: float | None) -> None:
     if points is None:
         return
-    slide.setdefault("s", {}).setdefault("e", {})["pt"] = points
+    eval_block = slide.setdefault("s", {}).setdefault("e", {})
+    eval_block.setdefault("t", "byQuestion")
+    eval_block.setdefault("p", 0)
+    eval_block.setdefault("atp", 0)
+    eval_block["pt"] = max(0.0, float(points))
 
 
 def _choice_template(chs: list[dict[str, Any]]) -> dict[str, Any]:

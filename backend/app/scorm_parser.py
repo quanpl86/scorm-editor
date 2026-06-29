@@ -478,7 +478,10 @@ def slide_to_view(slide: dict[str, Any], group_index: int, question_index: int, 
     qtype = slide.get("tp", "Unknown")
     question_text = strip_html(slide.get("D", {}).get("h", ""))
     points = slide.get("s", {}).get("e", {}).get("pt", 1)
-    time_limit = slide.get("s", {}).get("t", {}).get("v", 0)
+    time_block = slide.get("s", {}).get("t", {}) or {}
+    time_limit = time_block.get("v", 0)
+    time_enabled = bool(time_block.get("e", False))
+    shuffle_answers = bool(slide.get("s", {}).get("sh", False))
 
     view: dict[str, Any] = {
         "id": slide.get("i", ""),
@@ -504,6 +507,8 @@ def slide_to_view(slide: dict[str, Any], group_index: int, question_index: int, 
         "editableLevel": editable_level(qtype),
         "points": points,
         "timeLimit": time_limit,
+        "timeLimitEnabled": time_enabled,
+        "shuffleAnswers": shuffle_answers,
     }
 
     if qtype in {"MultipleChoice", "MultipleResponse", "MultipleChoiceText", "TrueFalse", "Sequence"}:
@@ -520,6 +525,80 @@ def slide_to_view(slide: dict[str, Any], group_index: int, question_index: int, 
     view["layout"] = extract_layout(slide)
 
     return view
+
+
+REPORTING_FILTER_VALUES = frozenset({"passedAndFailed", "passed", "failed"})
+
+
+def extract_reporting(quiz_json: dict[str, Any]) -> dict[str, Any]:
+    """Map iSpring d.s.r reporting block to editor-friendly fields."""
+    reporting = quiz_json.get("d", {}).get("s", {}).get("r", {})
+    ads = reporting.get("ads", {}) or {}
+    sts = reporting.get("sts", {}) or {}
+    ss = reporting.get("ss", {}) or {}
+
+    admin_filter = ads.get("x", "passedAndFailed")
+    if admin_filter not in REPORTING_FILTER_VALUES:
+        admin_filter = "passedAndFailed"
+    student_filter = sts.get("x", "passedAndFailed")
+    if student_filter not in REPORTING_FILTER_VALUES:
+        student_filter = "passedAndFailed"
+
+    return {
+        "sendToServer": {
+            "enabled": bool(ss.get("e")),
+            "url": str(ss.get("u") or ""),
+        },
+        "adminEmail": {
+            "enabled": bool(ads.get("e")),
+            "emails": str(ads.get("em") or ""),
+            "filter": admin_filter,
+        },
+        "studentEmail": {
+            "enabled": bool(sts.get("e")),
+            "filter": student_filter,
+        },
+    }
+
+
+def apply_reporting_settings(quiz_json: dict[str, Any], reporting: dict[str, Any] | None) -> None:
+    """Persist editor reporting fields into iSpring d.s.r (ss, ads, sts)."""
+    if not reporting:
+        return
+
+    quiz_json.setdefault("d", {}).setdefault("s", {})
+    block = quiz_json["d"]["s"].setdefault("r", {})
+
+    server = reporting.get("sendToServer") or {}
+    ss = block.setdefault("ss", {})
+    if "enabled" in server:
+        ss["e"] = bool(server["enabled"])
+    if "url" in server:
+        ss["u"] = str(server.get("url") or "").strip()
+
+    admin = reporting.get("adminEmail") or {}
+    ads = block.setdefault("ads", {})
+    if "enabled" in admin:
+        ads["e"] = bool(admin["enabled"])
+    if "emails" in admin:
+        ads["em"] = str(admin.get("emails") or "").strip()
+    if admin.get("filter") in REPORTING_FILTER_VALUES:
+        ads["x"] = admin["filter"]
+    if ads.get("e"):
+        ads["ua"] = True
+        ads["ca"] = True
+        ads["f"] = False
+
+    student = reporting.get("studentEmail") or {}
+    sts = block.setdefault("sts", {})
+    if "enabled" in student:
+        sts["e"] = bool(student["enabled"])
+    if student.get("filter") in REPORTING_FILTER_VALUES:
+        sts["x"] = student["filter"]
+    if sts.get("e"):
+        sts["ua"] = True
+        sts["ca"] = True
+        sts["f"] = False
 
 
 def quiz_to_view(quiz_json: dict[str, Any]) -> dict[str, Any]:
@@ -542,6 +621,7 @@ def quiz_to_view(quiz_json: dict[str, Any]) -> dict[str, Any]:
     return {
         "title": quiz_json.get("d", {}).get("T", "Untitled Quiz"),
         "passingScore": passing,
+        "reporting": extract_reporting(quiz_json),
         "groups": [{"title": g.get("T", ""), "questionCount": len(g.get("S", []))} for g in groups],
         "introSlide": intro_slide,
         "resultSlides": result_slides,
@@ -596,6 +676,29 @@ def apply_question_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:
         slide["C"]["chs"] = [
             {"i": f"ans-{idx}", "t": ans} for idx, ans in enumerate(edit["typeInAnswers"]) if ans.strip()
         ]
+
+    if edit.get("timeLimitEnabled") is not None or edit.get("timeLimit") is not None:
+        slide.setdefault("s", {})
+        time_block = slide["s"].setdefault("t", {})
+        if edit.get("timeLimitEnabled") is not None:
+            time_block["e"] = bool(edit["timeLimitEnabled"])
+        if edit.get("timeLimit") is not None:
+            time_block["v"] = max(0, int(edit["timeLimit"]))
+
+    if edit.get("shuffleAnswers") is not None:
+        slide.setdefault("s", {})["sh"] = bool(edit["shuffleAnswers"])
+
+    if edit.get("points") is not None:
+        slide.setdefault("s", {})
+        eval_block = slide["s"].setdefault("e", {})
+        eval_block.setdefault("t", "byQuestion")
+        eval_block.setdefault("p", 0)
+        eval_block.setdefault("atp", 0)
+        try:
+            pts = float(edit["points"])
+        except (TypeError, ValueError):
+            pts = 1.0
+        eval_block["pt"] = max(0.0, pts)
 
     if edit.get("layout"):
         apply_question_layout_edit(slide, edit)
@@ -714,6 +817,7 @@ class ScormSession:
             self.quiz_json,
             {"title": payload.get("title"), "passingScore": payload.get("passingScore")},
         )
+        apply_reporting_settings(self.quiz_json, payload.get("reporting"))
         intro_edit = payload.get("introSlide")
         intro = self.quiz_json.get("d", {}).get("sl", {}).get("i")
         if intro_edit and intro:

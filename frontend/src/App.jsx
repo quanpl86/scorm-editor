@@ -49,6 +49,29 @@ const RESULT_KIND_LABELS = {
   failed: 'Không đạt',
 }
 
+const REPORTING_FILTER_LABELS = {
+  passedAndFailed: 'Đạt và không đạt',
+  passed: 'Chỉ khi đạt',
+  failed: 'Chỉ khi không đạt',
+}
+
+const DEFAULT_SERVER_REPORT_URL = 'https://n8n.teky.vn/webhook/teky-quiz-result-endpoint'
+
+const DEFAULT_REPORTING = {
+  sendToServer: { enabled: false, url: '' },
+  adminEmail: { enabled: false, emails: '', filter: 'passedAndFailed' },
+  studentEmail: { enabled: false, filter: 'passedAndFailed' },
+}
+
+function normalizeReporting(reporting) {
+  const r = reporting || {}
+  return {
+    sendToServer: { ...DEFAULT_REPORTING.sendToServer, ...r.sendToServer },
+    adminEmail: { ...DEFAULT_REPORTING.adminEmail, ...r.adminEmail },
+    studentEmail: { ...DEFAULT_REPORTING.studentEmail, ...r.studentEmail },
+  }
+}
+
 /** Giữ HTML đúng như canvas trước khi gửi server — tránh rebuild làm lệch font/layout */
 function syncSlideCanvasHtml(slide) {
   if (!slide?.layout) return slide
@@ -160,6 +183,12 @@ function buildSlideSavePayload(slide) {
   if (synced._dirtyTypeIn) payload.typeInAnswers = synced.typeInAnswers
   if (synced._dirtyWordBank) payload.wordBankWords = synced.wordBankWords
   if (synced._dirtyRichHtml) payload.richHtml = synced.layout?.choicePreview?.richHtml
+  if (synced.slideRole === 'question') {
+    payload.points = synced.points ?? 1
+    payload.timeLimitEnabled = !!synced.timeLimitEnabled
+    payload.timeLimit = synced.timeLimit ?? 0
+    payload.shuffleAnswers = !!synced.shuffleAnswers
+  }
   return payload
 }
 
@@ -174,8 +203,9 @@ function clearSlideDirtyFlags(slide) {
 
 function clearDirtyFlags(quiz) {
   if (!quiz) return quiz
+  const { _dirtyMeta, ...rest } = quiz
   return {
-    ...quiz,
+    ...rest,
     introSlide: clearSlideDirtyFlags(quiz.introSlide),
     resultSlides: (quiz.resultSlides || []).map(clearSlideDirtyFlags),
     questions: (quiz.questions || []).map(clearSlideDirtyFlags),
@@ -197,6 +227,14 @@ function applyDirtyFlags(slide, patch) {
   if (fieldChanged(slide, patch, 'feedback')) next._dirtyFeedback = true
   if (fieldChanged(slide, patch, 'typeInAnswers')) next._dirtyTypeIn = true
   if (fieldChanged(slide, patch, 'wordBankWords')) next._dirtyWordBank = true
+  if (
+    fieldChanged(slide, patch, 'points')
+    || fieldChanged(slide, patch, 'timeLimit')
+    || fieldChanged(slide, patch, 'timeLimitEnabled')
+    || fieldChanged(slide, patch, 'shuffleAnswers')
+  ) {
+    next._dirtyQuestionOptions = true
+  }
   return next
 }
 
@@ -204,6 +242,7 @@ function buildSavePayload(quiz) {
   return {
     title: quiz.title,
     passingScore: quiz.passingScore,
+    reporting: normalizeReporting(quiz.reporting),
     introSlide: buildSlideSavePayload(quiz.introSlide),
     resultSlides: (quiz.resultSlides || []).map(buildSlideSavePayload).filter(Boolean),
     questions: (quiz.questions || []).map(buildSlideSavePayload),
@@ -227,6 +266,150 @@ function editableBadge(level) {
   if (level === 'full') return <span className="badge badge-full">Sửa đầy đủ</span>
   if (level === 'partial') return <span className="badge badge-partial">Sửa một phần</span>
   return <span className="badge badge-readonly">Chỉ xem</span>
+}
+
+function QuizSettingsPanel({ quiz, questionCount, setQuiz }) {
+  return (
+    <div className="editor-panel quiz-settings-panel">
+      <div className="editor-section">
+        <h4>Thông tin quiz</h4>
+        <div className="meta-field">
+          <label>Tên quiz</label>
+          <input
+            type="text"
+            value={quiz.title}
+            onChange={(e) => setQuiz((p) => ({ ...p, title: e.target.value, _dirtyMeta: true }), { burst: true })}
+          />
+        </div>
+        <div className="meta-field">
+          <label>Điểm đạt (%)</label>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={quiz.passingScore}
+            onChange={(e) => setQuiz((p) => ({ ...p, passingScore: Number(e.target.value), _dirtyMeta: true }), { burst: true })}
+          />
+        </div>
+        <div className="stats-row quiz-settings-stats">
+          <span className="stat"><strong>{questionCount}</strong> câu hỏi</span>
+          <span className="stat"><strong>{quiz.groups?.length || 0}</strong> nhóm</span>
+        </div>
+      </div>
+      <ReportingSettings
+        reporting={quiz.reporting}
+        onChange={(reporting) => setQuiz((p) => ({ ...p, reporting, _dirtyMeta: true }), { burst: true })}
+      />
+    </div>
+  )
+}
+
+function ReportingSettings({ reporting, onChange }) {
+  const r = normalizeReporting(reporting)
+
+  const patch = (section, field, value) => {
+    onChange({
+      ...r,
+      [section]: { ...r[section], [field]: value },
+    })
+  }
+
+  const toggleSendToServer = (enabled) => {
+    const next = { ...r.sendToServer, enabled }
+    if (enabled && !String(r.sendToServer.url || '').trim()) {
+      next.url = DEFAULT_SERVER_REPORT_URL
+    }
+    onChange({ ...r, sendToServer: next })
+  }
+
+  return (
+    <div className="reporting-settings editor-section">
+      <h4>Reporting</h4>
+      <p className="reporting-hint">
+        Kết quả chi tiết được gửi khi học sinh hoàn thành quiz trên LMS.
+      </p>
+
+      <div className="reporting-block">
+        <label className="meta-check">
+          <input
+            type="checkbox"
+            checked={r.sendToServer.enabled}
+            onChange={(e) => toggleSendToServer(e.target.checked)}
+          />
+          <span>Gửi kết quả lên server</span>
+        </label>
+        <div className="meta-field">
+          <label>URL server nhận kết quả</label>
+          <input
+            type="url"
+            placeholder={DEFAULT_SERVER_REPORT_URL}
+            value={r.sendToServer.url}
+            disabled={!r.sendToServer.enabled}
+            onChange={(e) => patch('sendToServer', 'url', e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="reporting-block">
+        <label className="meta-check">
+          <input
+            type="checkbox"
+            checked={r.adminEmail.enabled}
+            onChange={(e) => patch('adminEmail', 'enabled', e.target.checked)}
+          />
+          <span>Gửi báo cáo qua email (admin)</span>
+        </label>
+        <div className="meta-field">
+          <label>Email nhận báo cáo</label>
+          <input
+            type="text"
+            placeholder="admin@school.edu, reports@school.edu"
+            value={r.adminEmail.emails}
+            disabled={!r.adminEmail.enabled}
+            onChange={(e) => patch('adminEmail', 'emails', e.target.value)}
+          />
+        </div>
+        <div className="meta-field">
+          <label>Gửi khi</label>
+          <select
+            value={r.adminEmail.filter}
+            disabled={!r.adminEmail.enabled}
+            onChange={(e) => patch('adminEmail', 'filter', e.target.value)}
+          >
+            {Object.entries(REPORTING_FILTER_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="reporting-block">
+        <label className="meta-check">
+          <input
+            type="checkbox"
+            checked={r.studentEmail.enabled}
+            onChange={(e) => patch('studentEmail', 'enabled', e.target.checked)}
+          />
+          <span>Gửi báo cáo cho học sinh</span>
+        </label>
+        <div className="meta-field">
+          <label>Gửi khi</label>
+          <select
+            value={r.studentEmail.filter}
+            disabled={!r.studentEmail.enabled}
+            onChange={(e) => patch('studentEmail', 'filter', e.target.value)}
+          >
+            {Object.entries(REPORTING_FILTER_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </div>
+        <p className="reporting-note">
+          Email học sinh lấy từ slide Authorization (nếu quiz có yêu cầu nhập email).
+        </p>
+      </div>
+    </div>
+  )
 }
 
 function ImportReport({ report, summary }) {
@@ -782,6 +965,8 @@ function EditorWorkspace({
   saving,
   autoSaving,
   previewRevision,
+  questionCount,
+  setQuiz,
   onChange,
   onPatch,
   onDelete,
@@ -793,26 +978,21 @@ function EditorWorkspace({
 }) {
   const [tab, setTab] = useState('layout')
   const isSpecial = slide?.slideRole === 'intro' || slide?.slideRole === 'result'
+  const showSlideHeader = slide && tab !== 'sideview' && tab !== 'settings'
 
-  if (!slide) {
-    return <div className="editor-empty">Chọn một slide để chỉnh sửa</div>
-  }
+  const renderTabBody = () => {
+    if (tab === 'settings') {
+      return (
+        <QuizSettingsPanel
+          quiz={quiz}
+          questionCount={questionCount}
+          setQuiz={setQuiz}
+        />
+      )
+    }
 
-  return (
-    <div className="editor-workspace">
-      <SlideHeader slide={slide} onDelete={onDelete} />
-      <div className="editor-tabs">
-        <button type="button" className={tab === 'layout' ? 'active' : ''} onClick={() => setTab('layout')}>
-          Canvas Layout
-        </button>
-        <button type="button" className={tab === 'content' ? 'active' : ''} onClick={() => setTab('content')}>
-          {isSpecial ? 'Nội dung' : 'Nội dung & Feedback'}
-        </button>
-        <button type="button" className={tab === 'sideview' ? 'active' : ''} onClick={() => setTab('sideview')}>
-          Side View
-        </button>
-      </div>
-      {tab === 'sideview' ? (
+    if (tab === 'sideview') {
+      return (
         <QuestionSideView
           quiz={quiz}
           selectedId={selectedId}
@@ -822,7 +1002,19 @@ function EditorWorkspace({
           autoSaving={autoSaving}
           previewRevision={previewRevision}
         />
-      ) : tab === 'layout' ? (
+      )
+    }
+
+    if (!slide) {
+      return (
+        <div className="editor-empty">
+          Chọn một slide từ danh sách bên trái để chỉnh sửa, hoặc mở tab Cài đặt Quiz.
+        </div>
+      )
+    }
+
+    if (tab === 'layout') {
+      return (
         <LayoutCanvas
           question={slide}
           sessionId={sessionId}
@@ -834,7 +1026,11 @@ function EditorWorkspace({
           onCanvasEditStateChange={onCanvasEditStateChange}
           onImageUpload={onImageUpload}
         />
-      ) : isSpecial ? (
+      )
+    }
+
+    if (isSpecial) {
+      return (
         <SpecialSlideEditor
           slide={slide}
           sessionId={sessionId}
@@ -842,16 +1038,49 @@ function EditorWorkspace({
           onImageUpload={onImageUpload}
           hideHeader
         />
-      ) : (
-        <QuestionEditor
-          question={slide}
-          sessionId={sessionId}
-          onChange={onChange}
-          onDelete={onDelete}
-          onImageUpload={onImageUpload}
-          hideHeader
-        />
-      )}
+      )
+    }
+
+    return (
+      <QuestionEditor
+        question={slide}
+        sessionId={sessionId}
+        onChange={onChange}
+        onDelete={onDelete}
+        onImageUpload={onImageUpload}
+        hideHeader
+      />
+    )
+  }
+
+  return (
+    <div className="editor-workspace">
+      {showSlideHeader && <SlideHeader slide={slide} onDelete={onDelete} />}
+      <div className="editor-tabs">
+        <button
+          type="button"
+          className={tab === 'layout' ? 'active' : ''}
+          disabled={!slide}
+          onClick={() => setTab('layout')}
+        >
+          Canvas Layout
+        </button>
+        <button
+          type="button"
+          className={tab === 'content' ? 'active' : ''}
+          disabled={!slide}
+          onClick={() => setTab('content')}
+        >
+          {isSpecial ? 'Nội dung' : 'Nội dung & Feedback'}
+        </button>
+        <button type="button" className={tab === 'sideview' ? 'active' : ''} onClick={() => setTab('sideview')}>
+          Side View
+        </button>
+        <button type="button" className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>
+          Cài đặt Quiz
+        </button>
+      </div>
+      {renderTabBody()}
     </div>
   )
 }
@@ -910,6 +1139,7 @@ export default function App() {
         ...prev,
         title: savedView.title ?? prev.title,
         passingScore: savedView.passingScore ?? prev.passingScore,
+        reporting: normalizeReporting(savedView.reporting ?? prev.reporting),
         questionCount: savedView.questionCount ?? questions.length,
         questions,
         introSlide: savedView.introSlide
@@ -1190,25 +1420,7 @@ export default function App() {
       <div className="main">
         <aside className="sidebar" style={{ width: sidebarResize.width }}>
           <div className="sidebar-header">
-            <h3>Cài đặt Quiz</h3>
-            <div className="meta-field">
-              <label>Tên quiz</label>
-              <input
-                type="text"
-                value={quiz.title}
-                onChange={(e) => setQuiz((p) => ({ ...p, title: e.target.value }), { burst: true })}
-              />
-            </div>
-            <div className="meta-field">
-              <label>Điểm đạt (%)</label>
-              <input
-                type="number"
-                min={0}
-                max={100}
-                value={quiz.passingScore}
-                onChange={(e) => setQuiz((p) => ({ ...p, passingScore: Number(e.target.value) }), { burst: true })}
-              />
-            </div>
+            <h3>Danh sách slide</h3>
             <div className="stats-row">
               <span className="stat"><strong>{activeQuestions.length}</strong> câu hỏi</span>
               <span className="stat"><strong>{quiz.groups?.length}</strong> nhóm</span>
@@ -1294,6 +1506,8 @@ export default function App() {
           saving={saving}
           autoSaving={autoSaving}
           previewRevision={previewRevision}
+          questionCount={activeQuestions.length}
+          setQuiz={setQuiz}
           onChange={updateSlide}
           onPatch={patchSlide}
           onDelete={deleteQuestion}

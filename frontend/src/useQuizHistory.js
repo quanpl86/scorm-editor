@@ -10,6 +10,7 @@ export function cloneQuiz(quiz) {
 
 export function quizHasDirtyFlags(quiz) {
   if (!quiz) return false
+  if (quiz._dirtyMeta) return true
   const slideDirty = (s) => s && Object.keys(s).some((k) => k.startsWith('_dirty'))
   if (slideDirty(quiz.introSlide)) return true
   if (quiz.resultSlides?.some(slideDirty)) return true

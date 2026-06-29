@@ -4,6 +4,76 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from urllib.parse import urlparse
+
+REPORTING_PROXY_SCRIPT_TEMPLATE = """
+<script>
+(function () {
+  var sessionId = "__SESSION_ID__";
+  var proxyBase = "/api/session/" + sessionId + "/preview/report-proxy?url=";
+
+  function normalizeUrl(url) {
+    try {
+      return new URL(url, window.location.href).href;
+    } catch (e) {
+      return url;
+    }
+  }
+
+  function shouldProxy(url) {
+    if (!url || url.indexOf(proxyBase) === 0) return false;
+    try {
+      var target = new URL(url, window.location.href);
+      if (target.origin === window.location.origin) return false;
+      return target.protocol === "http:" || target.protocol === "https:";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function proxyUrl(url) {
+    return proxyBase + encodeURIComponent(normalizeUrl(url));
+  }
+
+  var OrigXHR = window.XMLHttpRequest;
+  function ProxyXHR() {
+    var xhr = new OrigXHR();
+    var origOpen = xhr.open;
+    xhr.open = function (method, url) {
+      var nextUrl = url;
+      var verb = String(method || "GET").toUpperCase();
+      if (verb === "POST" && shouldProxy(url)) {
+        nextUrl = proxyUrl(url);
+      }
+      var args = Array.prototype.slice.call(arguments);
+      args[1] = nextUrl;
+      return origOpen.apply(xhr, args);
+    };
+    return xhr;
+  }
+  ProxyXHR.prototype = OrigXHR.prototype;
+  window.XMLHttpRequest = ProxyXHR;
+
+  if (window.XDomainRequest) {
+    var OrigXDR = window.XDomainRequest;
+    function ProxyXDR() {
+      var xdr = new OrigXDR();
+      var origOpen = xdr.open;
+      xdr.open = function (method, url) {
+        var nextUrl = url;
+        if (String(method || "GET").toUpperCase() === "POST" && shouldProxy(url)) {
+          nextUrl = proxyUrl(url);
+        }
+        return origOpen.call(xdr, method, nextUrl);
+      };
+      return xdr;
+    }
+    ProxyXDR.prototype = OrigXDR.prototype;
+    window.XDomainRequest = ProxyXDR;
+  }
+})();
+</script>
+"""
 
 MOCK_SCORM_SCRIPT = """
 <script>
@@ -751,14 +821,42 @@ def _inject_navigation_bridge(html: str) -> str:
     return html + NAVIGATION_BRIDGE_SCRIPT
 
 
+def reporting_proxy_allowed_urls(quiz_json: dict) -> set[str]:
+    """URLs the preview player may forward quiz reports to."""
+    allowed: set[str] = {
+        "https://s4.ispringsolutions.com/quiz_results",
+        "http://s4.ispringsolutions.com/quiz_results",
+    }
+    reporting = quiz_json.get("d", {}).get("s", {}).get("r", {})
+    server = reporting.get("ss", {}) or {}
+    if server.get("e") and server.get("u"):
+        allowed.add(str(server["u"]).strip())
+    return {url for url in allowed if url}
+
+
+def is_report_proxy_target_allowed(target_url: str, quiz_json: dict) -> bool:
+    allowed = reporting_proxy_allowed_urls(quiz_json)
+    if target_url in allowed:
+        return True
+    try:
+        host = urlparse(target_url).netloc.lower()
+    except ValueError:
+        return False
+    return host.endswith("ispringsolutions.com") or host.endswith("teky.vn")
+
+
 def build_preview_html(index_html: str, session_id: str) -> str:
     """Inject mock SCORM API and base URL so player assets resolve correctly."""
     base_href = f"/api/session/{session_id}/preview/res/"
     base_tag = f'\n\t<base href="{base_href}">'
+    reporting_proxy = REPORTING_PROXY_SCRIPT_TEMPLATE.replace("__SESSION_ID__", session_id)
 
     html = index_html
     if "<base " not in html.lower():
         html = _insert_after_tag(html, r"<head[^>]*>", base_tag)
+
+    if "report-proxy" not in html:
+        html = _insert_after_tag(html, r"<head[^>]*>", "\n" + reporting_proxy)
 
     if "window.API" not in html:
         html = _insert_after_tag(html, r"<body[^>]*>", "\n" + MOCK_SCORM_SCRIPT)

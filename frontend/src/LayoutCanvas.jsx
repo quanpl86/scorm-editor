@@ -194,6 +194,103 @@ function ChoicePreview({
   )
 }
 
+const SHUFFLE_QUESTION_TYPES = new Set([
+  'MultipleChoice',
+  'MultipleResponse',
+  'MultipleChoiceText',
+  'TrueFalse',
+  'Sequence',
+  'Matching',
+])
+
+const DEFAULT_QUESTION_TIME_LIMIT = 60
+
+function secondsToMmSs(total) {
+  const s = Math.max(0, Math.floor(Number(total) || 0))
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+}
+
+function mmSsToSeconds(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return 0
+  if (raw.includes(':')) {
+    const [mm, ss] = raw.split(':')
+    return Math.max(0, (parseInt(mm, 10) || 0) * 60 + (parseInt(ss, 10) || 0))
+  }
+  const n = parseInt(raw, 10)
+  return Number.isFinite(n) ? Math.max(0, n) : 0
+}
+
+function parseQuestionPoints(raw) {
+  const n = parseFloat(raw)
+  return Number.isFinite(n) ? Math.max(0, n) : 1
+}
+
+function QuestionSlideOptionsPanel({ question, onChange }) {
+  if (!question || question.slideRole !== 'question') return null
+
+  const supportsShuffle = SHUFFLE_QUESTION_TYPES.has(question.type)
+  const timeEnabled = !!question.timeLimitEnabled
+  const timeValue = secondsToMmSs(
+    question.timeLimit > 0 ? question.timeLimit : DEFAULT_QUESTION_TIME_LIMIT,
+  )
+  const pointsValue = question.points ?? 1
+
+  return (
+    <div className="question-slide-options">
+      <h4>Tùy chọn slide</h4>
+      <div className="meta-field question-points-field">
+        <label htmlFor={`q-points-${question.id}`}>Điểm</label>
+        <input
+          id={`q-points-${question.id}`}
+          type="number"
+          min={0}
+          step={0.5}
+          aria-label="Điểm câu hỏi"
+          value={pointsValue}
+          onChange={(e) => onChange({ points: parseQuestionPoints(e.target.value) })}
+        />
+      </div>
+      <label className="meta-check">
+        <input
+          type="checkbox"
+          checked={timeEnabled}
+          onChange={(e) => {
+            const enabled = e.target.checked
+            const patch = { timeLimitEnabled: enabled }
+            if (enabled && !(question.timeLimit > 0)) {
+              patch.timeLimit = DEFAULT_QUESTION_TIME_LIMIT
+            }
+            onChange(patch)
+          }}
+        />
+        <span>Giới hạn thời gian trả lời</span>
+      </label>
+      <div className="meta-field question-time-field">
+        <input
+          type="text"
+          inputMode="numeric"
+          placeholder="01:00"
+          aria-label="Thời gian giới hạn (phút:giây)"
+          value={timeEnabled ? timeValue : ''}
+          disabled={!timeEnabled}
+          onChange={(e) => onChange({ timeLimit: mmSsToSeconds(e.target.value) })}
+        />
+      </div>
+      {supportsShuffle && (
+        <label className="meta-check">
+          <input
+            type="checkbox"
+            checked={!!question.shuffleAnswers}
+            onChange={(e) => onChange({ shuffleAnswers: e.target.checked })}
+          />
+          <span>Xáo trộn đáp án</span>
+        </label>
+      )}
+    </div>
+  )
+}
+
 function ChoiceColumnsPanel({ columns, onChange, disabled, maxColumns = 4 }) {
   const options = Array.from({ length: maxColumns }, (_, i) => i + 1)
   return (
@@ -480,7 +577,7 @@ export default function LayoutCanvas({
           format: p.rightFormat,
           image: p.rightImage,
         })),
-        shuffleResponses: cp?.shuffleResponses ?? false,
+        shuffleResponses: question.shuffleAnswers ?? cp?.shuffleResponses ?? false,
         shuffleSeed: cp?.shuffleSeed || question.id,
         layout: cp?.layout || {},
         columnLabels: cp?.columnLabels,
@@ -641,6 +738,24 @@ export default function LayoutCanvas({
   const choiceColumnMax = maxChoiceColumns(question.type)
   const showChoiceColumns = supportsChoiceColumns(question.type)
     && (question.choices?.length || question.layout?.choicePreview?.items?.length)
+
+  const handleQuestionOptionsChange = useCallback((patch) => {
+    const next = { ...patch }
+    if ('shuffleAnswers' in patch) {
+      const cp = question.layout?.choicePreview
+      if (cp) {
+        next.layout = {
+          ...question.layout,
+          choicePreview: {
+            ...cp,
+            shuffleResponses: patch.shuffleAnswers,
+            shuffleSeed: question.id,
+          },
+        }
+      }
+    }
+    onPatch(next)
+  }, [onPatch, question.id, question.layout])
 
   const handleChoiceColumnsChange = useCallback((columns) => {
     const cols = clampChoiceColumns(columns, question.type)
@@ -1239,7 +1354,7 @@ export default function LayoutCanvas({
           format: p.rightFormat,
           image: p.rightImage,
         })),
-        shuffleResponses: cp?.shuffleResponses ?? false,
+        shuffleResponses: question.shuffleAnswers ?? cp?.shuffleResponses ?? false,
         shuffleSeed: cp?.shuffleSeed || question.id,
         layout: cp?.layout || {},
         columnLabels: cp?.columnLabels,
@@ -1611,6 +1726,11 @@ export default function LayoutCanvas({
       />
 
       <div className="layout-side" style={{ width: rightPanelResize.width }}>
+        <QuestionSlideOptionsPanel
+          question={question}
+          onChange={handleQuestionOptionsChange}
+        />
+
         <div className="layer-panel">
           <h4>Thành phần</h4>
           {[...renderOrder].reverse().map((obj) => (

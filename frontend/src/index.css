@@ -388,7 +388,8 @@ button, input, textarea, select {
   margin-bottom: 4px;
 }
 
-.meta-field input {
+.meta-field input,
+.meta-field select {
   width: 100%;
   padding: 8px 10px;
   border-radius: 6px;
@@ -396,6 +397,62 @@ button, input, textarea, select {
   background: var(--bg);
   color: var(--text);
   font-size: 0.875rem;
+}
+
+.meta-field input:disabled,
+.meta-field select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.meta-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8125rem;
+  color: var(--text);
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.meta-check input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent, #4f7cff);
+}
+
+.reporting-settings {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.reporting-settings h4 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+
+.reporting-hint,
+.reporting-note {
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.4;
+  margin: 0 0 10px;
+}
+
+.reporting-block {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed var(--border);
+}
+
+.reporting-block:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
 }
 
 .question-list {
@@ -751,7 +808,45 @@ button, input, textarea, select {
   border-bottom-color: var(--accent);
 }
 
-.editor-tabs button:hover:not(.active) {
+.editor-tabs button:hover:not(.active):not(:disabled) {
+  color: var(--text);
+}
+
+.editor-tabs button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.quiz-settings-panel {
+  padding: 20px 24px 32px;
+  max-width: 640px;
+}
+
+.quiz-settings-panel .meta-field {
+  margin-bottom: 12px;
+}
+
+.quiz-settings-panel .editor-section h4 {
+  margin: 0 0 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.quiz-settings-stats {
+  margin-top: 4px;
+}
+
+.quiz-settings-panel .reporting-settings {
+  margin-top: 8px;
+  padding-top: 0;
+  border-top: none;
+}
+
+.quiz-settings-panel .reporting-settings h4 {
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 0.85rem;
   color: var(--text);
 }
 
@@ -1580,6 +1675,53 @@ button, input, textarea, select {
   font-size: 0.75rem;
   color: var(--muted);
   line-height: 1.35;
+}
+
+.question-slide-options {
+  flex-shrink: 0;
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.question-slide-options h4 {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.question-slide-options .meta-check {
+  margin-bottom: 6px;
+}
+
+.question-points-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+
+.question-points-field label {
+  margin: 0;
+  min-width: 36px;
+}
+
+.question-points-field input {
+  width: 72px;
+  font-variant-numeric: tabular-nums;
+}
+
+.question-time-field {
+  margin: 0 0 10px 0;
+  padding-left: 24px;
+}
+
+.question-time-field input {
+  width: 88px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 .props-choice-columns {
