@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { reflowSlideLayout } from './choiceLayoutUtils'
 import { assetUrl } from './api'
 import CanvasFonts from './CanvasFonts'
 import CanvasIcon from './CanvasIcon'
@@ -42,18 +43,29 @@ function ChoicePreview({
   const layout = preview.layout
   const hasImages = items.some((item) => item.image)
   const cols = layout?.columns ?? (hasImages ? (items.length <= 2 ? 1 : 2) : 1)
+  const rowHeights = layout?.rowHeights
+  const gridRowHeights = layout?.gridRowHeights
   const rowHeight = layout?.rowHeight
+  const rowGap = layout?.rowGap ?? 0
   const choicePadding = layout?.choicePadding ?? 10
+  const uniformRow = rowHeight
+    || gridRowHeights?.[0]
+    || rowHeights?.[0]
+  const rowCount = Math.ceil(items.length / cols)
+
+  const gridRows = uniformRow
+    ? `repeat(${rowCount}, ${uniformRow}px)`
+    : gridRowHeights?.length
+      ? gridRowHeights.map((h) => `${h}px`).join(' ')
+      : undefined
 
   const gridStyle = wysiwyg
     ? {
         gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-        gridTemplateRows: rowHeight && cols === 1
-          ? `repeat(${items.length}, ${rowHeight}px)`
-          : rowHeight && cols > 1
-            ? `repeat(${Math.ceil(items.length / cols)}, ${rowHeight}px)`
-            : undefined,
+        gridTemplateRows: gridRows,
+        gap: rowGap ? `${rowGap}px 10px` : '0 10px',
         height: '100%',
+        alignContent: 'start',
       }
     : undefined
 
@@ -65,11 +77,16 @@ function ChoicePreview({
       {items.map((item, i) => {
         const fmt = item.format || choices?.[i]?.format
         const editing = editingChoiceIdx === i
-        const rowStyle = wysiwyg && rowHeight
-          ? { minHeight: rowHeight, height: rowHeight, padding: choicePadding }
-          : wysiwyg
-            ? { padding: choicePadding }
-            : undefined
+        const itemRowHeight = uniformRow
+          || rowHeights?.[i]
+          || gridRowHeights?.[Math.floor(i / cols)]
+        const rowStyle = wysiwyg
+          ? {
+              minHeight: itemRowHeight || 28,
+              padding: choicePadding,
+              boxSizing: 'border-box',
+            }
+          : undefined
 
         return (
           <div
@@ -207,6 +224,75 @@ export default function LayoutCanvas({ question, sessionId, fonts, onPatch, onCh
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
+
+  const reflowKey = useMemo(
+    () => JSON.stringify({
+      id: question?.id,
+      questionText: question?.questionText,
+      choices: (question?.choices || []).map((c) => ({
+        text: c.text,
+        fontSize: c.format?.fontSize,
+      })),
+      items: (question?.layout?.choicePreview?.items || []).map((i) => i.text),
+      questionFormat: question?.questionFormat,
+      titleSize: question?.layout?.typography?.titleSize,
+      contentSize: question?.layout?.typography?.contentSize,
+    }),
+    [question],
+  )
+
+  const applyReflow = useCallback(
+    (sourceObjects, { markDirty = false } = {}) => {
+      const preview = question.layout?.choicePreview
+      if (!preview?.items?.length) return false
+      const isDirty = !!(
+        question._dirtyChoices
+        || question._dirtyQuestionText
+        || question._dirtyQuestionFormat
+      )
+      const { objects: reflowed, choicePreview: cp, changed } = reflowSlideLayout(
+        sourceObjects,
+        {
+          questionText: question.questionText,
+          choices: question.choices,
+          choicePreview: preview,
+          typography: question.layout?.typography,
+          preservePositions: !isDirty,
+        },
+      )
+      if (!changed) return false
+      setObjects(reflowed)
+      const layoutPatch = {
+        ...question.layout,
+        objects: reflowed,
+        choicePreview: cp,
+        overlaps: detectOverlapsLocal(reflowed),
+      }
+      if (onPatch) {
+        onPatch(markDirty ? { _dirtyLayout: true, layout: layoutPatch } : { layout: layoutPatch })
+      } else {
+        onChange({
+          ...question,
+          ...(markDirty ? { _dirtyLayout: true } : {}),
+          layout: layoutPatch,
+        })
+      }
+      return true
+    },
+    [onChange, onPatch, question],
+  )
+
+  useLayoutEffect(() => {
+    if (!question?.layout?.choicePreview?.items?.length) return
+    applyReflow(question.layout?.objects || objects, {
+      markDirty: !!(
+        question._dirtyChoices
+        || question._dirtyQuestionText
+        || question._dirtyQuestionFormat
+      ),
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- reflow keyed by content, not object refs
+  }, [reflowKey])
 
   const overlaps = detectOverlapsLocal(objects)
   const selected = objects.find((o) => o.index === selectedIndex)
