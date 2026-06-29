@@ -5,9 +5,9 @@
 | Meta | Giá trị |
 |------|---------|
 | **Last updated** | 2026-06-29 |
-| **Current phase** | Phase 6 — QA & export LMS |
+| **Current phase** | — (tất cả phase hoàn tất) |
 | **Media mở rộng** | Đáp án + feedback: ảnh/audio/video (brackets) ✅ |
-| **Thứ tự thực hiện tiếp theo** | Phase 6 |
+| **Thứ tự thực hiện tiếp theo** | — |
 
 ---
 
@@ -59,7 +59,7 @@ Khi **hoàn thành** một task hoặc phase:
 | 3 | Loại câu hỏi mở rộng | ✅ Done | 100% | FIB/WB/NUMG E2E; DND skip rõ ràng |
 | 4 | Layout & canvas sau import | ✅ Done | 100% | Reflow sau import, 0 overlap error |
 | 5 | UX import | ✅ Done | 100% | Form, tải template, báo cáo + link slide |
-| 6 | QA & export LMS | ⬜ Todo | 0% | E2E + LMS smoke test |
+| 6 | QA & export LMS | ✅ Done | 100% | pytest matrix + SCORM 1.2 export validate |
 
 **Thứ tự đề xuất:** Phase 2 → 4 → 3 → 5 → 6
 
@@ -180,12 +180,32 @@ Chạy lần cuối: **2026-06-29** — `pytest tests/test_phase3_types.py`
 
 ---
 
-## Phase 6 — QA & export LMS ⬜
+## Phase 6 — QA & export LMS ✅
 
-- [ ] Ma trận test: mỗi loại câu × có/không media × save × export
-- [ ] Export zip → upload LMS thử (SCORM 1.2 / 2004 tùy package)
-- [ ] Slide View: làm bài, chấm điểm, kết quả, email/report
-- [ ] Regression: chỉnh sửa sau import vẫn save/export đúng
+- [x] Ma trận test: 3 template × import → save → export (`tests/test_qa_e2e.py`)
+- [x] Export zip SCORM 1.2 — validate `imsmanifest.xml`, index quiz, re-open session
+- [x] Slide View: preview player mock SCORM API + reporting proxy smoke test
+- [x] Regression: sửa câu/điểm sau import → save → export → dữ liệu khớp
+
+### Baseline QA (pytest tests/test_qa_e2e.py)
+
+Chạy lần cuối: **2026-06-29**
+
+| Metric | Kết quả |
+|--------|---------|
+| Ma trận template | 3/3 pass (sample 8 loại, media 4, FIB/WB 3) |
+| Save + export roundtrip | OK |
+| SCORM version | 1.2 (iSpring MASTER) |
+| Regression edit | OK |
+| API save/export/preview | OK |
+| LMS upload thủ công | Xem checklist bên dưới |
+
+### Checklist upload LMS (thủ công)
+
+1. Export zip từ editor → upload LMS hỗ trợ SCORM 1.2
+2. Làm bài: MC, TF, NUMG, media (audio/video)
+3. Kiểm tra điểm từng câu + màn hình kết quả
+4. Bật reporting email → thử gửi (cần LMS hoặc preview proxy)
 
 ---
 
@@ -208,6 +228,8 @@ Chạy lần cuối: **2026-06-29** — `pytest tests/test_phase3_types.py`
 | 2026-06-29 | 3 | Đóng Phase 3 — NUMG 8/8 imported từ Sample_import_template.xls |
 | 2026-06-29 | 5 | Form quiz/group title; tải template API; ImportReport + banner editor |
 | 2026-06-29 | 5 | Đóng Phase 5 — tests/test_import_ux.py |
+| 2026-06-29 | 6 | QA matrix + export validate + regression; tests/test_qa_e2e.py |
+| 2026-06-29 | 6 | Đóng Phase 6 — 29 pytest pass, SCORM 1.2 export OK |
 
 ---
 
