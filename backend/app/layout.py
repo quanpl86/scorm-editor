@@ -183,6 +183,10 @@ def object_role(obj: dict[str, Any]) -> str:
         return "additionalContent"
     if tp == "slidePicture":
         return "slidePicture"
+    if tp == "slideVideo":
+        return "slideVideo"
+    if tp == "slideAudio":
+        return "slideAudio"
     if tp == "image":
         return "image"
     return "shape"
@@ -248,6 +252,24 @@ def extract_object_image(obj: dict[str, Any], slide: dict[str, Any]) -> str | No
     if match:
         return match.group(1)
 
+    return None
+
+
+def extract_object_video(obj: dict[str, Any], slide: dict[str, Any]) -> str | None:
+    if obj.get("tp") == "slideVideo":
+        vid = slide.get("at", {}).get("v", {}).get("i", "")
+        match = re.search(r"storage://videos/([^\"]+)", vid)
+        if match:
+            return match.group(1)
+    return None
+
+
+def extract_object_audio(obj: dict[str, Any], slide: dict[str, Any]) -> str | None:
+    if obj.get("tp") == "slideAudio":
+        aud = slide.get("at", {}).get("a", {}).get("i", "")
+        match = re.search(r"storage://sounds/([^\"]+)", aud)
+        if match:
+            return match.group(1)
     return None
 
 
@@ -706,8 +728,10 @@ def extract_layout(slide: dict[str, Any]) -> dict[str, Any]:
                 "role": role,
                 "r": rect,
                 "image": extract_object_image(obj, slide),
+                "video": extract_object_video(obj, slide),
+                "audio": extract_object_audio(obj, slide),
                 "imageZoom": extract_object_image_zoom(obj, slide)
-                if role in ("slidePicture", "image")
+                if role in ("slidePicture", "image", "slideVideo")
                 else None,
                 "text": extract_object_text(obj, slide),
                 "html": html_text,
@@ -725,7 +749,7 @@ def extract_layout(slide: dict[str, Any]) -> dict[str, Any]:
                 "hasDefaultRect": not (obj.get("r") or {}).get("w"),
                 "locked": bool(obj.get("k", False)),
                 "selectable": role
-                in ("direction", "content", "additionalContent", "slidePicture", "image", "shape", "icon"),
+                in ("direction", "content", "additionalContent", "slidePicture", "slideVideo", "slideAudio", "image", "shape", "icon"),
             }
         )
 

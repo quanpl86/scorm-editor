@@ -1074,12 +1074,24 @@ class ScormSession:
                     
                 # Content (ND) from layout objects
                 nd_img_idx = 1
+                nd_vid_idx = 1
+                nd_aud_idx = 1
                 for obj in q.get("layout", {}).get("objects", []):
                     img = obj.get("image")
                     if img and img not in processed_source_files:
                         pos = "ND" if nd_img_idx == 1 else f"ND{nd_img_idx}"
                         add_file(img, f"{prefix}_IMG-{pos}")
                         nd_img_idx += 1
+                    vid = obj.get("video")
+                    if vid and vid not in processed_source_files:
+                        pos = "ND" if nd_vid_idx == 1 else f"ND{nd_vid_idx}"
+                        add_file(vid, f"{prefix}_VID-{pos}")
+                        nd_vid_idx += 1
+                    aud = obj.get("audio")
+                    if aud and aud not in processed_source_files:
+                        pos = "ND" if nd_aud_idx == 1 else f"ND{nd_aud_idx}"
+                        add_file(aud, f"{prefix}_AUD-{pos}")
+                        nd_aud_idx += 1
                         
                 # Any leftover slide images
                 for img in q.get("slideImages", []):
@@ -1142,12 +1154,24 @@ class ScormSession:
                 add_file(q.get("feedback", {}).get(f"{fb}Video"), f"{prefix}_VID-GT")
                 
             nd_img_idx = 1
+            nd_vid_idx = 1
+            nd_aud_idx = 1
             for obj in q.get("layout", {}).get("objects", []):
                 img = obj.get("image")
                 if img and img not in processed_source_files:
                     pos = "ND" if nd_img_idx == 1 else f"ND{nd_img_idx}"
                     add_file(img, f"{prefix}_IMG-{pos}")
                     nd_img_idx += 1
+                vid = obj.get("video")
+                if vid and vid not in processed_source_files:
+                    pos = "ND" if nd_vid_idx == 1 else f"ND{nd_vid_idx}"
+                    add_file(vid, f"{prefix}_VID-{pos}")
+                    nd_vid_idx += 1
+                aud = obj.get("audio")
+                if aud and aud not in processed_source_files:
+                    pos = "ND" if nd_aud_idx == 1 else f"ND{nd_aud_idx}"
+                    add_file(aud, f"{prefix}_AUD-{pos}")
+                    nd_aud_idx += 1
                     
             for img in q.get("slideImages", []):
                 if img not in processed_source_files:

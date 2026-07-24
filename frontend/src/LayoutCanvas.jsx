@@ -349,14 +349,16 @@ function PropertiesPanel({
     onChange({ ...obj.r, [field]: num })
   }
 
-  const isMedia = obj.role === 'slidePicture' || obj.role === 'image'
+  const isImage = obj.role === 'slidePicture' || obj.role === 'image' || obj.image
+  const isVideo = obj.role === 'slideVideo' || obj.video
+  const isAudio = obj.role === 'slideAudio' || obj.audio
 
   return (
     <div className="props-panel">
       <h4>{obj.name}</h4>
       <span className={`role-tag role-${obj.role}`}>{obj.role}</span>
 
-      {isMedia && (
+      {isImage && (
         <div className="props-media">
           <h5>Ảnh</h5>
           {obj.image ? (
@@ -367,7 +369,7 @@ function PropertiesPanel({
                   Đổi ảnh
                   <input type="file" accept="image/*" hidden onChange={(e) => onPickImage?.(e.target.files?.[0])} />
                 </label>
-                <button type="button" className="btn btn-sm" onClick={() => onExportImage?.()}>Export ảnh</button>
+                <button type="button" className="btn btn-sm" onClick={() => onExportImage?.(obj.image, 'IMG')}>Export ảnh</button>
                 <button type="button" className="btn btn-sm" onClick={() => onClearImage?.()}>Gỡ ảnh</button>
               </div>
             </div>
@@ -388,6 +390,28 @@ function PropertiesPanel({
           {obj.role === 'slidePicture' && (
             <p className="props-hint">Áp dụng cho toàn bộ khung ảnh slide trên câu hỏi này.</p>
           )}
+        </div>
+      )}
+
+      {isVideo && obj.video && (
+        <div className="props-media">
+          <h5>Video</h5>
+          <div className="props-media-preview">
+            <div className="props-media-actions">
+              <button type="button" className="btn btn-sm" onClick={() => onExportImage?.(obj.video, 'VID')}>Export Video</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isAudio && obj.audio && (
+        <div className="props-media">
+          <h5>Audio</h5>
+          <div className="props-media-preview">
+            <div className="props-media-actions">
+              <button type="button" className="btn btn-sm" onClick={() => onExportImage?.(obj.audio, 'AUD')}>Export Audio</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1379,16 +1403,16 @@ export default function LayoutCanvas({
     sessionId,
   ])
 
-  const handleExportSingleImage = useCallback(async (obj) => {
-    if (!obj || !obj.image) return
+  const handleExportSingleMedia = useCallback(async (obj, fileUrl, mediaCode) => {
+    if (!obj || !fileUrl) return
     const stt = question.questionIndex + 1
-    const pos = obj.role === 'slidePicture' ? 'ND' : (obj.role === 'image' ? `ND-${obj.index}` : obj.role)
+    const pos = obj.role.startsWith('slide') ? 'ND' : (obj.role === 'image' ? `ND-${obj.index}` : obj.role)
     const safeTitle = (quizTitle || 'Quiz').trim().replace(/[^a-zA-Z0-9 _-]/g, '_').substring(0, 50)
-    const targetName = `${safeTitle}_${stt}_IMG-${pos}`
+    const targetName = `${safeTitle}_${stt}_${mediaCode || 'IMG'}-${pos}`
     
     try {
-      const result = await exportSingleMediaLocal(sessionId, obj.image, targetName)
-      alert(`Đã xuất ảnh ra: ${result.path}`)
+      const result = await exportSingleMediaLocal(sessionId, fileUrl, targetName)
+      alert(`Đã xuất file ra: ${result.path}`)
     } catch (err) {
       alert(err.message)
     }
@@ -1792,7 +1816,7 @@ export default function LayoutCanvas({
             const extra = target?.role === 'slidePicture' ? { slideAttachment: null } : {}
             commitLayoutState(next, extra)
           }}
-          onExportImage={() => handleExportSingleImage(selected)}
+          onExportImage={(fileUrl, mediaCode) => handleExportSingleMedia(selected, fileUrl, mediaCode)}
           onImageZoomChange={handleImageZoomChange}
           onDeleteObject={() => handleDeleteObject(selectedIndex)}
         />
