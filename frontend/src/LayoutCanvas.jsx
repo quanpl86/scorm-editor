@@ -351,7 +351,7 @@ function PropertiesPanel({
 
   const isVideoObj = obj.role === 'slideVideo' || obj.role === 'video' || obj.video
   const isAudioObj = obj.role === 'slideAudio' || obj.role === 'audio' || obj.audio
-  const isHotspotImg = question.type === 'Hotspot' && obj.role === 'content' && obj.image
+  const isHotspotImg = question.type === 'Hotspot' && obj.role === 'content'
   const isImageObj = obj.role === 'slidePicture' || obj.role === 'image' || isHotspotImg || (!isVideoObj && !isAudioObj && obj.image)
 
   return (
