@@ -11,6 +11,7 @@ import {
   importSample,
   importZip,
   saveSession,
+  exportMediaLocal,
   uploadImage,
 } from './api'
 import {
@@ -1259,6 +1260,7 @@ function EditorWorkspace({
         <LayoutCanvas
           question={slide}
           sessionId={sessionId}
+          quizTitle={quiz.title}
           fonts={fonts}
           imgRev={quiz._imgRev || 0}
           onPatch={onPatch}
@@ -1574,6 +1576,19 @@ export default function App() {
     }
   }
 
+  const handleExportMedia = async () => {
+    if (!quiz) return
+    setSaving(true)
+    try {
+      const result = await exportMediaLocal(quiz.sessionId)
+      showToast(`Đã xuất toàn bộ ảnh/video ra thư mục: ${result.path}`)
+    } catch (err) {
+      showToast(err.message, 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleImageUpload = async (filename, file) => {
     if (!file || !quiz) return
     try {
@@ -1665,6 +1680,9 @@ export default function App() {
           </button>
           <button className="btn btn-primary" disabled={saving} onClick={handleExport}>
             Export SCORM
+          </button>
+          <button className="btn btn-primary" disabled={saving} onClick={handleExportMedia}>
+            Export Media
           </button>
         </div>
       </header>

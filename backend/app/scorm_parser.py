@@ -1023,6 +1023,140 @@ class ScormSession:
         export_title = title or self.quiz_json.get("d", {}).get("T")
         return export_scorm_zip(self.package_root, self.quiz_json, export_title)
 
+    def export_media_zip(self) -> bytes:
+        view = self.get_view()
+        safe_title = (view.get("title") or "Quiz").strip()
+        safe_title = "".join(c if c.isalnum() or c in " _-" else "_" for c in safe_title)
+        
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            added_names = set()
+            processed_source_files = set()
+
+            def add_file(filename: str, name_template: str):
+                if not filename: return
+                try:
+                    path = self.asset_path(filename)
+                    if not path.is_file(): return
+                    
+                    ext = path.suffix.lower()
+                    final_name = f"{name_template}{ext}"
+                    idx = 2
+                    while final_name in added_names:
+                        final_name = f"{name_template}_{idx}{ext}"
+                        idx += 1
+                        
+                    zf.write(path, final_name)
+                    added_names.add(final_name)
+                    processed_source_files.add(filename)
+                except FileNotFoundError:
+                    pass
+
+            for q in view.get("questions", []):
+                stt = q.get("questionIndex", 0) + 1
+                prefix = f"{safe_title}_{stt}"
+                processed_source_files.clear()
+                
+                # Choices (DA)
+                for idx, choice in enumerate(q.get("choices", [])):
+                    add_file(choice.get("image"), f"{prefix}_IMG-DA{idx+1}")
+                    add_file(choice.get("video"), f"{prefix}_VID-DA{idx+1}")
+                    
+                # Matching Pairs (DA)
+                for idx, pair in enumerate(q.get("matchingPairs", [])):
+                    add_file(pair.get("leftImage"), f"{prefix}_IMG-DA-Left{idx+1}")
+                    add_file(pair.get("rightImage"), f"{prefix}_IMG-DA-Right{idx+1}")
+                    
+                # Feedback (GT)
+                for fb in ["correct", "incorrect", "any", "attempt", "partial"]:
+                    add_file(q.get("feedback", {}).get(f"{fb}Image"), f"{prefix}_IMG-GT")
+                    add_file(q.get("feedback", {}).get(f"{fb}Video"), f"{prefix}_VID-GT")
+                    
+                # Content (ND) from layout objects
+                nd_img_idx = 1
+                for obj in q.get("layout", {}).get("objects", []):
+                    img = obj.get("image")
+                    if img and img not in processed_source_files:
+                        pos = "ND" if nd_img_idx == 1 else f"ND{nd_img_idx}"
+                        add_file(img, f"{prefix}_IMG-{pos}")
+                        nd_img_idx += 1
+                        
+                # Any leftover slide images
+                for img in q.get("slideImages", []):
+                    if img not in processed_source_files:
+                        pos = "ND" if nd_img_idx == 1 else f"ND{nd_img_idx}"
+                        add_file(img, f"{prefix}_IMG-{pos}")
+                        nd_img_idx += 1
+                        
+        return buffer.getvalue()
+
+    def export_media_local(self) -> str:
+        import shutil
+        from pathlib import Path
+        
+        view = self.get_view()
+        safe_title = (view.get("title") or "Quiz").strip()
+        safe_title = "".join(c if c.isalnum() or c in " _-" else "_" for c in safe_title)
+        
+        target_dir = Path.home() / "Downloads" / "SNLT-CHECKQUIZ" / safe_title
+        target_dir.mkdir(parents=True, exist_ok=True)
+        
+        added_names = set()
+        processed_source_files = set()
+
+        def add_file(filename: str, name_template: str):
+            if not filename: return
+            try:
+                path = self.asset_path(filename)
+                if not path.is_file(): return
+                
+                ext = path.suffix.lower()
+                final_name = f"{name_template}{ext}"
+                idx = 2
+                while final_name in added_names:
+                    final_name = f"{name_template}_{idx}{ext}"
+                    idx += 1
+                    
+                target_file = target_dir / final_name
+                shutil.copy2(path, target_file)
+                added_names.add(final_name)
+                processed_source_files.add(filename)
+            except Exception:
+                pass
+
+        for q in view.get("questions", []):
+            stt = q.get("questionIndex", 0) + 1
+            prefix = f"{safe_title}_{stt}"
+            processed_source_files.clear()
+            
+            for idx, choice in enumerate(q.get("choices", [])):
+                add_file(choice.get("image"), f"{prefix}_IMG-DA{idx+1}")
+                add_file(choice.get("video"), f"{prefix}_VID-DA{idx+1}")
+                
+            for idx, pair in enumerate(q.get("matchingPairs", [])):
+                add_file(pair.get("leftImage"), f"{prefix}_IMG-DA-Left{idx+1}")
+                add_file(pair.get("rightImage"), f"{prefix}_IMG-DA-Right{idx+1}")
+                
+            for fb in ["correct", "incorrect", "any", "attempt", "partial"]:
+                add_file(q.get("feedback", {}).get(f"{fb}Image"), f"{prefix}_IMG-GT")
+                add_file(q.get("feedback", {}).get(f"{fb}Video"), f"{prefix}_VID-GT")
+                
+            nd_img_idx = 1
+            for obj in q.get("layout", {}).get("objects", []):
+                img = obj.get("image")
+                if img and img not in processed_source_files:
+                    pos = "ND" if nd_img_idx == 1 else f"ND{nd_img_idx}"
+                    add_file(img, f"{prefix}_IMG-{pos}")
+                    nd_img_idx += 1
+                    
+            for img in q.get("slideImages", []):
+                if img not in processed_source_files:
+                    pos = "ND" if nd_img_idx == 1 else f"ND{nd_img_idx}"
+                    add_file(img, f"{prefix}_IMG-{pos}")
+                    nd_img_idx += 1
+                    
+        return str(target_dir)
+
 
 def _load_saved_quiz_json(session: ScormSession, package_root: Path) -> None:
     saved = package_root / "quiz_data.json"

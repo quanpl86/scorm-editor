@@ -16,7 +16,11 @@ import {
   TypeInPreview,
   WordBankChips,
 } from './QuestionPreviews'
-import { assetUrl, uploadNewImage } from './api'
+import {
+  assetUrl,
+  exportSingleMediaLocal,
+  uploadNewImage,
+} from './api'
 import {
   buildLayoutPatch,
   canDeleteCanvasObject,
@@ -327,6 +331,7 @@ function PropertiesPanel({
   onLayerAction,
   onPickImage,
   onClearImage,
+  onExportImage,
   onImageZoomChange,
   onDeleteObject,
 }) {
@@ -362,6 +367,7 @@ function PropertiesPanel({
                   Đổi ảnh
                   <input type="file" accept="image/*" hidden onChange={(e) => onPickImage?.(e.target.files?.[0])} />
                 </label>
+                <button type="button" className="btn btn-sm" onClick={() => onExportImage?.()}>Export ảnh</button>
                 <button type="button" className="btn btn-sm" onClick={() => onClearImage?.()}>Gỡ ảnh</button>
               </div>
             </div>
@@ -417,6 +423,7 @@ function PropertiesPanel({
 export default function LayoutCanvas({
   question,
   sessionId,
+  quizTitle,
   fonts,
   imgRev = 0,
   onPatch,
@@ -1372,6 +1379,21 @@ export default function LayoutCanvas({
     sessionId,
   ])
 
+  const handleExportSingleImage = useCallback(async (obj) => {
+    if (!obj || !obj.image) return
+    const stt = question.questionIndex + 1
+    const pos = obj.role === 'slidePicture' ? 'ND' : (obj.role === 'image' ? `ND-${obj.index}` : obj.role)
+    const safeTitle = (quizTitle || 'Quiz').trim().replace(/[^a-zA-Z0-9 _-]/g, '_').substring(0, 50)
+    const targetName = `${safeTitle}_${stt}_IMG-${pos}`
+    
+    try {
+      const result = await exportSingleMediaLocal(sessionId, obj.image, targetName)
+      alert(`Đã xuất ảnh ra: ${result.path}`)
+    } catch (err) {
+      alert(err.message)
+    }
+  }, [question, quizTitle, sessionId])
+
   return (
     <div className="layout-workspace">
       <CanvasFonts sessionId={sessionId} fonts={fonts} />
@@ -1770,6 +1792,7 @@ export default function LayoutCanvas({
             const extra = target?.role === 'slidePicture' ? { slideAttachment: null } : {}
             commitLayoutState(next, extra)
           }}
+          onExportImage={() => handleExportSingleImage(selected)}
           onImageZoomChange={handleImageZoomChange}
           onDeleteObject={() => handleDeleteObject(selectedIndex)}
         />

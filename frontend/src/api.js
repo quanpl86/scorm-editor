@@ -84,6 +84,32 @@ export async function exportSession(sessionId, title) {
   return res.blob()
 }
 
+export async function exportMedia(sessionId) {
+  const res = await fetch(`${API}/session/${sessionId}/export-media`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error((await res.json()).detail || 'Export Media thất bại')
+  return res.blob()
+}
+
+export async function exportMediaLocal(sessionId) {
+  const res = await fetch(`${API}/session/${sessionId}/export-media-local`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error((await res.json()).detail || 'Export Media Local thất bại')
+  return res.json()
+}
+
+export async function exportSingleMediaLocal(sessionId, filename, targetName) {
+  const res = await fetch(`${API}/session/${sessionId}/export-single-media-local`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename, target_name: targetName }),
+  })
+  if (!res.ok) throw new Error((await res.json()).detail || 'Export ảnh local thất bại')
+  return res.json()
+}
+
 export async function uploadImage(sessionId, filename, file) {
   const form = new FormData()
   form.append('file', file)

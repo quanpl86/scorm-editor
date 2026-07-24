@@ -390,6 +390,65 @@ def export_session(session_id: str, payload: ExportPayload | None = None):
         raise HTTPException(400, f"Lỗi export: {exc}") from exc
 
 
+@app.post("/api/session/{session_id}/export-media")
+def export_session_media(session_id: str):
+    try:
+        session = get_session(session_id)
+        zip_bytes = session.export_media_zip()
+        safe_name = (session.quiz_json.get("d", {}).get("T", "media-export")).strip()
+        safe_name = "".join(c if c.isalnum() or c in " _-" else "_" for c in safe_name)[:80]
+        return Response(
+            content=zip_bytes,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}_media.zip"'},
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(400, f"Lỗi export media: {exc}") from exc
+
+
+@app.post("/api/session/{session_id}/export-media-local")
+def export_session_media_local(session_id: str):
+    try:
+        session = get_session(session_id)
+        path = session.export_media_local()
+        return {"success": True, "path": path}
+    except Exception as exc:
+        raise HTTPException(400, f"Lỗi export media local: {exc}") from exc
+
+
+class SingleMediaExportPayload(BaseModel):
+    filename: str
+    target_name: str
+
+@app.post("/api/session/{session_id}/export-single-media-local")
+def export_single_media_local(session_id: str, payload: SingleMediaExportPayload):
+    import shutil
+    from pathlib import Path
+    try:
+        session = get_session(session_id)
+        view = session.get_view()
+        safe_title = (view.get("title") or "Quiz").strip()
+        safe_title = "".join(c if c.isalnum() or c in " _-" else "_" for c in safe_title)
+        
+        target_dir = Path.home() / "Downloads" / "SNLT-CHECKQUIZ" / safe_title
+        target_dir.mkdir(parents=True, exist_ok=True)
+        
+        source_path = session.asset_path(payload.filename)
+        if not source_path.is_file():
+            raise HTTPException(404, "Không tìm thấy file nguồn")
+            
+        ext = source_path.suffix.lower()
+        final_name = f"{payload.target_name}{ext}"
+        target_file = target_dir / final_name
+        
+        shutil.copy2(source_path, target_file)
+        return {"success": True, "path": str(target_file)}
+    except Exception as exc:
+        raise HTTPException(400, f"Lỗi export single media local: {exc}") from exc
+
+
 @app.delete("/api/session/{session_id}")
 def delete_session(session_id: str):
     path = SESSIONS_ROOT / session_id
