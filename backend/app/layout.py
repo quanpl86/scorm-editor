@@ -237,6 +237,11 @@ def extract_background_meta(slide: dict[str, Any]) -> dict[str, Any]:
 
 
 def extract_object_image(obj: dict[str, Any], slide: dict[str, Any]) -> str | None:
+    if slide.get("tp") == "Hotspot" and obj.get("I") == "content":
+        path = image_path_from_storage(slide.get("C", {}).get("i", ""))
+        if path:
+            return path
+
     if obj.get("tp") == "image" and obj.get("i"):
         path = image_path_from_storage(obj["i"])
         if path:

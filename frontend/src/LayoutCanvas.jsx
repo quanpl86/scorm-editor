@@ -351,7 +351,8 @@ function PropertiesPanel({
 
   const isVideoObj = obj.role === 'slideVideo' || obj.role === 'video' || obj.video
   const isAudioObj = obj.role === 'slideAudio' || obj.role === 'audio' || obj.audio
-  const isImageObj = obj.role === 'slidePicture' || obj.role === 'image' || (!isVideoObj && !isAudioObj && obj.image)
+  const isHotspotImg = question.type === 'Hotspot' && obj.role === 'content' && obj.image
+  const isImageObj = obj.role === 'slidePicture' || obj.role === 'image' || isHotspotImg || (!isVideoObj && !isAudioObj && obj.image)
 
   return (
     <div className="props-panel">
@@ -1519,8 +1520,9 @@ export default function LayoutCanvas({
                   style={{ left: x, top: y, width: w, height: h, zIndex: zIdx + 1, ...shapeStyle }}
                   onPointerDown={(e) => { e.stopPropagation(); onPointerDown(e, obj.index) }}
                 >
-                  {obj.image && (obj.role === 'slidePicture' || obj.role === 'image') && (
+                  {obj.image && (obj.role === 'slidePicture' || obj.role === 'image' || (question.type === 'Hotspot' && obj.role === 'content')) && (
                     <img
+                      className="canvas-obj-img"
                       src={`${assetUrl(sessionId, obj.image)}&v=${imgRev}`}
                       alt=""
                       draggable={false}
@@ -1726,7 +1728,7 @@ export default function LayoutCanvas({
                     </div>
                   )}
 
-                  {!obj.image && (obj.role === 'slidePicture' || obj.role === 'image') && (
+                  {!obj.image && (obj.role === 'slidePicture' || obj.role === 'image' || (question.type === 'Hotspot' && obj.role === 'content')) && (
                     <button
                       type="button"
                       className="picture-placeholder clickable"
