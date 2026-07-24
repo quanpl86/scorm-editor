@@ -187,6 +187,10 @@ def object_role(obj: dict[str, Any]) -> str:
         return "slideVideo"
     if tp == "slideAudio":
         return "slideAudio"
+    if tp == "video":
+        return "video"
+    if tp == "audio":
+        return "audio"
     if tp == "image":
         return "image"
     return "shape"
@@ -261,6 +265,12 @@ def extract_object_video(obj: dict[str, Any], slide: dict[str, Any]) -> str | No
         match = re.search(r"storage://videos/([^\"]+)", vid)
         if match:
             return match.group(1)
+            
+    raw = json.dumps(obj, ensure_ascii=False)
+    match = re.search(r"storage://videos/([^\"]+)", raw)
+    if match:
+        return match.group(1)
+        
     return None
 
 
@@ -270,6 +280,12 @@ def extract_object_audio(obj: dict[str, Any], slide: dict[str, Any]) -> str | No
         match = re.search(r"storage://sounds/([^\"]+)", aud)
         if match:
             return match.group(1)
+            
+    raw = json.dumps(obj, ensure_ascii=False)
+    match = re.search(r"storage://sounds/([^\"]+)", raw)
+    if match:
+        return match.group(1)
+        
     return None
 
 
@@ -749,7 +765,7 @@ def extract_layout(slide: dict[str, Any]) -> dict[str, Any]:
                 "hasDefaultRect": not (obj.get("r") or {}).get("w"),
                 "locked": bool(obj.get("k", False)),
                 "selectable": role
-                in ("direction", "content", "additionalContent", "slidePicture", "slideVideo", "slideAudio", "image", "shape", "icon"),
+                in ("direction", "content", "additionalContent", "slidePicture", "slideVideo", "slideAudio", "video", "audio", "image", "shape", "icon"),
             }
         )
 

@@ -349,18 +349,18 @@ function PropertiesPanel({
     onChange({ ...obj.r, [field]: num })
   }
 
-  const isImage = obj.role === 'slidePicture' || obj.role === 'image' || obj.image
-  const isVideo = obj.role === 'slideVideo' || obj.video
-  const isAudio = obj.role === 'slideAudio' || obj.audio
+  const isVideoObj = obj.role === 'slideVideo' || obj.role === 'video' || obj.video
+  const isAudioObj = obj.role === 'slideAudio' || obj.role === 'audio' || obj.audio
+  const isImageObj = obj.role === 'slidePicture' || obj.role === 'image' || (!isVideoObj && !isAudioObj && obj.image)
 
   return (
     <div className="props-panel">
       <h4>{obj.name}</h4>
       <span className={`role-tag role-${obj.role}`}>{obj.role}</span>
 
-      {isImage && (
+      {(isImageObj || obj.image) && (
         <div className="props-media">
-          <h5>Ảnh</h5>
+          <h5>{isVideoObj ? 'Ảnh Poster' : 'Ảnh'}</h5>
           {obj.image ? (
             <div className="props-media-preview">
               <img src={`${assetUrl(sessionId, obj.image)}&v=${imgRev || 0}`} alt="" />
@@ -393,7 +393,7 @@ function PropertiesPanel({
         </div>
       )}
 
-      {isVideo && obj.video && (
+      {isVideoObj && obj.video && (
         <div className="props-media">
           <h5>Video</h5>
           <div className="props-media-preview">
@@ -404,7 +404,7 @@ function PropertiesPanel({
         </div>
       )}
 
-      {isAudio && obj.audio && (
+      {isAudioObj && obj.audio && (
         <div className="props-media">
           <h5>Audio</h5>
           <div className="props-media-preview">
