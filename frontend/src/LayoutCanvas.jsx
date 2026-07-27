@@ -373,7 +373,7 @@ function PropertiesPanel({
           if (m) leftMedia = m[1]
         }
         if (leftMedia) {
-          choiceMedias.push({ media: leftMedia, label: `Ảnh Vế trái ${idx + 1}` })
+          choiceMedias.push({ media: leftMedia, label: `Ảnh Vế trái ${idx + 1}`, exportSuffix: `VT${idx + 1}` })
         }
         let rightMedia = pair.rightImage
         if (!rightMedia && pair.rightHtml) {
@@ -381,7 +381,7 @@ function PropertiesPanel({
           if (m) rightMedia = m[1]
         }
         if (rightMedia) {
-          choiceMedias.push({ media: rightMedia, label: `Ảnh Vế phải ${idx + 1}` })
+          choiceMedias.push({ media: rightMedia, label: `Ảnh Vế phải ${idx + 1}`, exportSuffix: `VP${idx + 1}` })
         }
       })
     } else if (question.choices) {
@@ -392,7 +392,7 @@ function PropertiesPanel({
           if (m) media = m[1]
         }
         if (media) {
-          choiceMedias.push({ media, label: `Ảnh Đáp án ${idx + 1}` })
+          choiceMedias.push({ media, label: `Ảnh Đáp án ${idx + 1}`, exportSuffix: `DA${idx + 1}` })
         }
       })
     }
@@ -444,7 +444,7 @@ function PropertiesPanel({
           <div className="props-media-preview">
             <img src={`${assetUrl(sessionId, item.media)}&v=${imgRev || 0}`} alt="" />
             <div className="props-media-actions">
-              <button type="button" className="btn btn-sm" onClick={() => onExportImage?.(item.media, 'IMG')}>Export ảnh đáp án</button>
+              <button type="button" className="btn btn-sm" onClick={() => onExportImage?.(item.media, 'IMG', item.exportSuffix)}>Export ảnh đáp án</button>
             </div>
           </div>
         </div>
@@ -1464,10 +1464,10 @@ export default function LayoutCanvas({
     sessionId,
   ])
 
-  const handleExportSingleMedia = useCallback(async (obj, fileUrl, mediaCode) => {
+  const handleExportSingleMedia = useCallback(async (obj, fileUrl, mediaCode, exportSuffix) => {
     if (!obj || !fileUrl) return
     const stt = question.questionIndex + 1
-    const pos = obj.role.startsWith('slide') ? 'ND' : (obj.role === 'image' ? `ND-${obj.index}` : obj.role)
+    const pos = exportSuffix || (obj.role.startsWith('slide') ? 'ND' : (obj.role === 'image' ? `ND-${obj.index}` : obj.role))
     const safeTitle = (quizTitle || 'Quiz').trim().replace(/[^a-zA-Z0-9 _-]/g, '_').substring(0, 50)
     const targetName = `${safeTitle}_${stt}_${mediaCode || 'IMG'}-${pos}`
     
@@ -1883,7 +1883,7 @@ export default function LayoutCanvas({
             const extra = target?.role === 'slidePicture' ? { slideAttachment: null } : {}
             commitLayoutState(next, extra)
           }}
-          onExportImage={(fileUrl, mediaCode) => handleExportSingleMedia(selected, fileUrl, mediaCode)}
+          onExportImage={(fileUrl, mediaCode, exportSuffix) => handleExportSingleMedia(selected, fileUrl, mediaCode, exportSuffix)}
           onImageZoomChange={handleImageZoomChange}
           onDeleteObject={() => handleDeleteObject(selectedIndex)}
           activeEditKey={activeEditKey}
