@@ -166,9 +166,10 @@ def get_package_root(session_id: str) -> Path:
 
 
 def resolve_asset_path(session_id: str, filename: str) -> Path:
+    clean_filename = filename.split("{")[0] if "{" in filename else filename
     package_root = get_package_root(session_id)
-    safe = Path(filename).name
-    safe_stem = Path(filename).stem
+    safe = Path(clean_filename).name
+    safe_stem = Path(clean_filename).stem
     for folder in (*IMAGE_FOLDERS, *AUDIO_FOLDERS, *VIDEO_FOLDERS):
         candidate = package_root / folder / safe
         if candidate.exists():
@@ -1119,8 +1120,9 @@ class ScormSession:
 
             def add_file(filename: str, name_template: str):
                 if not filename: return
+                clean_filename = filename.split("{")[0] if "{" in filename else filename
                 try:
-                    path = self.asset_path(filename)
+                    path = self.asset_path(clean_filename)
                     if not path.is_file(): return
                     
                     ext = path.suffix.lower()
@@ -1202,8 +1204,9 @@ class ScormSession:
 
         def add_file(filename: str, name_template: str):
             if not filename: return
+            clean_filename = filename.split("{")[0] if "{" in filename else filename
             try:
-                path = self.asset_path(filename)
+                path = self.asset_path(clean_filename)
                 if not path.is_file(): return
                 
                 ext = path.suffix.lower()

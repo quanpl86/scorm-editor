@@ -435,7 +435,11 @@ def export_single_media_local(session_id: str, payload: SingleMediaExportPayload
         target_dir = Path.home() / "Downloads" / "SNLT-CHECKQUIZ" / safe_title
         target_dir.mkdir(parents=True, exist_ok=True)
         
-        source_path = session.asset_path(payload.filename)
+        clean_filename = payload.filename
+        if "{" in clean_filename:
+            clean_filename = clean_filename.split("{")[0]
+            
+        source_path = session.asset_path(clean_filename)
         if not source_path.is_file():
             raise HTTPException(404, "Không tìm thấy file nguồn")
             
