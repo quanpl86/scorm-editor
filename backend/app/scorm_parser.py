@@ -497,12 +497,12 @@ def extract_blank_answers(slide: dict[str, Any]) -> list[dict[str, Any]]:
             data = entry.get("data", {})
             v = data.get("v")
             if isinstance(v, list):
-                value = v[0] if v else ""
+                values = [str(x) for x in v if x is not None]
             else:
-                value = v or ""
+                values = [str(v)] if v is not None else []
             answers.append({
                 "id": entry.get("id", ""),
-                "value": str(value)
+                "values": values
             })
     else:
         # Fallback to C.chs for some iSpring versions
@@ -514,7 +514,7 @@ def extract_blank_answers(slide: dict[str, Any]) -> list[dict[str, Any]]:
                 text_str = str(text)
             answers.append({
                 "id": ch.get("i", ""),
-                "value": text_str.strip()
+                "values": [text_str.strip()] if text_str.strip() else []
             })
     return answers
 
@@ -868,19 +868,21 @@ def apply_question_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:
         entry_map = {e.get("id"): e for e in entries if e.get("id")}
         for ans in edit["blankAnswers"]:
             bid = ans.get("id")
-            val = ans.get("value", "")
+            vals = ans.get("values", [])
+            val_list = [str(x).strip() for x in vals if str(x).strip()]
+            val_single = val_list[0] if val_list else ""
             if not bid:
                 continue
             if bid in entry_map:
                 if slide.get("tp") == "FillInTheBlank":
-                    entry_map[bid]["data"] = {"v": [val]}
+                    entry_map[bid]["data"] = {"v": val_list}
                 else:
-                    entry_map[bid]["data"] = {"v": val}
+                    entry_map[bid]["data"] = {"v": val_single}
             else:
                 entry = {
                     "id": bid,
                     "type": "qmFillInTheBlank" if slide.get("tp") == "FillInTheBlank" else "qmWordBank",
-                    "data": {"v": [val] if slide.get("tp") == "FillInTheBlank" else val}
+                    "data": {"v": val_list if slide.get("tp") == "FillInTheBlank" else val_single}
                 }
                 entries.append(entry)
                 
@@ -890,12 +892,14 @@ def apply_question_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:
             chs_map = {ch.get("i"): ch for ch in chs if ch.get("i")}
             for ans in edit["blankAnswers"]:
                 bid = ans.get("id")
-                val = ans.get("value", "")
+                vals = ans.get("values", [])
+                val_list = [str(x).strip() for x in vals if str(x).strip()]
+                val_single = val_list[0] if val_list else ""
                 if bid and bid in chs_map:
                     if isinstance(chs_map[bid].get("t"), dict):
-                        chs_map[bid]["t"]["h"] = val
+                        chs_map[bid]["t"]["h"] = val_single
                     else:
-                        chs_map[bid]["t"] = val
+                        chs_map[bid]["t"] = val_single
 
     if edit.get("typeInAnswers") is not None and slide.get("tp") in ("TypeIn", "Numeric"):
         slide.setdefault("C", {})

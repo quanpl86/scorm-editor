@@ -953,7 +953,14 @@ function QuestionEditor({ question, sessionId, onChange, onDelete, onImageUpload
 
       {(question.type === 'FillInTheBlank' || question.type === 'WordBank') && (
         <div className="editor-section">
-          <h4>{question.type === 'WordBank' ? 'Đáp án đúng (Word Bank)' : 'Đáp án điền khuyết'}</h4>
+          <h4>
+            {question.type === 'WordBank' ? 'Đáp án đúng (Word Bank)' : 'Đáp án điền khuyết'}
+            {question.type === 'FillInTheBlank' && (
+              <span style={{ fontSize: '0.8em', fontWeight: 'normal', marginLeft: 8, color: '#666' }}>
+                (Phân cách nhiều đáp án bằng dấu chấm phẩy ;)
+              </span>
+            )}
+          </h4>
           {(question.blankAnswers || []).length === 0 && (
              <div style={{ fontSize: '0.85rem', color: '#666' }}>Không có ô đáp án nào được tìm thấy. Vui lòng import lại gói SCORM.</div>
           )}
@@ -962,10 +969,13 @@ function QuestionEditor({ question, sessionId, onChange, onDelete, onImageUpload
               <label>Ô {idx + 1} ({ans.id})</label>
               <input
                 type="text"
-                value={ans.value || ''}
+                value={(ans.values || []).join('; ')}
                 onChange={(e) => {
-                  const blankAnswers = [...question.blankAnswers]
-                  blankAnswers[idx] = { ...ans, value: e.target.value }
+                  const blankAnswers = [...(question.blankAnswers || [])]
+                  blankAnswers[idx] = { 
+                    ...ans, 
+                    values: e.target.value.split(';').map(s => s.trim()).filter(Boolean)
+                  }
                   update({ blankAnswers })
                 }}
               />
