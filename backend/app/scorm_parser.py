@@ -1088,6 +1088,26 @@ class ScormSession:
         )
 
     def asset_path(self, relative: str) -> Path:
+        # Check if this asset is mapped to a different file in iSpring's rs (resources) dict
+        mapped = self.quiz_json.get("rs", {}).get("i", {}).get(f"storage://images/{relative}")
+        if not mapped and "{" in relative:
+            clean_rel = relative.split("{")[0]
+            mapped = self.quiz_json.get("rs", {}).get("i", {}).get(f"storage://images/{clean_rel}")
+            
+        if not mapped:
+            clean_rel = relative.split("{")[0]
+            prefix = f"storage://images/{clean_rel}"
+            for k, v in self.quiz_json.get("rs", {}).get("i", {}).items():
+                if k.startswith(prefix):
+                    mapped = v
+                    break
+            
+        if mapped and isinstance(mapped, dict) and mapped.get("s"):
+            # The 's' value is often a Windows path like "data\\images\\c9f7.png"
+            # We need to extract just the filename part to let resolve_asset_path find it
+            real_name = mapped["s"].replace("\\", "/").split("/")[-1]
+            return resolve_asset_path(self.session_id, real_name)
+            
         return resolve_asset_path(self.session_id, relative)
 
     def replace_image(self, filename: str, content: bytes) -> str:

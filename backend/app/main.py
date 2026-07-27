@@ -353,7 +353,8 @@ def save_session(session_id: str, payload: SavePayload):
 @app.get("/api/session/{session_id}/asset/{filename}")
 def get_asset(session_id: str, filename: str):
     try:
-        path = resolve_asset_path(session_id, filename)
+        session = get_session(session_id)
+        path = session.asset_path(filename)
         return FileResponse(path)
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc)) from exc
