@@ -484,6 +484,24 @@ def extract_type_in_answers(slide: dict[str, Any]) -> list[str]:
     return answers
 
 
+def extract_blank_answers(slide: dict[str, Any]) -> list[dict[str, Any]]:
+    answers = []
+    rt = slide.get("C", {}).get("rt", {})
+    entries = rt.get("r", [])
+    for entry in entries:
+        data = entry.get("data", {})
+        v = data.get("v")
+        if isinstance(v, list):
+            value = v[0] if v else ""
+        else:
+            value = v or ""
+        answers.append({
+            "id": entry.get("id", ""),
+            "value": str(value)
+        })
+    return answers
+
+
 def extract_slide_images(slide: dict[str, Any]) -> list[str]:
     images = set()
     raw = json.dumps(slide, ensure_ascii=False)
@@ -670,8 +688,10 @@ def slide_to_view(slide: dict[str, Any], group_index: int, question_index: int, 
         view["matchingPairs"] = extract_matching_pairs(slide)
     elif qtype == "Sequence":
         view["sequenceItems"] = extract_sequence_items(slide)
-    elif qtype == "WordBank":
-        view["wordBankWords"] = list(slide.get("C", {}).get("ew", []) or [])
+    elif qtype in ("WordBank", "FillInTheBlank"):
+        view["blankAnswers"] = extract_blank_answers(slide)
+        if qtype == "WordBank":
+            view["wordBankWords"] = list(slide.get("C", {}).get("ew", []) or [])
     elif qtype in ("TypeIn", "Numeric"):
         view["typeInAnswers"] = extract_type_in_answers(slide)
 
@@ -823,6 +843,29 @@ def apply_question_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:
         slide.setdefault("C", {})
         slide["C"].setdefault("rt", {})
         slide["C"]["rt"]["h"] = edit["richHtml"]
+
+    if edit.get("blankAnswers") is not None and slide.get("tp") in {"WordBank", "FillInTheBlank"}:
+        slide.setdefault("C", {})
+        rt = slide["C"].setdefault("rt", {})
+        entries = rt.setdefault("r", [])
+        entry_map = {e.get("id"): e for e in entries if e.get("id")}
+        for ans in edit["blankAnswers"]:
+            bid = ans.get("id")
+            val = ans.get("value", "")
+            if not bid:
+                continue
+            if bid in entry_map:
+                if slide.get("tp") == "FillInTheBlank":
+                    entry_map[bid]["data"] = {"v": [val]}
+                else:
+                    entry_map[bid]["data"] = {"v": val}
+            else:
+                entry = {
+                    "id": bid,
+                    "type": "qmFillInTheBlank" if slide.get("tp") == "FillInTheBlank" else "qmWordBank",
+                    "data": {"v": [val] if slide.get("tp") == "FillInTheBlank" else val}
+                }
+                entries.append(entry)
 
     if edit.get("typeInAnswers") is not None and slide.get("tp") in ("TypeIn", "Numeric"):
         slide.setdefault("C", {})

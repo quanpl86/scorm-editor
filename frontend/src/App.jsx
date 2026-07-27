@@ -951,6 +951,26 @@ function QuestionEditor({ question, sessionId, onChange, onDelete, onImageUpload
         </div>
       )}
 
+      {(question.type === 'FillInTheBlank' || question.type === 'WordBank') && question.blankAnswers?.length > 0 && (
+        <div className="editor-section">
+          <h4>{question.type === 'WordBank' ? 'Đáp án đúng (Word Bank)' : 'Đáp án điền khuyết'}</h4>
+          {question.blankAnswers.map((ans, idx) => (
+            <div key={ans.id || idx} className="field">
+              <label>Ô {idx + 1} ({ans.id})</label>
+              <input
+                type="text"
+                value={ans.value || ''}
+                onChange={(e) => {
+                  const blankAnswers = [...question.blankAnswers]
+                  blankAnswers[idx] = { ...ans, value: e.target.value }
+                  update({ blankAnswers })
+                }}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
       {question.type === 'WordBank' && (
         <div className="editor-section">
           <h4>Từ trong word bank</h4>
