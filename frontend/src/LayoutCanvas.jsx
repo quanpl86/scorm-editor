@@ -363,34 +363,38 @@ function PropertiesPanel({
   const isHotspotImg = question.type === 'Hotspot' && obj.role === 'content'
   const isImageObj = obj.role === 'slidePicture' || obj.role === 'image' || isHotspotImg || (!isVideoObj && !isAudioObj && obj.image)
 
-  let choiceMedia = null
-  let choiceLabel = ''
-  if (obj.role === 'content' && activeEditKey === 'choice' && activeChoiceIdx != null) {
-    if (question.type === 'Matching') {
-      const isLeft = activeChoiceSide === 'premise'
-      const pair = question.matchingPairs?.[activeChoiceIdx]
-      if (pair) {
-        choiceMedia = isLeft ? pair.leftImage : pair.rightImage
-        choiceLabel = isLeft ? `Ảnh Vế trái ${activeChoiceIdx + 1}` : `Ảnh Vế phải ${activeChoiceIdx + 1}`
-        if (!choiceMedia && isLeft && pair.leftHtml) {
-           const m = pair.leftHtml.match(/storage:\/\/images\/([^"'\s>]+)/i)
-           if (m) choiceMedia = m[1]
+  const choiceMedias = []
+  if (obj.role === 'content') {
+    if (question.type === 'Matching' && question.matchingPairs) {
+      question.matchingPairs.forEach((pair, idx) => {
+        let leftMedia = pair.leftImage
+        if (!leftMedia && pair.leftHtml) {
+          const m = pair.leftHtml.match(/storage:\/\/images\/([^"'\s>]+)/i)
+          if (m) leftMedia = m[1]
         }
-        if (!choiceMedia && !isLeft && pair.rightHtml) {
-           const m = pair.rightHtml.match(/storage:\/\/images\/([^"'\s>]+)/i)
-           if (m) choiceMedia = m[1]
+        if (leftMedia) {
+          choiceMedias.push({ media: leftMedia, label: `Ảnh Vế trái ${idx + 1}` })
         }
-      }
+        let rightMedia = pair.rightImage
+        if (!rightMedia && pair.rightHtml) {
+          const m = pair.rightHtml.match(/storage:\/\/images\/([^"'\s>]+)/i)
+          if (m) rightMedia = m[1]
+        }
+        if (rightMedia) {
+          choiceMedias.push({ media: rightMedia, label: `Ảnh Vế phải ${idx + 1}` })
+        }
+      })
     } else if (question.choices) {
-      const choice = question.choices[activeChoiceIdx]
-      if (choice) {
-        choiceMedia = choice.image
-        choiceLabel = `Ảnh Đáp án ${activeChoiceIdx + 1}`
-        if (!choiceMedia && choice.html) {
-           const m = choice.html.match(/storage:\/\/images\/([^"'\s>]+)/i)
-           if (m) choiceMedia = m[1]
+      question.choices.forEach((choice, idx) => {
+        let media = choice.image
+        if (!media && choice.html) {
+          const m = choice.html.match(/storage:\/\/images\/([^"'\s>]+)/i)
+          if (m) media = m[1]
         }
-      }
+        if (media) {
+          choiceMedias.push({ media, label: `Ảnh Đáp án ${idx + 1}` })
+        }
+      })
     }
   }
 
@@ -434,17 +438,17 @@ function PropertiesPanel({
         </div>
       )}
 
-      {choiceMedia && (
-        <div className="props-media">
-          <h5>{choiceLabel}</h5>
+      {choiceMedias.map((item, i) => (
+        <div key={i} className="props-media">
+          <h5>{item.label}</h5>
           <div className="props-media-preview">
-            <img src={`${assetUrl(sessionId, choiceMedia)}&v=${imgRev || 0}`} alt="" />
+            <img src={`${assetUrl(sessionId, item.media)}&v=${imgRev || 0}`} alt="" />
             <div className="props-media-actions">
-              <button type="button" className="btn btn-sm" onClick={() => onExportImage?.(choiceMedia, 'IMG')}>Export ảnh đáp án</button>
+              <button type="button" className="btn btn-sm" onClick={() => onExportImage?.(item.media, 'IMG')}>Export ảnh đáp án</button>
             </div>
           </div>
         </div>
-      )}
+      ))}
 
       {isVideoObj && obj.video && (
         <div className="props-media">
