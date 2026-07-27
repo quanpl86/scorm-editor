@@ -912,16 +912,16 @@ function QuestionEditor({ question, sessionId, onChange, onDelete, onImageUpload
         </div>
       )}
 
-      {(question.type === 'TypeIn' || question.type === 'Numeric') && question.typeInAnswers?.length > 0 && (
+      {(question.type === 'TypeIn' || question.type === 'Numeric') && (
         <div className="editor-section">
           <h4>{question.type === 'Numeric' ? 'Đáp án số (Numeric)' : 'Đáp án chấp nhận (Type In)'}</h4>
-          {question.typeInAnswers.map((ans, idx) => (
+          {(question.typeInAnswers || []).map((ans, idx) => (
             <div key={idx} className="field">
               <input
                 type="text"
                 value={ans}
                 onChange={(e) => {
-                  const typeInAnswers = [...question.typeInAnswers]
+                  const typeInAnswers = [...(question.typeInAnswers || [])]
                   typeInAnswers[idx] = e.target.value
                   update({ typeInAnswers })
                 }}
@@ -930,7 +930,7 @@ function QuestionEditor({ question, sessionId, onChange, onDelete, onImageUpload
           ))}
           <button
             className="btn btn-sm"
-            onClick={() => update({ typeInAnswers: [...question.typeInAnswers, ''] })}
+            onClick={() => update({ typeInAnswers: [...(question.typeInAnswers || []), ''] })}
           >
             + Thêm đáp án
           </button>
@@ -951,10 +951,13 @@ function QuestionEditor({ question, sessionId, onChange, onDelete, onImageUpload
         </div>
       )}
 
-      {(question.type === 'FillInTheBlank' || question.type === 'WordBank') && question.blankAnswers?.length > 0 && (
+      {(question.type === 'FillInTheBlank' || question.type === 'WordBank') && (
         <div className="editor-section">
           <h4>{question.type === 'WordBank' ? 'Đáp án đúng (Word Bank)' : 'Đáp án điền khuyết'}</h4>
-          {question.blankAnswers.map((ans, idx) => (
+          {(question.blankAnswers || []).length === 0 && (
+             <div style={{ fontSize: '0.85rem', color: '#666' }}>Không có ô đáp án nào được tìm thấy. Vui lòng import lại gói SCORM.</div>
+          )}
+          {(question.blankAnswers || []).map((ans, idx) => (
             <div key={ans.id || idx} className="field">
               <label>Ô {idx + 1} ({ans.id})</label>
               <input
