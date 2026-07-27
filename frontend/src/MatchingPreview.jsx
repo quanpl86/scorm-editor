@@ -77,7 +77,7 @@ export default function MatchingPreview({ preview, wysiwyg, sessionId, onChoiceF
   const choicePadding = layout.choicePadding ?? 16
 
   const premises = useMemo(
-    () => pairs.map((pair) => ({
+    () => pairs.map((pair, i) => ({
       text: pair.leftText,
       html: pair.leftHtml,
       image: pair.leftImage,
@@ -90,7 +90,7 @@ export default function MatchingPreview({ preview, wysiwyg, sessionId, onChoiceF
   const responses = useMemo(() => {
     const source = (preview?.responses?.length
       ? preview.responses
-      : pairs.map((pair) => ({
+      : pairs.map((pair, i) => ({
         text: pair.rightText,
         html: pair.rightHtml,
         image: pair.rightImage,
