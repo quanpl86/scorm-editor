@@ -168,10 +168,17 @@ def get_package_root(session_id: str) -> Path:
 def resolve_asset_path(session_id: str, filename: str) -> Path:
     package_root = get_package_root(session_id)
     safe = Path(filename).name
+    safe_stem = Path(filename).stem
     for folder in (*IMAGE_FOLDERS, *AUDIO_FOLDERS, *VIDEO_FOLDERS):
         candidate = package_root / folder / safe
         if candidate.exists():
             return candidate
+        
+        folder_path = package_root / folder
+        if folder_path.exists():
+            for child in folder_path.iterdir():
+                if child.is_file() and child.stem == safe_stem:
+                    return child
     raise FileNotFoundError(safe)
 
 

@@ -1,4 +1,4 @@
-import { assetUrl } from './api'
+import { assetUrl, rewriteHtmlMedia } from './api'
 import { clampChoiceColumns } from './choiceLayoutUtils'
 import CanvasRichText from './CanvasRichText'
 import { injectBlankSlots } from './blankHtmlUtils'
@@ -17,6 +17,7 @@ function ChoiceBody({
   idx,
   wysiwyg,
   typography,
+  sessionId,
   editing,
   onChoiceTextChange,
   onChoiceBlur,
@@ -48,7 +49,7 @@ function ChoiceBody({
     return (
       <div
         className="ispring-html fidelity-html truefalse-text"
-        dangerouslySetInnerHTML={{ __html: html }}
+        dangerouslySetInnerHTML={{ __html: rewriteHtmlMedia(html, sessionId) }}
         onPointerDown={(e) => {
           e.stopPropagation()
           onChoiceFocus?.(idx)
@@ -154,6 +155,7 @@ export function TrueFalsePreview({
               idx={i}
               wysiwyg={wysiwyg}
               typography={typography}
+              sessionId={sessionId}
               editing={editing}
               onChoiceTextChange={onChoiceTextChange}
               onChoiceBlur={onChoiceBlur}
@@ -172,6 +174,7 @@ export function SequencePreview({
   wysiwyg,
   choices,
   typography,
+  sessionId,
   editingChoiceIdx,
   onChoiceTextChange,
   onChoiceBlur,
@@ -234,7 +237,7 @@ export function SequencePreview({
               ) : html && (text.trim() || /<img\b/i.test(html)) ? (
                 <div
                   className="ispring-html fidelity-html sequence-text"
-                  dangerouslySetInnerHTML={{ __html: html }}
+                  dangerouslySetInnerHTML={{ __html: rewriteHtmlMedia(html, sessionId) }}
                   onPointerDown={(e) => {
                     e.stopPropagation()
                     onChoiceFocus?.(i)
@@ -271,7 +274,7 @@ export function TypeInPreview({ preview, wysiwyg }) {
   )
 }
 
-export function BlankPreview({ preview, wysiwyg }) {
+export function BlankPreview({ preview, wysiwyg, sessionId }) {
   const html = preview?.richHtml
   if (!html) return null
   const kind = preview?.blankKind || 'fillin'
@@ -282,7 +285,7 @@ export function BlankPreview({ preview, wysiwyg }) {
     <div className={`${wrapperClass} ${wysiwyg ? 'wysiwyg fidelity' : ''}`}>
       <div
         className="blank-rich-text ispring-html fidelity-html"
-        dangerouslySetInnerHTML={{ __html: rendered }}
+        dangerouslySetInnerHTML={{ __html: rewriteHtmlMedia(rendered, sessionId) }}
       />
     </div>
   )

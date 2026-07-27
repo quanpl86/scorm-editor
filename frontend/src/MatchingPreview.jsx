@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { assetUrl } from './api'
+import { assetUrl, rewriteHtmlMedia } from './api'
 
 function hashSeed(text = '') {
   let h = 0
@@ -51,7 +51,7 @@ function MatchingCell({ side, item, sessionId, rowHeight, choicePadding }) {
       ) : html && (text?.trim() || /<img\b/i.test(html)) ? (
         <div
           className="matching-item-text ispring-html fidelity-html"
-          dangerouslySetInnerHTML={{ __html: html }}
+          dangerouslySetInnerHTML={{ __html: rewriteHtmlMedia(html, sessionId) }}
         />
       ) : (
         <span className="matching-item-text">{text?.trim() || '—'}</span>

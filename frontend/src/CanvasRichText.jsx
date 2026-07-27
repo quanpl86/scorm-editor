@@ -1,5 +1,6 @@
 import CanvasEditableText from './CanvasEditableText'
 import { buildStyledHtml } from './textFormatUtils'
+import { rewriteHtmlMedia } from './api'
 
 export default function CanvasRichText({
   value,
@@ -15,6 +16,7 @@ export default function CanvasRichText({
   onBlur,
   onActivate,
   onEditorMount,
+  sessionId,
 }) {
   const previewText = (value || '').trim()
   const previewHtml = html?.trim()
@@ -57,7 +59,7 @@ export default function CanvasRichText({
       ) : previewHtml ? (
         <div
           className="ispring-html fidelity-html canvas-text-preview"
-          dangerouslySetInnerHTML={{ __html: previewHtml }}
+          dangerouslySetInnerHTML={{ __html: rewriteHtmlMedia(previewHtml, sessionId) }}
           onMouseDown={(e) => {
             e.preventDefault()
             e.stopPropagation()

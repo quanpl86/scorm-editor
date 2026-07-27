@@ -135,6 +135,15 @@ export function assetUrl(sessionId, filename) {
   return `${API}/session/${sessionId}/asset/${encodeURIComponent(filename)}?t=${Date.now()}`
 }
 
+export function rewriteHtmlMedia(html, sessionId) {
+  if (!html) return html
+  return html.replace(/<img([^>]+)src=["']([^"']+)["']/gi, (match, p1, src) => {
+    if (src.startsWith('http') || src.startsWith('/api/') || src.startsWith('data:')) return match
+    const newSrc = assetUrl(sessionId, src)
+    return `<img${p1}src="${newSrc}"`
+  })
+}
+
 export function previewPlayerUrl(sessionId, options = {}) {
   const params = new URLSearchParams()
   if (options.reloadKey != null) params.set('t', String(options.reloadKey))

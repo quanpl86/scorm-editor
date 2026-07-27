@@ -20,6 +20,7 @@ import {
   assetUrl,
   exportSingleMediaLocal,
   uploadNewImage,
+  rewriteHtmlMedia,
 } from './api'
 import {
   buildLayoutPatch,
@@ -165,20 +166,24 @@ function ChoicePreview({
                 onBlur={(payload) => onChoiceBlur?.(i, payload || { text: choices?.[i]?.text || item.text || '' })}
                 onFocus={() => onChoiceFocus?.(i)}
                 onEditorMount={onEditorMount}
+                sessionId={preview?.sessionId}
               />
             ) : item.text?.trim() ? (
               <div
                 className="ispring-html fidelity-html choice-html choice-html-preview"
                 dangerouslySetInnerHTML={{
-                  __html: item.html?.trim()
-                    || choices?.[i]?.html?.trim()
-                    || buildStyledHtml(
-                      item.text || choices?.[i]?.text || '',
-                      'content',
-                      fmt,
-                      typography,
-                      item.html || choices?.[i]?.html,
-                    ),
+                  __html: rewriteHtmlMedia(
+                    item.html?.trim()
+                      || choices?.[i]?.html?.trim()
+                      || buildStyledHtml(
+                        item.text || choices?.[i]?.text || '',
+                        'content',
+                        fmt,
+                        typography,
+                        item.html || choices?.[i]?.html,
+                      ),
+                    preview.sessionId
+                  ),
                 }}
                 onPointerDown={(e) => {
                   e.stopPropagation()
@@ -334,6 +339,7 @@ function PropertiesPanel({
   onExportImage,
   onImageZoomChange,
   onDeleteObject,
+  question,
 }) {
   if (!obj) {
     return (
@@ -1596,6 +1602,7 @@ export default function LayoutCanvas({
                           setActiveChoiceIdx(null)
                         }}
                         onEditorMount={registerEditor}
+                        sessionId={sessionId}
                       />
                     </div>
                   )}
@@ -1652,6 +1659,7 @@ export default function LayoutCanvas({
                             setActiveChoiceIdx(null)
                           }}
                           onEditorMount={registerEditor}
+                          sessionId={sessionId}
                         />
                       ) : question.type === 'Matching' ? (
                         <MatchingPreview
@@ -1676,6 +1684,7 @@ export default function LayoutCanvas({
                         <SequencePreview
                           preview={preview}
                           wysiwyg
+                          sessionId={sessionId}
                           choices={question.choices}
                           typography={typography}
                           editingChoiceIdx={activeEditKey === 'choice' ? activeChoiceIdx : null}
@@ -1687,7 +1696,7 @@ export default function LayoutCanvas({
                       ) : question.type === 'TypeIn' ? (
                         <TypeInPreview preview={preview} wysiwyg />
                       ) : (question.type === 'WordBank' || question.type === 'FillInTheBlank') ? (
-                        <BlankPreview preview={preview} wysiwyg />
+                        <BlankPreview preview={preview} wysiwyg sessionId={sessionId} />
                       ) : (
                         <ChoicePreview
                           preview={preview}
@@ -1712,7 +1721,7 @@ export default function LayoutCanvas({
                         style={{ ...verticalAlignStyle(visual), ...textPaddingStyle(visual), display: 'flex' }}
                       >
                         {obj.html ? (
-                          <div className="ispring-html fidelity-html" dangerouslySetInnerHTML={{ __html: obj.html }} />
+                          <div className="ispring-html fidelity-html" dangerouslySetInnerHTML={{ __html: rewriteHtmlMedia(obj.html, sessionId) }} />
                         ) : obj.text ? (
                           <span>{obj.text}</span>
                         ) : null}
@@ -1809,6 +1818,7 @@ export default function LayoutCanvas({
           imgRev={imgRev}
           overlaps={overlaps.filter((w) => w.a === selectedIndex || w.b === selectedIndex)}
           onChange={(r) => updateObjectRect(selectedIndex, r)}
+          question={question}
           onLayerAction={onLayerAction}
           onPickImage={(file) => assignImageToObject(selectedIndex, file)}
           onClearImage={() => {
