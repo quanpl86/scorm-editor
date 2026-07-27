@@ -340,6 +340,9 @@ function PropertiesPanel({
   onImageZoomChange,
   onDeleteObject,
   question,
+  activeEditKey,
+  activeChoiceIdx,
+  activeChoiceSide,
 }) {
   if (!obj) {
     return (
@@ -359,6 +362,37 @@ function PropertiesPanel({
   const isAudioObj = obj.role === 'slideAudio' || obj.role === 'audio' || obj.audio
   const isHotspotImg = question.type === 'Hotspot' && obj.role === 'content'
   const isImageObj = obj.role === 'slidePicture' || obj.role === 'image' || isHotspotImg || (!isVideoObj && !isAudioObj && obj.image)
+
+  let choiceMedia = null
+  let choiceLabel = ''
+  if (obj.role === 'content' && activeEditKey === 'choice' && activeChoiceIdx != null) {
+    if (question.type === 'Matching') {
+      const isLeft = activeChoiceSide === 'premise'
+      const pair = question.matchingPairs?.[activeChoiceIdx]
+      if (pair) {
+        choiceMedia = isLeft ? pair.leftImage : pair.rightImage
+        choiceLabel = isLeft ? `Ảnh Vế trái ${activeChoiceIdx + 1}` : `Ảnh Vế phải ${activeChoiceIdx + 1}`
+        if (!choiceMedia && isLeft && pair.leftHtml) {
+           const m = pair.leftHtml.match(/storage:\/\/images\/([^"'\s>]+)/i)
+           if (m) choiceMedia = m[1]
+        }
+        if (!choiceMedia && !isLeft && pair.rightHtml) {
+           const m = pair.rightHtml.match(/storage:\/\/images\/([^"'\s>]+)/i)
+           if (m) choiceMedia = m[1]
+        }
+      }
+    } else if (question.choices) {
+      const choice = question.choices[activeChoiceIdx]
+      if (choice) {
+        choiceMedia = choice.image
+        choiceLabel = `Ảnh Đáp án ${activeChoiceIdx + 1}`
+        if (!choiceMedia && choice.html) {
+           const m = choice.html.match(/storage:\/\/images\/([^"'\s>]+)/i)
+           if (m) choiceMedia = m[1]
+        }
+      }
+    }
+  }
 
   return (
     <div className="props-panel">
@@ -397,6 +431,18 @@ function PropertiesPanel({
           {obj.role === 'slidePicture' && (
             <p className="props-hint">Áp dụng cho toàn bộ khung ảnh slide trên câu hỏi này.</p>
           )}
+        </div>
+      )}
+
+      {choiceMedia && (
+        <div className="props-media">
+          <h5>{choiceLabel}</h5>
+          <div className="props-media-preview">
+            <img src={`${assetUrl(sessionId, choiceMedia)}&v=${imgRev || 0}`} alt="" />
+            <div className="props-media-actions">
+              <button type="button" className="btn btn-sm" onClick={() => onExportImage?.(choiceMedia, 'IMG')}>Export ảnh đáp án</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -472,6 +518,7 @@ export default function LayoutCanvas({
   const [interaction, setInteraction] = useState(null)
   const [activeEditKey, setActiveEditKey] = useState(null)
   const [activeChoiceIdx, setActiveChoiceIdx] = useState(null)
+  const [activeChoiceSide, setActiveChoiceSide] = useState(null)
   const [liveFormat, setLiveFormat] = useState(null)
   const [objects, setObjects] = useState(() =>
     normalizeLayoutObjects(question?.layout?.objects || [], question?.layout),
@@ -1196,11 +1243,14 @@ export default function LayoutCanvas({
     [question.choices, question.layout?.choicePreview?.items, updateSlide],
   )
 
-  const handleChoiceFocus = useCallback((idx) => {
-    const content = objects.find((o) => o.role === 'content')
-    if (content) setSelectedIndex(content.index)
-    setActiveEditKey('choice')
-    setActiveChoiceIdx(idx)
+  const handleChoiceFocus = useCallback((idx, side) => {
+    const contentObj = objects.find((o) => o.role === 'content')
+    if (contentObj) {
+      setSelectedIndex(contentObj.index)
+      setActiveEditKey('choice')
+      setActiveChoiceIdx(idx)
+      setActiveChoiceSide(side || null)
+    }
   }, [objects])
 
   const handleChoiceBlur = useCallback((idx, payload) => {
@@ -1666,6 +1716,7 @@ export default function LayoutCanvas({
                           preview={preview}
                           wysiwyg
                           sessionId={sessionId}
+                          onChoiceFocus={handleChoiceFocus}
                         />
                       ) : question.type === 'TrueFalse' ? (
                         <TrueFalsePreview
@@ -1831,6 +1882,9 @@ export default function LayoutCanvas({
           onExportImage={(fileUrl, mediaCode) => handleExportSingleMedia(selected, fileUrl, mediaCode)}
           onImageZoomChange={handleImageZoomChange}
           onDeleteObject={() => handleDeleteObject(selectedIndex)}
+          activeEditKey={activeEditKey}
+          activeChoiceIdx={activeChoiceIdx}
+          activeChoiceSide={activeChoiceSide}
         />
       </div>
     </div>

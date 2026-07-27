@@ -20,7 +20,7 @@ function seededShuffle(items, seed) {
   return arr
 }
 
-function MatchingCell({ side, item, sessionId, rowHeight, choicePadding }) {
+function MatchingCell({ side, item, sessionId, rowHeight, choicePadding, onChoiceFocus, originalIndex }) {
   const isLeft = side === 'premise'
   const text = item.text
   const html = item.html
@@ -39,6 +39,10 @@ function MatchingCell({ side, item, sessionId, rowHeight, choicePadding }) {
     <div
       className={`matching-cell ${side}`}
       style={cellStyle}
+      onPointerDown={(e) => {
+        e.stopPropagation()
+        onChoiceFocus?.(originalIndex, side)
+      }}
     >
       <span className={`matching-connector ${isLeft ? 'connector-right' : 'connector-left'}`} aria-hidden />
       {image ? (
@@ -60,7 +64,7 @@ function MatchingCell({ side, item, sessionId, rowHeight, choicePadding }) {
   )
 }
 
-export default function MatchingPreview({ preview, wysiwyg, sessionId }) {
+export default function MatchingPreview({ preview, wysiwyg, sessionId, onChoiceFocus }) {
   const pairs = preview?.pairs || []
   if (!pairs.length) return null
 
@@ -78,6 +82,7 @@ export default function MatchingPreview({ preview, wysiwyg, sessionId }) {
       html: pair.leftHtml,
       image: pair.leftImage,
       format: pair.leftFormat,
+      originalIndex: i,
     })),
     [pairs],
   )
@@ -90,6 +95,7 @@ export default function MatchingPreview({ preview, wysiwyg, sessionId }) {
         html: pair.rightHtml,
         image: pair.rightImage,
         format: pair.rightFormat,
+        originalIndex: i,
       })))
     if (!preview?.shuffleResponses) return source
     const seed = hashSeed(preview.shuffleSeed || preview.type || 'matching')
@@ -120,6 +126,8 @@ export default function MatchingPreview({ preview, wysiwyg, sessionId }) {
               sessionId={sessionId}
               rowHeight={rowHeight}
               choicePadding={choicePadding}
+              onChoiceFocus={onChoiceFocus}
+              originalIndex={item.originalIndex}
             />
           ))}
         </div>
@@ -133,6 +141,8 @@ export default function MatchingPreview({ preview, wysiwyg, sessionId }) {
               sessionId={sessionId}
               rowHeight={rowHeight}
               choicePadding={choicePadding}
+              onChoiceFocus={onChoiceFocus}
+              originalIndex={item.originalIndex}
             />
           ))}
         </div>

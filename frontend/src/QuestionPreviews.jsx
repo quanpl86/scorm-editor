@@ -139,6 +139,10 @@ export function TrueFalsePreview({
             key={i}
             className={`truefalse-choice ${resolved.image ? 'has-image' : ''} ${imageOnly ? 'image-primary' : ''}`}
             style={rowStyle}
+            onPointerDown={(e) => {
+              e.stopPropagation()
+              onChoiceFocus?.(i)
+            }}
           >
             <span className="fake-radio" aria-hidden />
             {resolved.image && (
@@ -216,7 +220,15 @@ export function SequencePreview({
           : undefined
 
         return (
-          <div key={i} className="sequence-row" style={rowStyle}>
+          <div
+            key={i}
+            className="sequence-row"
+            style={rowStyle}
+            onPointerDown={(e) => {
+              e.stopPropagation()
+              onChoiceFocus?.(i)
+            }}
+          >
             <span className="sequence-index" aria-hidden>{i + 1}.</span>
             <div className="sequence-item" style={cardStyle}>
               {editing && wysiwyg && onChoiceTextChange ? (
