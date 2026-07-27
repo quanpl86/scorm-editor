@@ -58,3 +58,31 @@ pip install -r requirements.txt
 # 4. Khởi động Server
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
+
+## 4. Quy ước đặt tên khi Export Ảnh (Image Export Naming Conventions)
+Hệ thống hỗ trợ 8 dạng câu hỏi/slide chính. Khi người dùng thực hiện xuất ảnh (Export) trên ứng dụng, thuật toán sẽ tự động phân loại và gán hậu tố tên file dựa trên dạng câu hỏi và vị trí của hình ảnh để tránh trùng lặp:
+
+### 4.1. Tên ảnh của "Nội dung câu hỏi" & "Ảnh nền/Minh họa"
+Áp dụng cho mọi dạng câu hỏi. Bất kể hình ảnh đóng vai trò là **Ảnh nền (Background)**, **Khung ảnh (Picture/Image)**, hoặc **Ảnh minh họa trong thân câu hỏi**, chúng đều được quy về nhóm Nội dung (`ND`).
+- **Hậu tố:** `_IMG-ND` hoặc `_IMG-ND-[số thứ tự]` (nếu có nhiều ảnh tự chèn trên Canvas).
+
+### 4.2. Tên ảnh của "Giải thích đáp án" (Feedback) & Slide Kết quả
+Nếu hình ảnh được chèn trong các khung Feedback (khi trả lời Đúng/Sai), Slide Giới thiệu (IntroSlide) hoặc Slide Kết quả (ResultSlide), chúng vẫn là đối tượng hình ảnh hiển thị độc lập.
+- **Hậu tố:** `_IMG-ND-[số thứ tự]` (được gom chung hệ thống với Ảnh minh họa).
+
+### 4.3. Tên ảnh bên trong "Từng dạng đáp án cụ thể"
+Luật đặt tên thông minh dựa theo loại câu hỏi (`question.type`):
+
+*   **Nối cặp (Matching):**
+    *   Ảnh đáp án bên trái (Vế Trái): **`_IMG-VT1`**, **`_IMG-VT2`**...
+    *   Ảnh đáp án bên phải (Vế Phải): **`_IMG-VP1`**, **`_IMG-VP2`**...
+*   **Trắc nghiệm (Multiple Choice / TrueFalse):**
+    *   Ảnh của các lựa chọn (A, B, C...): **`_IMG-DA1`**, **`_IMG-DA2`**, **`_IMG-DA3`**...
+*   **Chọn nhiều (Multiple Response):**
+    *   Tương tự trắc nghiệm: **`_IMG-DA1`**, **`_IMG-DA2`**...
+*   **Sắp xếp (Sequence):**
+    *   Tương ứng với các thẻ bài từ trên xuống: **`_IMG-DA1`**, **`_IMG-DA2`**...
+*   **Xác định vị trí (Hotspot):**
+    *   Bức ảnh toàn cảnh đóng vai trò vùng tương tác chính: **`_IMG-content`**.
+*   **Điền khuyết (Fill-in-the-Blank), Điền từ (Type In), Kéo thả (WordBank):**
+    *   Các đáp án mang bản chất là Text thuần túy nên không có ảnh bên trong bản thân đáp án. Nếu có ảnh xuất hiện, chúng sẽ thuộc về "Nội dung câu hỏi" chung (`_IMG-ND`).
