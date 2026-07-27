@@ -449,6 +449,8 @@ def export_single_media_local(session_id: str, payload: SingleMediaExportPayload
         
         shutil.copy2(source_path, target_file)
         return {"success": True, "path": str(target_file)}
+    except FileNotFoundError as exc:
+        raise HTTPException(404, f"Không tìm thấy ảnh/file này trong gói SCORM gốc ({exc}). Có thể iSpring đã tối ưu hóa hoặc loại bỏ file này.") from exc
     except Exception as exc:
         raise HTTPException(400, f"Lỗi export single media local: {exc}") from exc
 
