@@ -492,17 +492,30 @@ def extract_blank_answers(slide: dict[str, Any]) -> list[dict[str, Any]]:
     answers = []
     rt = slide.get("C", {}).get("rt", {})
     entries = rt.get("r", [])
-    for entry in entries:
-        data = entry.get("data", {})
-        v = data.get("v")
-        if isinstance(v, list):
-            value = v[0] if v else ""
-        else:
-            value = v or ""
-        answers.append({
-            "id": entry.get("id", ""),
-            "value": str(value)
-        })
+    if entries:
+        for entry in entries:
+            data = entry.get("data", {})
+            v = data.get("v")
+            if isinstance(v, list):
+                value = v[0] if v else ""
+            else:
+                value = v or ""
+            answers.append({
+                "id": entry.get("id", ""),
+                "value": str(value)
+            })
+    else:
+        # Fallback to C.chs for some iSpring versions
+        for ch in slide.get("C", {}).get("chs", []):
+            text = ch.get("t", "")
+            if isinstance(text, dict):
+                text_str = strip_html(text.get("h") or text.get("a") or "")
+            else:
+                text_str = str(text)
+            answers.append({
+                "id": ch.get("i", ""),
+                "value": text_str.strip()
+            })
     return answers
 
 
@@ -870,6 +883,19 @@ def apply_question_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:
                     "data": {"v": [val] if slide.get("tp") == "FillInTheBlank" else val}
                 }
                 entries.append(entry)
+                
+        # Also sync to C.chs if present
+        chs = slide["C"].get("chs", [])
+        if chs:
+            chs_map = {ch.get("i"): ch for ch in chs if ch.get("i")}
+            for ans in edit["blankAnswers"]:
+                bid = ans.get("id")
+                val = ans.get("value", "")
+                if bid and bid in chs_map:
+                    if isinstance(chs_map[bid].get("t"), dict):
+                        chs_map[bid]["t"]["h"] = val
+                    else:
+                        chs_map[bid]["t"] = val
 
     if edit.get("typeInAnswers") is not None and slide.get("tp") in ("TypeIn", "Numeric"):
         slide.setdefault("C", {})
