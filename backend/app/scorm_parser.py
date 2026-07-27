@@ -479,8 +479,12 @@ def extract_type_in_answers(slide: dict[str, Any]) -> list[str]:
     answers = []
     for ch in slide.get("C", {}).get("chs", []):
         text = ch.get("t", "")
-        if isinstance(text, str) and text.strip():
-            answers.append(text.strip())
+        if isinstance(text, dict):
+            text_str = strip_html(text.get("h") or text.get("a") or "")
+        else:
+            text_str = str(text)
+        if text_str.strip():
+            answers.append(text_str.strip())
     return answers
 
 
