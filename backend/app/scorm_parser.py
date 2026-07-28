@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import html
 import io
 import json
@@ -174,7 +175,7 @@ def resolve_asset_path(session_id: str, filename: str) -> Path:
         candidate = package_root / folder / safe
         if candidate.exists():
             return candidate
-        
+
         folder_path = package_root / folder
         if folder_path.exists():
             for child in folder_path.iterdir():
@@ -447,6 +448,57 @@ def apply_choices(slide: dict[str, Any], choices: list[dict[str, Any]]) -> None:
     slide["C"]["chs"] = new_chs
 
 
+def apply_matching_pairs(slide: dict[str, Any], pairs: list[dict[str, Any]]) -> None:
+    if "C" not in slide:
+        slide["C"] = {}
+    current_pairs = slide["C"].get("m", [])
+
+    # We will just overwrite since pairs might be added/removed.
+    new_pairs = []
+    import uuid
+    for i, pair in enumerate(pairs):
+        # pair could have 'text', 'matchText', 'image', 'matchImage' from frontend
+        # or 'leftText', 'rightText', 'leftImage', 'rightImage'
+        left_text = pair.get("leftText", pair.get("text", ""))
+        right_text = pair.get("rightText", pair.get("matchText", ""))
+        left_image = pair.get("leftImage", pair.get("image", ""))
+        right_image = pair.get("rightImage", pair.get("matchImage", ""))
+
+        if i < len(current_pairs):
+            m_pair = current_pairs[i]
+        else:
+            m_pair = {
+                "p": {"i": f"p-{uuid.uuid4().hex[:8]}", "t": {}},
+                "r": {"i": f"r-{uuid.uuid4().hex[:8]}", "t": {}}
+            }
+
+        # Apply left
+        if isinstance(m_pair["p"].get("t"), dict):
+            m_pair["p"]["t"]["h"] = left_text
+        else:
+            m_pair["p"]["t"] = left_text
+
+        if left_image:
+            m_pair["p"].setdefault("ia", {})["i"] = f"storage://images/{left_image}"
+        else:
+            m_pair["p"].pop("ia", None)
+
+        # Apply right
+        if isinstance(m_pair["r"].get("t"), dict):
+            m_pair["r"]["t"]["h"] = right_text
+        else:
+            m_pair["r"]["t"] = right_text
+
+        if right_image:
+            m_pair["r"].setdefault("ia", {})["i"] = f"storage://images/{right_image}"
+        else:
+            m_pair["r"].pop("ia", None)
+
+        new_pairs.append(m_pair)
+
+    slide["C"]["m"] = new_pairs
+
+
 def extract_matching_pairs(slide: dict[str, Any]) -> list[dict[str, Any]]:
     pairs = []
     for item in slide.get("C", {}).get("m", []):
@@ -470,6 +522,7 @@ def extract_sequence_items(slide: dict[str, Any]) -> list[dict[str, Any]]:
             {
                 "id": ch.get("i", ""),
                 "text": strip_html((ch.get("t") or {}).get("h", "")),
+                "image": image_path_from_storage((ch.get("ia") or {}).get("i", "")),
                 "order": ch.get("o", len(items)),
             }
         )
@@ -521,11 +574,21 @@ def extract_blank_answers(slide: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def extract_slide_images(slide: dict[str, Any]) -> list[str]:
-    images = set()
-    raw = json.dumps(slide, ensure_ascii=False)
-    for match in re.finditer(r"storage://images/([^\"]+)", raw):
-        images.add(match.group(1))
-    return sorted(images)
+    meta = slide.get("_metadata", {})
+    if "slideImages" in meta:
+        return meta["slideImages"]
+
+    from .layout import extract_slide_attachment_image, extract_object_image
+    images = []
+    att = extract_slide_attachment_image(slide)
+    if att:
+        images.append(att)
+    for obj in slide.get("a", {}).get("o", []):
+        if obj.get("tp") == "image":
+            img = extract_object_image(obj, slide)
+            if img:
+                images.append(img)
+    return images
 
 
 def editable_level(question_type: str) -> str:
@@ -558,7 +621,7 @@ def special_slide_to_view(
     question_text = strip_html(slide.get("D", {}).get("h", ""))
     subtitle_text = ""
     subtitle_format = None
-    if qtype == "IntroSlide":
+    if qtype == "IntroSlide" or qtype in ("WordBank", "FillInTheBlank"):
         rt = slide.get("C", {}).get("rt", {})
         subtitle_text = strip_html(rt.get("h") or rt.get("a") or "")
         if subtitle_text:
@@ -695,22 +758,30 @@ def slide_to_view(slide: dict[str, Any], group_index: int, question_index: int, 
         "slideImages": extract_slide_images(slide),
         "editableLevel": editable_level(qtype),
         "points": points,
+        "difficulty": slide.get("_metadata", {}).get("difficulty", "medium"),
+        "topic": slide.get("_metadata", {}).get("topic", ""),
+        "required": bool(slide.get("_metadata", {}).get("required", False)),
+        "useRegex": bool(slide.get("_metadata", {}).get("useRegex", False)),
+        "explanation": slide.get("_metadata", {}).get("explanation", ""),
+        "video": slide.get("_metadata", {}).get("video", ""),
         "timeLimit": time_limit,
         "timeLimitEnabled": time_enabled,
         "shuffleAnswers": shuffle_answers,
     }
 
-    if qtype in {"MultipleChoice", "MultipleResponse", "MultipleChoiceText", "TrueFalse", "Sequence"}:
+    if qtype in {"MultipleChoice", "MultipleResponse", "MultipleChoiceText", "TrueFalse"}:
         view["choices"] = extract_choices(slide)
+    elif qtype == "Sequence":
+        view["choices"] = extract_choices(slide)
+        view["sequenceItems"] = extract_sequence_items(slide)
     elif qtype == "Matching":
         view["matchingPairs"] = extract_matching_pairs(slide)
-    elif qtype == "Sequence":
-        view["sequenceItems"] = extract_sequence_items(slide)
     elif qtype in ("WordBank", "FillInTheBlank"):
         view["blankAnswers"] = extract_blank_answers(slide)
+        view["richHtml"] = slide.get("C", {}).get("rt", {}).get("h", "")
         if qtype == "WordBank":
             view["wordBankWords"] = list(slide.get("C", {}).get("ew", []) or [])
-    elif qtype in ("TypeIn", "Numeric"):
+    elif qtype in ("TypeIn", "Numeric", "MultipleNumeric"):
         view["typeInAnswers"] = extract_type_in_answers(slide)
 
     view["layout"] = extract_layout(slide)
@@ -809,8 +880,13 @@ def quiz_to_view(quiz_json: dict[str, Any]) -> dict[str, Any]:
     intro_slide = extract_intro_slide(quiz_json)
     result_slides = extract_result_slides(quiz_json)
 
+    title = quiz_json.get("d", {}).get("T", "Untitled Quiz")
+    teky_quiz = copy.deepcopy(quiz_json.get("_teky") or {})
+    teky_quiz.setdefault("title", title)
+
     return {
-        "title": quiz_json.get("d", {}).get("T", "Untitled Quiz"),
+        "title": title,
+        "tekyQuiz": teky_quiz,
         "passingScore": passing,
         "reporting": extract_reporting(quiz_json),
         "groups": [{"title": g.get("T", ""), "questionCount": len(g.get("S", []))} for g in groups],
@@ -823,6 +899,9 @@ def quiz_to_view(quiz_json: dict[str, Any]) -> dict[str, Any]:
 
 
 def apply_question_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:
+    if edit.get("type"):
+        slide["tp"] = edit["type"]
+
     slide.setdefault("D", {})
     if edit.get("questionHtml"):
         text = edit.get("questionText") or strip_html(edit["questionHtml"])
@@ -854,6 +933,9 @@ def apply_question_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:
     }:
         apply_choices(slide, edit["choices"])
 
+    if edit.get("matchingPairs") is not None and slide.get("tp") == "Matching":
+        apply_matching_pairs(slide, edit["matchingPairs"])
+
     if edit.get("wordBankWords") is not None and slide.get("tp") == "WordBank":
         slide.setdefault("C", {})["ew"] = [w for w in edit["wordBankWords"] if str(w).strip()]
 
@@ -862,7 +944,46 @@ def apply_question_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:
         slide["C"].setdefault("rt", {})
         slide["C"]["rt"]["h"] = edit["richHtml"]
 
-    if edit.get("blankAnswers") is not None and slide.get("tp") in {"WordBank", "FillInTheBlank"}:
+    if edit.get("blankAnswers") is not None and slide.get("tp") == "FillInTheBlank":
+        slide.setdefault("C", {})
+        rt = slide["C"].setdefault("rt", {})
+        existing_entries = rt.get("r", [])
+        existing_id = next(
+            (entry.get("id") for entry in existing_entries if entry.get("id")),
+            "qmFillInTheBlank0",
+        )
+        answer = (edit.get("blankAnswers") or [{}])[0]
+        blank_id = answer.get("id") or existing_id
+        values = answer.get("values") or answer.get("acceptedAnswers") or []
+        accepted_answers = [
+            str(value).strip() for value in values if str(value).strip()
+        ]
+        correct_answer = accepted_answers[0] if accepted_answers else ""
+
+        rt["r"] = [{
+            "id": blank_id,
+            "type": "qmFillInTheBlank",
+            "data": {"v": accepted_answers},
+        }]
+
+        question_text = edit.get("questionText")
+        if question_text is None:
+            question_text = strip_html(slide.get("D", {}).get("h", ""))
+        question_text = str(question_text or "")
+        blank_span = f'<span id="{html.escape(blank_id)}"></span>'
+        escaped_question = html.escape(question_text)
+        if "___" in escaped_question:
+            rich_content = escaped_question.replace("___", blank_span, 1)
+        else:
+            rich_content = f"{escaped_question} {blank_span}".strip()
+        rt["h"] = f"<p><span>{rich_content}</span></p>"
+        rt["d"] = [question_text, {"id": blank_id}]
+        slide["C"]["chs"] = [{
+            "i": blank_id,
+            "t": {"h": correct_answer},
+        }]
+
+    if edit.get("blankAnswers") is not None and slide.get("tp") == "WordBank":
         slide.setdefault("C", {})
         rt = slide["C"].setdefault("rt", {})
         entries = rt.setdefault("r", [])
@@ -875,18 +996,15 @@ def apply_question_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:
             if not bid:
                 continue
             if bid in entry_map:
-                if slide.get("tp") == "FillInTheBlank":
-                    entry_map[bid]["data"] = {"v": val_list}
-                else:
-                    entry_map[bid]["data"] = {"v": val_single}
+                entry_map[bid]["data"] = {"v": val_single}
             else:
                 entry = {
                     "id": bid,
-                    "type": "qmFillInTheBlank" if slide.get("tp") == "FillInTheBlank" else "qmWordBank",
-                    "data": {"v": val_list if slide.get("tp") == "FillInTheBlank" else val_single}
+                    "type": "qmWordBank",
+                    "data": {"v": val_single},
                 }
                 entries.append(entry)
-                
+
         # Also sync to C.chs if present
         chs = slide["C"].get("chs", [])
         if chs:
@@ -902,10 +1020,15 @@ def apply_question_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:
                     else:
                         chs_map[bid]["t"] = val_single
 
-    if edit.get("typeInAnswers") is not None and slide.get("tp") in ("TypeIn", "Numeric"):
+    if edit.get("typeInAnswers") is not None and slide.get("tp") in (
+        "TypeIn",
+        "Numeric",
+        "MultipleNumeric",
+    ):
+        answers = [str(ans).strip() for ans in edit["typeInAnswers"] if str(ans).strip()]
         slide.setdefault("C", {})
         slide["C"]["chs"] = [
-            {"i": f"ans-{idx}", "t": ans} for idx, ans in enumerate(edit["typeInAnswers"]) if ans.strip()
+            {"i": f"ans-{idx}", "t": ans} for idx, ans in enumerate(answers)
         ]
 
     if edit.get("timeLimitEnabled") is not None or edit.get("timeLimit") is not None:
@@ -934,10 +1057,38 @@ def apply_question_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:
     if edit.get("layout"):
         apply_question_layout_edit(slide, edit)
 
+    if "slideImages" in edit:
+        slide_images = edit["slideImages"]
+        slide.setdefault("_metadata", {})["slideImages"] = slide_images
+        from .layout import set_slide_attachment, _prune_orphan_slide_picture
+        from .quiz_builder import _ensure_slide_object, DEFAULT_PICTURE_RECT
+
+        if slide_images:
+            url = slide_images[0]
+            # Strip storage://images/ prefix if it's there so we don't double it
+            if url.startswith("storage://images/"):
+                url = url[17:]
+            set_slide_attachment(slide, url, zoom=True)
+            _ensure_slide_object(slide, "slidePicture", "Slide Picture 1", DEFAULT_PICTURE_RECT)
+        else:
+            set_slide_attachment(slide, None)
+            _prune_orphan_slide_picture(slide)
+
+    # Save Teky LMS metadata
+    for key in ("difficulty", "topic", "required", "useRegex", "explanation", "video"):
+        if edit.get(key) is not None:
+            slide.setdefault("_metadata", {})[key] = edit[key]
+
 
 def apply_quiz_meta(quiz_json: dict[str, Any], meta: dict[str, Any]) -> None:
+    teky_quiz = meta.get("tekyQuiz")
+    if isinstance(teky_quiz, dict):
+        quiz_json["_teky"] = copy.deepcopy(teky_quiz)
+        if teky_quiz.get("title"):
+            quiz_json.setdefault("d", {})["T"] = teky_quiz["title"]
     if meta.get("title"):
         quiz_json.setdefault("d", {})["T"] = meta["title"]
+        quiz_json.setdefault("_teky", {})["title"] = meta["title"]
     if meta.get("passingScore") is not None:
         try:
             quiz_json["d"]["sl"]["r"]["g"][0]["C"]["Rs"]["ps"]["v"] = int(meta["passingScore"])
@@ -1039,6 +1190,15 @@ class ScormSession:
         view["sessionId"] = self.session_id
         view["manifestTitle"] = self.meta.get("manifestTitle", "")
         view["fonts"] = self.get_fonts()
+        teky_quiz = view.get("tekyQuiz")
+        cover_ref = teky_quiz.get("coverImage") if isinstance(teky_quiz, dict) else None
+        if cover_ref and not str(cover_ref).startswith(("http://", "https://", "data:")):
+            try:
+                self.asset_path(str(cover_ref))
+            except FileNotFoundError:
+                # Old sessions may retain an unresolved Excel-relative path.
+                # Return the cover placeholder instead of a known-broken URL.
+                teky_quiz["coverImage"] = ""
         if not view["title"] or view["title"] == "Untitled Quiz":
             view["title"] = view["manifestTitle"] or view["title"]
         return view
@@ -1046,7 +1206,11 @@ class ScormSession:
     def save_view(self, payload: dict[str, Any]) -> dict[str, Any]:
         apply_quiz_meta(
             self.quiz_json,
-            {"title": payload.get("title"), "passingScore": payload.get("passingScore")},
+            {
+                "title": payload.get("title"),
+                "passingScore": payload.get("passingScore"),
+                "tekyQuiz": payload.get("tekyQuiz"),
+            },
         )
         apply_reporting_settings(self.quiz_json, payload.get("reporting"))
         intro_edit = payload.get("introSlide")
@@ -1061,6 +1225,8 @@ class ScormSession:
                 apply_special_slide_edit(slide, result_edits[sid])
 
         questions = {q["id"]: q for q in payload.get("questions", [])}
+        new_qs = [q for q in payload.get("questions", []) if q.get("isNew") or str(q.get("id", "")).startswith("new_")]
+
         groups = self.quiz_json["d"]["sl"]["g"]
         for gi, group in enumerate(groups):
             new_slides = []
@@ -1071,7 +1237,18 @@ class ScormSession:
                 if sid in questions:
                     apply_question_edit(slide, questions[sid])
                 new_slides.append(slide)
+
+            if gi == 0 and new_qs and new_slides:
+                import copy
+                import uuid
+                for q in new_qs:
+                    template = copy.deepcopy(new_slides[-1])
+                    template["i"] = f"slide_{uuid.uuid4().hex[:8]}"
+                    apply_question_edit(template, q)
+                    new_slides.append(template)
+
             group["S"] = new_slides
+
         ensure_media_registry(self.quiz_json, self.package_root)
         self.persist()
         return self.get_view()
@@ -1093,7 +1270,7 @@ class ScormSession:
         if not mapped and "{" in relative:
             clean_rel = relative.split("{")[0]
             mapped = self.quiz_json.get("rs", {}).get("i", {}).get(f"storage://images/{clean_rel}")
-            
+
         if not mapped:
             clean_rel = relative.split("{")[0]
             prefix = f"storage://images/{clean_rel}"
@@ -1101,13 +1278,13 @@ class ScormSession:
                 if k.startswith(prefix):
                     mapped = v
                     break
-            
+
         if mapped and isinstance(mapped, dict) and mapped.get("s"):
             # The 's' value is often a Windows path like "data\\images\\c9f7.png"
             # We need to extract just the filename part to let resolve_asset_path find it
             real_name = mapped["s"].replace("\\", "/").split("/")[-1]
             return resolve_asset_path(self.session_id, real_name)
-            
+
         return resolve_asset_path(self.session_id, relative)
 
     def replace_image(self, filename: str, content: bytes) -> str:
@@ -1132,7 +1309,7 @@ class ScormSession:
         view = self.get_view()
         safe_title = (view.get("title") or "Quiz").strip()
         safe_title = "".join(c if c.isalnum() or c in " _-" else "_" for c in safe_title)
-        
+
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
             added_names = set()
@@ -1144,14 +1321,14 @@ class ScormSession:
                 try:
                     path = self.asset_path(clean_filename)
                     if not path.is_file(): return
-                    
+
                     ext = path.suffix.lower()
                     final_name = f"{name_template}{ext}"
                     idx = 2
                     while final_name in added_names:
                         final_name = f"{name_template}_{idx}{ext}"
                         idx += 1
-                        
+
                     zf.write(path, final_name)
                     added_names.add(final_name)
                     processed_source_files.add(filename)
@@ -1162,22 +1339,22 @@ class ScormSession:
                 stt = q.get("questionIndex", 0) + 1
                 prefix = f"{safe_title}_{stt}"
                 processed_source_files.clear()
-                
+
                 # Choices (DA)
                 for idx, choice in enumerate(q.get("choices", [])):
                     add_file(choice.get("image"), f"{prefix}_IMG-DA{idx+1}")
                     add_file(choice.get("video"), f"{prefix}_VID-DA{idx+1}")
-                    
+
                 # Matching Pairs (DA)
                 for idx, pair in enumerate(q.get("matchingPairs", [])):
                     add_file(pair.get("leftImage"), f"{prefix}_IMG-DA-Left{idx+1}")
                     add_file(pair.get("rightImage"), f"{prefix}_IMG-DA-Right{idx+1}")
-                    
+
                 # Feedback (GT)
                 for fb in ["correct", "incorrect", "any", "attempt", "partial"]:
                     add_file(q.get("feedback", {}).get(f"{fb}Image"), f"{prefix}_IMG-GT")
                     add_file(q.get("feedback", {}).get(f"{fb}Video"), f"{prefix}_VID-GT")
-                    
+
                 # Content (ND) from layout objects
                 nd_img_idx = 1
                 nd_vid_idx = 1
@@ -1198,27 +1375,27 @@ class ScormSession:
                         pos = "ND" if nd_aud_idx == 1 else f"ND{nd_aud_idx}"
                         add_file(aud, f"{prefix}_AUD-{pos}")
                         nd_aud_idx += 1
-                        
+
                 # Any leftover slide images
                 for img in q.get("slideImages", []):
                     if img not in processed_source_files:
                         pos = "ND" if nd_img_idx == 1 else f"ND{nd_img_idx}"
                         add_file(img, f"{prefix}_IMG-{pos}")
                         nd_img_idx += 1
-                        
+
         return buffer.getvalue()
 
     def export_media_local(self) -> str:
         import shutil
         from pathlib import Path
-        
+
         view = self.get_view()
         safe_title = (view.get("title") or "Quiz").strip()
         safe_title = "".join(c if c.isalnum() or c in " _-" else "_" for c in safe_title)
-        
+
         target_dir = Path.home() / "Downloads" / "SNLT-CHECKQUIZ" / safe_title
         target_dir.mkdir(parents=True, exist_ok=True)
-        
+
         added_names = set()
         processed_source_files = set()
 
@@ -1228,14 +1405,14 @@ class ScormSession:
             try:
                 path = self.asset_path(clean_filename)
                 if not path.is_file(): return
-                
+
                 ext = path.suffix.lower()
                 final_name = f"{name_template}{ext}"
                 idx = 2
                 while final_name in added_names:
                     final_name = f"{name_template}_{idx}{ext}"
                     idx += 1
-                    
+
                 target_file = target_dir / final_name
                 shutil.copy2(path, target_file)
                 added_names.add(final_name)
@@ -1247,19 +1424,19 @@ class ScormSession:
             stt = q.get("questionIndex", 0) + 1
             prefix = f"{safe_title}_{stt}"
             processed_source_files.clear()
-            
+
             for idx, choice in enumerate(q.get("choices", [])):
                 add_file(choice.get("image"), f"{prefix}_IMG-DA{idx+1}")
                 add_file(choice.get("video"), f"{prefix}_VID-DA{idx+1}")
-                
+
             for idx, pair in enumerate(q.get("matchingPairs", [])):
                 add_file(pair.get("leftImage"), f"{prefix}_IMG-DA-Left{idx+1}")
                 add_file(pair.get("rightImage"), f"{prefix}_IMG-DA-Right{idx+1}")
-                
+
             for fb in ["correct", "incorrect", "any", "attempt", "partial"]:
                 add_file(q.get("feedback", {}).get(f"{fb}Image"), f"{prefix}_IMG-GT")
                 add_file(q.get("feedback", {}).get(f"{fb}Video"), f"{prefix}_VID-GT")
-                
+
             nd_img_idx = 1
             nd_vid_idx = 1
             nd_aud_idx = 1
@@ -1279,13 +1456,13 @@ class ScormSession:
                     pos = "ND" if nd_aud_idx == 1 else f"ND{nd_aud_idx}"
                     add_file(aud, f"{prefix}_AUD-{pos}")
                     nd_aud_idx += 1
-                    
+
             for img in q.get("slideImages", []):
                 if img not in processed_source_files:
                     pos = "ND" if nd_img_idx == 1 else f"ND{nd_img_idx}"
                     add_file(img, f"{prefix}_IMG-{pos}")
                     nd_img_idx += 1
-                    
+
         return str(target_dir)
 
 

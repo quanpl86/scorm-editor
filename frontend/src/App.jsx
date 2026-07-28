@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   assetUrl,
+  exportCmsJson,
   exportSession,
   importExcel,
   excelTemplateDownloadUrl,
@@ -22,6 +23,8 @@ import {
   supportsChoiceColumns,
 } from './choiceLayoutUtils'
 import LayoutCanvas from './LayoutCanvas'
+import TekyQuizEditor from './TekyQuizEditor'
+import TekyQuizPreview from './TekyQuizPreview'
 import PanelResizeHandle from './PanelResizeHandle'
 import QuestionSideView from './QuestionSideView'
 import QuizPreview from './QuizPreview'
@@ -32,6 +35,7 @@ import TextFormatToolbar, { TextFormatPreview } from './TextFormatToolbar'
 import { extractPlainTextFromHtml } from './richTextUtils'
 import { sanitizeLayoutForSave } from './canvasObjectUtils'
 import { buildStyledHtml, defaultFormat } from './textFormatUtils'
+import { GuideButton, UserGuideModal } from './UserGuide'
 
 const TYPE_LABELS = {
   MultipleChoice: 'Trắc nghiệm',
@@ -184,16 +188,32 @@ function buildSlideSavePayload(slide) {
   if (synced._dirtySubtitleFormat) payload.subtitleFormat = synced.subtitleFormat
   if (synced._canvasSubtitleHtml) payload.subtitleHtml = synced._canvasSubtitleHtml
   if (synced._dirtyLayout) payload.layout = sanitizeLayoutForSave(synced.layout)
-  if (synced._dirtyChoices) payload.choices = synced.choices
+  // Teky answer editors are controlled collections. Send their full current
+  // value so add/delete/reorder operations never depend on a fragile dirty flag.
+  if (synced.choices !== undefined) payload.choices = synced.choices
+  if (synced.matchingPairs !== undefined) payload.matchingPairs = synced.matchingPairs
+  if (synced.blankAnswers !== undefined) payload.blankAnswers = synced.blankAnswers
   if (synced._dirtyFeedback) payload.feedback = synced.feedback
-  if (synced._dirtyTypeIn) payload.typeInAnswers = synced.typeInAnswers
-  if (synced._dirtyWordBank) payload.wordBankWords = synced.wordBankWords
+  if (synced.typeInAnswers !== undefined) payload.typeInAnswers = synced.typeInAnswers
+  if (synced.wordBankWords !== undefined) payload.wordBankWords = synced.wordBankWords
   if (synced._dirtyRichHtml) payload.richHtml = synced.layout?.choicePreview?.richHtml
+  if (synced.isNew) payload.isNew = true
+
+  const force = !!synced.isNew;
+
   if (synced.slideRole === 'question') {
     payload.points = synced.points ?? 1
     payload.timeLimitEnabled = !!synced.timeLimitEnabled
     payload.timeLimit = synced.timeLimit ?? 0
     payload.shuffleAnswers = !!synced.shuffleAnswers
+
+    if (synced.difficulty !== undefined) payload.difficulty = synced.difficulty
+    if (synced.topic !== undefined) payload.topic = synced.topic
+    if (synced.required !== undefined || force) payload.required = !!synced.required
+    if (synced.useRegex !== undefined || force) payload.useRegex = !!synced.useRegex
+    if (synced.explanation !== undefined || force) payload.explanation = synced.explanation || ''
+    if (synced.video !== undefined || force) payload.video = synced.video || ''
+    if (synced._dirtySlideImages || force) payload.slideImages = synced.slideImages || []
   }
   return payload
 }
@@ -230,14 +250,23 @@ function applyDirtyFlags(slide, patch) {
   if (fieldChanged(slide, patch, 'subtitleFormat')) next._dirtySubtitleFormat = true
   if (fieldChanged(slide, patch, 'layout') || patch._dirtyLayout) next._dirtyLayout = true
   if (fieldChanged(slide, patch, 'choices')) next._dirtyChoices = true
+  if (fieldChanged(slide, patch, 'matchingPairs')) next._dirtyMatching = true
+  if (fieldChanged(slide, patch, 'blankAnswers')) next._dirtyBlanks = true
   if (fieldChanged(slide, patch, 'feedback')) next._dirtyFeedback = true
   if (fieldChanged(slide, patch, 'typeInAnswers')) next._dirtyTypeIn = true
   if (fieldChanged(slide, patch, 'wordBankWords')) next._dirtyWordBank = true
+  if (fieldChanged(slide, patch, 'slideImages')) next._dirtySlideImages = true
   if (
     fieldChanged(slide, patch, 'points')
     || fieldChanged(slide, patch, 'timeLimit')
     || fieldChanged(slide, patch, 'timeLimitEnabled')
     || fieldChanged(slide, patch, 'shuffleAnswers')
+    || fieldChanged(slide, patch, 'difficulty')
+    || fieldChanged(slide, patch, 'topic')
+    || fieldChanged(slide, patch, 'required')
+    || fieldChanged(slide, patch, 'useRegex')
+    || fieldChanged(slide, patch, 'explanation')
+    || fieldChanged(slide, patch, 'video')
   ) {
     next._dirtyQuestionOptions = true
   }
@@ -248,6 +277,7 @@ function buildSavePayload(quiz) {
   return {
     title: quiz.title,
     passingScore: quiz.passingScore,
+    tekyQuiz: quiz.tekyQuiz || {},
     reporting: normalizeReporting(quiz.reporting),
     introSlide: buildSlideSavePayload(quiz.introSlide),
     resultSlides: (quiz.resultSlides || []).map(buildSlideSavePayload).filter(Boolean),
@@ -530,7 +560,7 @@ function ImportReport({ report, summary, questions, onSelectSlide, onDismiss, co
   )
 }
 
-function ImportPage({ onImport, loading, loadingMessage, error, importReport }) {
+function ImportPage({ onImport, loading, loadingMessage, error, importReport, onOpenGuide }) {
   const scormInputRef = useRef(null)
   const excelInputRef = useRef(null)
   const [scormDrag, setScormDrag] = useState(false)
@@ -567,8 +597,15 @@ function ImportPage({ onImport, loading, loadingMessage, error, importReport }) 
   return (
     <div className="import-page">
       <div className="import-card">
-        <h2>SCORM Editor</h2>
-        <p>Import gói SCORM iSpring Quiz hoặc tạo quiz mới từ template Excel iSpring QuizMaker.</p>
+        <div className="import-card-header">
+          <div>
+            <h2>SCORM Editor</h2>
+            <p>Import gói SCORM iSpring Quiz hoặc tạo quiz mới từ template Excel iSpring QuizMaker.</p>
+          </div>
+          {onOpenGuide && (
+            <GuideButton onClick={onOpenGuide} />
+          )}
+        </div>
 
         {error && (
           <div className="error-banner" role="alert">
@@ -912,9 +949,23 @@ function QuestionEditor({ question, sessionId, onChange, onDelete, onImageUpload
         </div>
       )}
 
-      {(question.type === 'TypeIn' || question.type === 'Numeric') && (
+      {question.type === 'TypeIn' && (
         <div className="editor-section">
-          <h4>{question.type === 'Numeric' ? 'Đáp án số (Numeric)' : 'Đáp án chấp nhận (Type In)'}</h4>
+          <h4>Đáp án đúng chấp nhận (Trả lời ngắn)</h4>
+          <div className="field">
+            <input
+              type="text"
+              value={question.typeInAnswers?.[0] || ''}
+              onChange={(e) => update({ typeInAnswers: [e.target.value] })}
+              placeholder="Chỉ nhập một đáp án đúng"
+            />
+          </div>
+        </div>
+      )}
+
+      {question.type === 'Numeric' && (
+        <div className="editor-section">
+          <h4>Đáp án số (Numeric)</h4>
           {(question.typeInAnswers || []).map((ans, idx) => (
             <div key={idx} className="field">
               <input
@@ -928,12 +979,6 @@ function QuestionEditor({ question, sessionId, onChange, onDelete, onImageUpload
               />
             </div>
           ))}
-          <button
-            className="btn btn-sm"
-            onClick={() => update({ typeInAnswers: [...(question.typeInAnswers || []), ''] })}
-          >
-            + Thêm đáp án
-          </button>
         </div>
       )}
 
@@ -951,16 +996,31 @@ function QuestionEditor({ question, sessionId, onChange, onDelete, onImageUpload
         </div>
       )}
 
-      {(question.type === 'FillInTheBlank' || question.type === 'WordBank') && (
+      {question.type === 'FillInTheBlank' && (
         <div className="editor-section">
-          <h4>
-            {question.type === 'WordBank' ? 'Đáp án đúng (Word Bank)' : 'Đáp án điền khuyết'}
-            {question.type === 'FillInTheBlank' && (
-              <span style={{ fontSize: '0.8em', fontWeight: 'normal', marginLeft: 8, color: '#666' }}>
-                (Phân cách nhiều đáp án bằng dấu chấm phẩy ;)
-              </span>
-            )}
-          </h4>
+          <h4>Đáp án đúng chấp nhận (Điền vào chỗ trống)</h4>
+          <p style={{ fontSize: '0.85rem', color: '#666' }}>
+            Dùng ký tự <strong>___</strong> trong nội dung câu hỏi để đánh dấu chỗ trống.
+          </p>
+          <div className="field">
+            <input
+              type="text"
+              value={question.blankAnswers?.[0]?.values?.[0] || ''}
+              onChange={(e) => update({
+                blankAnswers: [{
+                  id: question.blankAnswers?.[0]?.id || 'qmFillInTheBlank0',
+                  values: [e.target.value],
+                }],
+              })}
+              placeholder="Chỉ nhập một đáp án đúng"
+            />
+          </div>
+        </div>
+      )}
+
+      {question.type === 'WordBank' && (
+        <div className="editor-section">
+          <h4>Đáp án đúng (Word Bank)</h4>
           {(question.blankAnswers || []).length === 0 && (
              <div style={{ fontSize: '0.85rem', color: '#666' }}>Không có ô đáp án nào được tìm thấy. Vui lòng import lại gói SCORM.</div>
           )}
@@ -972,8 +1032,8 @@ function QuestionEditor({ question, sessionId, onChange, onDelete, onImageUpload
                 value={(ans.values || []).join('; ')}
                 onChange={(e) => {
                   const blankAnswers = [...(question.blankAnswers || [])]
-                  blankAnswers[idx] = { 
-                    ...ans, 
+                  blankAnswers[idx] = {
+                    ...ans,
                     values: e.target.value.split(';').map(s => s.trim()).filter(Boolean)
                   }
                   update({ blankAnswers })
@@ -1380,6 +1440,7 @@ export default function App() {
     canRedo,
   } = useQuizHistory(null)
   const [selectedId, setSelectedId] = useState(null)
+  const [quizMode, setQuizMode] = useState('teky') // 'teky' or 'ispring'
   const [workspaceMode, setWorkspaceMode] = useState('edit')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -1388,6 +1449,7 @@ export default function App() {
   const [loadingMessage, setLoadingMessage] = useState(null)
   const [toast, setToast] = useState(null)
   const [canvasEditing, setCanvasEditing] = useState(false)
+  const [guideOpen, setGuideOpen] = useState(false)
   const sidebarResize = useResizableWidth('scorm-editor.sidebar-width', 320, { min: 240, max: 480 })
 
   const applySavedState = useCallback((savedView) => {
@@ -1405,19 +1467,33 @@ export default function App() {
         })
       }
 
-      const savedQuestions = Object.fromEntries(
-        (savedView.questions || []).map((q) => [q.id, clearSlideDirtyFlags(q)]),
+      const savedQuestionList = (savedView.questions || []).map(clearSlideDirtyFlags)
+      const savedQuestions = Object.fromEntries(savedQuestionList.map((q) => [q.id, q]))
+      const previousPersistentIds = new Set(
+        (prev.questions || []).filter((q) => !q.isNew).map((q) => q.id),
       )
+      const newlyCreatedQuestions = savedQuestionList.filter(
+        (q) => !previousPersistentIds.has(q.id),
+      )
+      let createdIndex = 0
       const questions = (prev.questions || [])
         .filter((q) => !q.deleted)
-        .map((q) => savedQuestions[q.id] || clearSlideDirtyFlags(syncSlideCanvasHtml(q)))
+        .map((q) => {
+          if (q.isNew && newlyCreatedQuestions[createdIndex]) {
+            const created = newlyCreatedQuestions[createdIndex]
+            createdIndex += 1
+            return created
+          }
+          return savedQuestions[q.id] || clearSlideDirtyFlags(syncSlideCanvasHtml(q))
+        })
 
       return clearDirtyFlags({
         ...prev,
         title: savedView.title ?? prev.title,
+        tekyQuiz: savedView.tekyQuiz ?? prev.tekyQuiz,
         passingScore: savedView.passingScore ?? prev.passingScore,
         reporting: normalizeReporting(savedView.reporting ?? prev.reporting),
-        questionCount: savedView.questionCount ?? questions.length,
+        questionCount: questions.length,
         questions,
         introSlide: savedView.introSlide
           ? clearSlideDirtyFlags(savedView.introSlide)
@@ -1432,7 +1508,9 @@ export default function App() {
     quiz,
     buildPayload: buildSavePayload,
     applySavedState,
-    paused: canvasEditing,
+    // Teky LMS is an explicit-save editor. Keeping blank draft rows local until
+    // Save Quiz prevents backend normalization from removing a row mid-edit.
+    paused: canvasEditing || quizMode === 'teky',
   })
 
   const showToast = (msg, type = 'success') => {
@@ -1593,12 +1671,13 @@ export default function App() {
     if (!quiz) return
     setSaving(true)
     try {
-      await saveSession(quiz.sessionId, buildSavePayload(quiz))
-      const blob = await exportSession(quiz.sessionId, quiz.title)
+      const saved = await persistQuiz()
+      const exportTitle = saved?.title || quiz.title
+      const blob = await exportSession(quiz.sessionId, exportTitle)
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${quiz.title || 'scorm-export'}.zip`
+      a.download = `${exportTitle || 'scorm-export'}.zip`
       a.click()
       URL.revokeObjectURL(url)
       showToast('Đã export SCORM zip')
@@ -1613,8 +1692,23 @@ export default function App() {
     if (!quiz) return
     setSaving(true)
     try {
+      await persistQuiz()
       const result = await exportMediaLocal(quiz.sessionId)
       showToast(`Đã xuất toàn bộ ảnh/video ra thư mục: ${result.path}`)
+    } catch (err) {
+      showToast(err.message, 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleExportCmsJson = async () => {
+    if (!quiz) return
+    setSaving(true)
+    try {
+      await persistQuiz()
+      const result = await exportCmsJson(quiz.sessionId)
+      showToast(`✅ Đã lưu ${result.questionCount} câu hỏi → ${result.path}`)
     } catch (err) {
       showToast(err.message, 'error')
     } finally {
@@ -1638,6 +1732,18 @@ export default function App() {
       <div className="app">
         <header className="header">
           <h1><span>SCORM</span> Editor</h1>
+          <div className="header-actions">
+            <select
+              className="quiz-mode-selector"
+              value={quizMode}
+              onChange={(e) => setQuizMode(e.target.value)}
+              style={{ marginRight: '16px', padding: '6px 12px', borderRadius: '4px', border: '1px solid #ccc' }}
+            >
+              <option value="teky">🌟 Mode: Teky LMS</option>
+              <option value="ispring">📦 Mode: iSpring SCORM</option>
+            </select>
+            <GuideButton onClick={() => setGuideOpen(true)} />
+          </div>
         </header>
         <ImportPage
           onImport={handleImport}
@@ -1645,7 +1751,9 @@ export default function App() {
           loadingMessage={loadingMessage}
           error={error}
           importReport={importReport}
+          onOpenGuide={() => setGuideOpen(true)}
         />
+        <UserGuideModal open={guideOpen} onClose={() => setGuideOpen(false)} />
       </div>
     )
   }
@@ -1653,13 +1761,20 @@ export default function App() {
   if (workspaceMode === 'preview') {
     return (
       <div className="app app-preview">
-        <QuizPreview
-          quiz={quiz}
-          saving={saving || autoSaving}
-          previewRevision={previewRevision}
-          onBack={() => setWorkspaceMode('edit')}
-          onSave={persistQuiz}
-        />
+        {quizMode === 'teky' ? (
+          <TekyQuizPreview
+            quiz={quiz}
+            onBack={() => setWorkspaceMode('edit')}
+          />
+        ) : (
+          <QuizPreview
+            quiz={quiz}
+            saving={saving || autoSaving}
+            previewRevision={previewRevision}
+            onBack={() => setWorkspaceMode('edit')}
+            onSave={persistQuiz}
+          />
+        )}
         {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
       </div>
     )
@@ -1673,6 +1788,16 @@ export default function App() {
       <header className="header">
         <h1><span>SCORM</span> Editor</h1>
         <div className="header-actions">
+          <select
+            className="quiz-mode-selector"
+            value={quizMode}
+            onChange={(e) => setQuizMode(e.target.value)}
+            style={{ marginRight: '16px', padding: '6px 12px', borderRadius: '4px', border: '1px solid #ccc' }}
+          >
+            <option value="teky">🌟 Mode: Teky LMS</option>
+            <option value="ispring">📦 Mode: iSpring SCORM</option>
+          </select>
+          <GuideButton onClick={() => setGuideOpen(true)} />
           <div className="history-actions">
             <button
               type="button"
@@ -1708,14 +1833,24 @@ export default function App() {
           <button className="btn" disabled={saving} onClick={handleOpenPreview}>
             Xem & Làm bài
           </button>
-          <button className="btn btn-primary" disabled={saving} onClick={handleSave}>
-            {saving ? 'Đang lưu...' : 'Lưu'}
-          </button>
+          {quizMode !== 'teky' && (
+            <button className="btn btn-primary" disabled={saving} onClick={handleSave}>
+              {saving ? 'Đang lưu...' : 'Lưu'}
+            </button>
+          )}
           <button className="btn btn-primary" disabled={saving} onClick={handleExport}>
             Export SCORM
           </button>
           <button className="btn btn-primary" disabled={saving} onClick={handleExportMedia}>
             Export Media
+          </button>
+          <button
+            className="btn btn-cms-export"
+            disabled={saving}
+            onClick={handleExportCmsJson}
+            title="Xuất toàn bộ câu hỏi sang JSON để import vào LMS CMS"
+          >
+            📋 Export CMS JSON
           </button>
         </div>
       </header>
@@ -1733,109 +1868,128 @@ export default function App() {
         </div>
       )}
 
-      <div className="main">
-        <aside className="sidebar" style={{ width: sidebarResize.width }}>
-          <div className="sidebar-header">
-            <h3>Danh sách slide</h3>
-            <div className="stats-row">
-              <span className="stat"><strong>{activeQuestions.length}</strong> câu hỏi</span>
-              <span className="stat"><strong>{quiz.groups?.length}</strong> nhóm</span>
-            </div>
-          </div>
-
-          <div className="question-list">
-            {quiz.introSlide && (
-              <div>
-                <div className="group-label">Mở đầu</div>
-                <button
-                  className={`question-item special-slide ${quiz.introSlide.id === selectedId ? 'active' : ''}`}
-                  onClick={() => setSelectedId(quiz.introSlide.id)}
-                >
-                  <div className="q-item-top">
-                    <span className="q-num">Intro</span>
-                    <span className="q-type">{TYPE_LABELS.IntroSlide}</span>
-                  </div>
-                  <div className="q-preview">{quiz.introSlide.questionText || '(không có text)'}</div>
-                </button>
+      {quizMode === 'teky' && quiz ? (
+        <TekyQuizEditor
+          quiz={quiz}
+          activeSlide={selectedSlide}
+          onQuizChange={setQuiz}
+          onSlideChange={updateSlide}
+          onSelectSlide={setSelectedId}
+          sessionId={quiz.sessionId}
+          onSave={handleSave}
+          saving={saving}
+        />
+      ) : quiz ? (
+        <div className="main">
+          <aside className="sidebar" style={{ width: sidebarResize.width }}>
+            <div className="sidebar-header">
+              <h3>Danh sách slide</h3>
+              <div className="stats-row">
+                <span className="stat"><strong>{activeQuestions.length}</strong> câu hỏi</span>
+                <span className="stat"><strong>{quiz.groups?.length}</strong> nhóm</span>
               </div>
-            )}
+            </div>
 
-            {quiz.questions.map((q) => {
-              const showGroup = q.groupTitle !== lastGroup
-              lastGroup = q.groupTitle
-              return (
-                <div key={q.id}>
-                  {showGroup && <div className="group-label">{q.groupTitle}</div>}
+            <div className="question-list">
+              {quiz.introSlide && (
+                <div>
+                  <div className="group-label">Mở đầu</div>
                   <button
-                    className={`question-item ${q.id === selectedId ? 'active' : ''} ${q.deleted ? 'deleted' : ''}`}
-                    onClick={() => !q.deleted && setSelectedId(q.id)}
-                    disabled={q.deleted}
+                    className={`question-item special-slide ${quiz.introSlide.id === selectedId ? 'active' : ''}`}
+                    onClick={() => setSelectedId(quiz.introSlide.id)}
                   >
                     <div className="q-item-top">
-                      <span className="q-num">#{q.questionIndex + 1}</span>
-                      <span className={`q-type ${q.editableLevel === 'readonly' ? 'readonly' : ''}`}>
-                        {TYPE_LABELS[q.type] || q.type}
-                      </span>
+                      <span className="q-num">Intro</span>
+                      <span className="q-type">{TYPE_LABELS.IntroSlide}</span>
                     </div>
-                    <div className="q-preview">{q.questionText || '(không có text)'}</div>
-                    {q.layout?.overlaps?.some((o) => o.severity === 'error') && (
-                      <span className="q-layout-warn">⚠ layout</span>
-                    )}
+                    <div className="q-preview">{quiz.introSlide.questionText || '(không có text)'}</div>
                   </button>
                 </div>
-              )
-            })}
+              )}
 
-            {quiz.resultSlides?.length > 0 && (
-              <div>
-                <div className="group-label">Kết quả</div>
-                {quiz.resultSlides.map((r) => (
-                  <button
-                    key={r.id}
-                    className={`question-item special-slide ${r.id === selectedId ? 'active' : ''}`}
-                    onClick={() => setSelectedId(r.id)}
-                  >
-                    <div className="q-item-top">
-                      <span className="q-num">{RESULT_KIND_LABELS[r.resultKind] || 'Kết quả'}</span>
-                      <span className="q-type">{TYPE_LABELS.ResultSlide}</span>
-                    </div>
-                    <div className="q-preview">{r.questionText || '(không có text)'}</div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </aside>
+              {quiz.questions.map((q) => {
+                const showGroup = q.groupTitle !== lastGroup
+                lastGroup = q.groupTitle
+                return (
+                  <div key={q.id}>
+                    {showGroup && <div className="group-label">{q.groupTitle}</div>}
+                    <button
+                      className={`question-item ${q.id === selectedId ? 'active' : ''} ${q.deleted ? 'deleted' : ''}`}
+                      onClick={() => !q.deleted && setSelectedId(q.id)}
+                      disabled={q.deleted}
+                    >
+                      <div className="q-item-top">
+                        <span className="q-num">#{q.questionIndex + 1}</span>
+                        <span className={`q-type ${q.editableLevel === 'readonly' ? 'readonly' : ''}`}>
+                          {TYPE_LABELS[q.type] || q.type}
+                        </span>
+                      </div>
+                      <div className="q-preview">{q.questionText || '(không có text)'}</div>
+                      {q.layout?.overlaps?.some((o) => o.severity === 'error') && (
+                        <span className="q-layout-warn">⚠ layout</span>
+                      )}
+                    </button>
+                  </div>
+                )
+              })}
 
-        <PanelResizeHandle
-          side="right"
-          label="Kéo để đổi chiều rộng danh sách câu hỏi"
-          onPointerDown={(e) => sidebarResize.onPointerDown(e, 'expand-right')}
-        />
+              {quiz.resultSlides?.length > 0 && (
+                <div>
+                  <div className="group-label">Kết quả</div>
+                  {quiz.resultSlides.map((r) => (
+                    <button
+                      key={r.id}
+                      className={`question-item special-slide ${r.id === selectedId ? 'active' : ''}`}
+                      onClick={() => setSelectedId(r.id)}
+                    >
+                      <div className="q-item-top">
+                        <span className="q-num">{RESULT_KIND_LABELS[r.resultKind] || 'Kết quả'}</span>
+                        <span className="q-type">{TYPE_LABELS.ResultSlide}</span>
+                      </div>
+                      <div className="q-preview">{r.questionText || '(không có text)'}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </aside>
 
-        <EditorWorkspace
-          slide={selectedSlide}
-          quiz={quiz}
-          selectedId={selectedId}
-          sessionId={quiz.sessionId}
-          fonts={quiz.fonts}
-          saving={saving}
-          autoSaving={autoSaving}
-          previewRevision={previewRevision}
-          questionCount={activeQuestions.length}
-          setQuiz={setQuiz}
-          onChange={updateSlide}
-          onPatch={patchSlide}
-          onDelete={deleteQuestion}
-          onImageUpload={handleImageUpload}
-          onSelectSlide={setSelectedId}
-          onSave={persistQuiz}
-          onCanvasEditStart={beginCanvasEdit}
-          onCanvasEditStateChange={setCanvasEditing}
-        />
-      </div>
+          <PanelResizeHandle
+            side="right"
+            label="Kéo để đổi chiều rộng danh sách câu hỏi"
+            onPointerDown={(e) => sidebarResize.onPointerDown(e, 'expand-right')}
+          />
+
+          <EditorWorkspace
+            slide={selectedSlide}
+            quiz={quiz}
+            selectedId={selectedId}
+            sessionId={quiz.sessionId}
+            fonts={quiz.fonts}
+            saving={saving}
+            autoSaving={autoSaving}
+            previewRevision={previewRevision}
+            questionCount={activeQuestions.length}
+            setQuiz={setQuiz}
+            onChange={updateSlide}
+            onPatch={patchSlide}
+            onDelete={deleteQuestion}
+            onImageUpload={handleImageUpload}
+            onSelectSlide={setSelectedId}
+            onSave={persistQuiz}
+            onCanvasEditStart={beginCanvasEdit}
+            onCanvasEditStateChange={setCanvasEditing}
+          />
+        </div>
+      ) : (
+        <div className="empty-state">
+          <p>Chưa có dữ liệu quiz.</p>
+          <p>Vui lòng Import file Excel hoặc SCORM để bắt đầu.</p>
+        </div>
+      )}
 
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
+      <UserGuideModal open={guideOpen} onClose={() => setGuideOpen(false)} />
     </div>
   )
 }

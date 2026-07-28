@@ -2,6 +2,16 @@
 
 Dự án này là một ứng dụng Web Full-stack bao gồm Backend xây dựng bằng Python (FastAPI) và Frontend sử dụng Node.js.
 
+## Teky LMS — nguồn dữ liệu chuẩn
+
+Gói import chính thức là `ImportTemplate/Full_quiz_9_types_teky_lms.zip`, gồm workbook
+`Full_quiz_9_types_teky_lms_system_ids.xlsx` và thư mục `media/`. Workbook có sheet `Quiz Questions`
+cho toàn bộ nội dung câu hỏi và sheet `Quiz Settings` cho toàn bộ cấu hình quiz theo
+`docs/cms_json_full_sample.json`. Quiz ID và Question ID đều được hệ thống tự sinh,
+không nhập trong Excel và không hiển thị trên Editor. `Image` thuộc từng câu hỏi;
+ảnh đại diện chung của quiz được khai báo bằng `coverImage` trong sheet
+`Quiz Settings`. Xem đặc tả tại `docs/TEKY_EXCEL_SCHEMA.md`.
+
 ## 1. Yêu cầu hệ thống (Prerequisites)
 Để có thể chạy dự án trên máy cá nhân (local), bạn cần phải cài đặt sẵn các công cụ sau:
 - **Python 3+**: [Tải tại đây](https://python.org) (Dùng để chạy Backend).

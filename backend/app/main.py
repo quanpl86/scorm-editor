@@ -4,6 +4,7 @@ import shutil
 import ssl
 import urllib.error
 import urllib.request
+import uuid
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -15,7 +16,8 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .excel_import import parse_excel_file
+from .cms_export import quiz_to_cms_json
+from .excel_import import parse_excel_file, parse_quiz_settings
 from .fonts import resolve_font_path
 from .preview import build_preview_html, is_report_proxy_target_allowed, preview_res_root
 from .quiz_builder import IMPORT_TEMPLATE_DIR, MASTER_SCORM, build_quiz_from_excel
@@ -26,6 +28,7 @@ from .scorm_parser import (
     find_index_html,
     get_package_root,
     get_session,
+    quiz_to_view,
     resolve_asset_path,
 )
 
@@ -54,6 +57,11 @@ EXCEL_MEDIA_SAMPLE = IMPORT_TEMPLATE_DIR / "Media_import_sample.xlsx"
 EXCEL_FIB_WB_SAMPLE = IMPORT_TEMPLATE_DIR / "FIB_WB_import_sample.xlsx"
 
 EXCEL_TEMPLATES: dict[str, dict[str, str]] = {
+    "full": {
+        "path": str(IMPORT_TEMPLATE_DIR / "Full_quiz_9_types_teky_lms.zip"),
+        "label": "Full_quiz_9_types_teky_lms.zip",
+        "description": "Gói chuẩn Teky LMS: Excel cấu hình quiz/question + đầy đủ media",
+    },
     "sample": {
         "path": str(EXCEL_SAMPLE),
         "label": "Sample_import_template.xls",
@@ -77,6 +85,7 @@ EXCEL_SUFFIXES = {".xls", ".xlsx"}
 class SavePayload(BaseModel):
     title: str | None = None
     passingScore: int | None = None
+    tekyQuiz: dict | None = None
     reporting: dict | None = None
     introSlide: dict | None = None
     resultSlides: list[dict] = []
@@ -132,6 +141,10 @@ def _create_quiz_from_excel(
         )
 
     rows = parse_excel_file(excel_path)
+    teky_quiz = parse_quiz_settings(excel_path)
+    # Quiz IDs are system-owned, just like question IDs. Generate once per
+    # import, persist in the editor session, and reuse for every export.
+    teky_quiz["id"] = f"quiz_{uuid.uuid4().hex}"
     session = ScormSession.create_from_source(MASTER_SCORM)
     quiz_json, report = build_quiz_from_excel(
         session.quiz_json,
@@ -140,6 +153,7 @@ def _create_quiz_from_excel(
         excel_dir=excel_dir,
         group_title=group_title,
         quiz_title=quiz_title,
+        teky_quiz=teky_quiz,
     )
     session.quiz_json = quiz_json
     ensure_media_registry(session.quiz_json, session.package_root)
@@ -165,7 +179,7 @@ def _create_quiz_from_excel(
         "warnings": len(media_warnings),
         "mediaWarnings": media_warnings,
         "groupTitle": group_title,
-        "quizTitle": quiz_title or view.get("title"),
+        "quizTitle": quiz_title or teky_quiz.get("title") or view.get("title"),
     }
     return view
 
@@ -361,13 +375,41 @@ def get_asset(session_id: str, filename: str):
 
 
 @app.post("/api/session/{session_id}/asset/{filename}")
-async def upload_asset(session_id: str, filename: str, file: UploadFile = File(...)):
+async def upload_asset(session_id: str, filename: str, s3: bool = False, file: UploadFile = File(...)):
     try:
         session = get_session(session_id)
         content = await file.read()
         saved = session.replace_image(filename, content)
         session.persist()
-        return {"filename": saved, "url": f"/api/session/{session_id}/asset/{saved}"}
+
+        s3_warning = None
+        if s3:
+            try:
+                from .s3_service import upload_file_to_s3
+
+                local_path = session.asset_path(saved)
+                if local_path:
+                    s3_url = upload_file_to_s3(str(local_path))
+                    if s3_url:
+                        return {
+                            "filename": s3_url,
+                            "url": s3_url,
+                            "storage": "s3",
+                        }
+                    s3_warning = "Không upload được FPT S3; đang dùng bản local."
+            except Exception as exc:
+                # The editor must keep the uploaded file even when optional S3
+                # dependencies or credentials are not available in this runtime.
+                s3_warning = f"FPT S3 chưa sẵn sàng ({exc}); đang dùng bản local."
+
+        result = {
+            "filename": saved,
+            "url": f"/api/session/{session_id}/asset/{saved}",
+            "storage": "local",
+        }
+        if s3_warning:
+            result["warning"] = s3_warning
+        return result
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc)) from exc
 
@@ -389,6 +431,69 @@ def export_session(session_id: str, payload: ExportPayload | None = None):
         raise HTTPException(404, str(exc)) from exc
     except Exception as exc:
         raise HTTPException(400, f"Lỗi export: {exc}") from exc
+
+
+@app.post("/api/session/{session_id}/export-cms-json-local")
+def export_cms_json_local(session_id: str, request: Request):
+    """
+    Export all questions from SCORM quiz as Teky-school JSON (same schema as scorm-cvt)
+    and save directly to ~/Downloads/SNLT-CHECKQUIZ/<quiz_title>/ on the local machine.
+    Output is wrapped in an array: [quiz] — matching scorm-cvt file format.
+    """
+    import json as _json
+    from pathlib import Path
+
+    try:
+        session = get_session(session_id)
+        base = str(request.base_url).rstrip("/")
+        quiz_view = quiz_to_view(session.quiz_json)
+
+        from .s3_service import upload_file_to_s3
+        upload_cache: dict[str, str | None] = {}
+
+        def handle_s3_upload(filename: str) -> str | None:
+            if filename in upload_cache:
+                return upload_cache[filename]
+            try:
+                local_path = session.asset_path(filename)
+            except FileNotFoundError:
+                upload_cache[filename] = None
+                return None
+            if local_path and Path(local_path).exists():
+                s3_url = upload_file_to_s3(str(local_path))
+                if s3_url:
+                    upload_cache[filename] = s3_url
+                    return s3_url
+            upload_cache[filename] = None
+            return None
+
+        quiz_obj = quiz_to_cms_json(quiz_view, session_id, base_url=base, s3_uploader=handle_s3_upload)
+
+        # Wrap in array — same format as scorm-cvt saves to output/
+        cms_content = _json.dumps([quiz_obj], ensure_ascii=False, indent=2)
+
+        # Build safe filename from quiz title
+        safe_title = (quiz_view.get("title") or "quiz-export").strip()
+        safe_title = "".join(c if c.isalnum() or c in " _-" else "_" for c in safe_title)[:80]
+
+        target_dir = Path.home() / "Downloads" / "SNLT-CHECKQUIZ" / "JSON-EXPORT"
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        filename = f"{safe_title}_teky.json"
+        target_file = target_dir / filename
+        target_file.write_text(cms_content, encoding="utf-8")
+
+        q_count = len(quiz_obj.get("questions", []))
+        return {
+            "success": True,
+            "path": str(target_file),
+            "questionCount": q_count,
+            "title": quiz_view.get("title", ""),
+        }
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(400, f"Lỗi export Teky JSON: {exc}") from exc
 
 
 @app.post("/api/session/{session_id}/export-media")
@@ -432,22 +537,22 @@ def export_single_media_local(session_id: str, payload: SingleMediaExportPayload
         view = session.get_view()
         safe_title = (view.get("title") or "Quiz").strip()
         safe_title = "".join(c if c.isalnum() or c in " _-" else "_" for c in safe_title)
-        
+
         target_dir = Path.home() / "Downloads" / "SNLT-CHECKQUIZ" / safe_title
         target_dir.mkdir(parents=True, exist_ok=True)
-        
+
         clean_filename = payload.filename
         if "{" in clean_filename:
             clean_filename = clean_filename.split("{")[0]
-            
+
         source_path = session.asset_path(clean_filename)
         if not source_path.is_file():
             raise HTTPException(404, "Không tìm thấy file nguồn")
-            
+
         ext = source_path.suffix.lower()
         final_name = f"{payload.target_name}{ext}"
         target_file = target_dir / final_name
-        
+
         shutil.copy2(source_path, target_file)
         return {"success": True, "path": str(target_file)}
     except FileNotFoundError as exc:

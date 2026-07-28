@@ -106,6 +106,11 @@ def load_slide_templates() -> dict[str, dict[str, Any]]:
         numeric["tp"] = "Numeric"
         templates["Numeric"] = numeric
 
+    if "MultipleNumeric" not in templates and "TypeIn" in templates:
+        mnum = copy.deepcopy(templates["TypeIn"])
+        mnum["tp"] = "MultipleNumeric"
+        templates["MultipleNumeric"] = mnum
+
     return templates
 
 
@@ -116,16 +121,17 @@ def _blank_ids_from_html(html_text: str, prefix: str) -> list[str]:
 def _upsert_blank_answer(
     rt: dict[str, Any],
     blank_id: str,
-    value: str,
+    values: list[str],
     blank_type: str,
 ) -> None:
+    clean_values = [str(value).strip() for value in values if str(value).strip()]
     entries = rt.setdefault("r", [])
     for entry in entries:
         if entry.get("id") == blank_id:
-            entry["data"] = {"v": [value]}
+            entry["data"] = {"v": clean_values}
             entry["type"] = blank_type
             return
-    entries.append({"data": {"v": [value]}, "id": blank_id, "type": blank_type})
+    entries.append({"data": {"v": clean_values}, "id": blank_id, "type": blank_type})
 
 
 def _upsert_wordbank_answer(rt: dict[str, Any], blank_id: str, value: str) -> None:
@@ -321,7 +327,8 @@ def _copy_image_to_package(src: Path, package_root: Path) -> str:
     images_dir = package_root / "res" / "data" / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
     dest_name = f"img-import-{uuid.uuid4().hex[:12]}{src.suffix.lower()}"
-    shutil.copy2(src, images_dir / dest_name)
+    dest_path = images_dir / dest_name
+    shutil.copy2(src, dest_path)
     return dest_name
 
 
@@ -329,7 +336,8 @@ def _copy_audio_to_package(src: Path, package_root: Path) -> str:
     audios_dir = package_root / "res" / "data" / "audios"
     audios_dir.mkdir(parents=True, exist_ok=True)
     dest_name = f"snd-import-{uuid.uuid4().hex[:12]}{src.suffix.lower()}"
-    shutil.copy2(src, audios_dir / dest_name)
+    dest_path = audios_dir / dest_name
+    shutil.copy2(src, dest_path)
     return dest_name
 
 
@@ -337,7 +345,8 @@ def _copy_video_to_package(src: Path, package_root: Path) -> str:
     videos_dir = package_root / "res" / "data" / "videos"
     videos_dir.mkdir(parents=True, exist_ok=True)
     dest_name = f"vid-import-{uuid.uuid4().hex[:12]}{src.suffix.lower()}"
-    shutil.copy2(src, videos_dir / dest_name)
+    dest_path = videos_dir / dest_name
+    shutil.copy2(src, dest_path)
     return dest_name
 
 
@@ -518,6 +527,16 @@ def _apply_row_to_slide(
     )
     _set_points(slide, row.points)
 
+    # Store metadata for CMS export
+    slide["_metadata"] = {
+        "difficulty": row.difficulty,
+        "topic": row.topic,
+        "required": False,
+        "useRegex": False,
+        "explanation": row.explanation,
+        "video": row.video,
+    }
+
     question_image = _resolve_and_copy_image(
         row.image,
         package_root=package_root,
@@ -546,6 +565,7 @@ def _apply_row_to_slide(
         warnings=warnings,
     )
     if video_name:
+        slide["_metadata"]["video"] = video_name
         poster_name = question_image
         if not poster_name:
             poster_name = _resolve_and_copy_image(
@@ -589,7 +609,17 @@ def _apply_row_to_slide(
         chs = []
         for i, ans in enumerate(row.answers):
             ch = copy.deepcopy(template)
+            ch.pop("ia", None)
+            ch.pop("f", None)
             _apply_choice_text(ch, ans.text)
+            _apply_choice_media(
+                ch,
+                ans,
+                package_root=package_root,
+                excel_dir=excel_dir,
+                fallback_media_dirs=fallback_media_dirs,
+                warnings=warnings,
+            )
             ch["o"] = i
             chs.append(ch)
         slide["C"]["chs"] = chs
@@ -609,14 +639,35 @@ def _apply_row_to_slide(
             pair["r"]["i"] = _new_id()
             apply_text_to_node(pair["p"]["t"], ans.premise, "content")
             apply_text_to_node(pair["r"]["t"], ans.response, "content")
+            # Apply left image (stored in ans.image by parser)
+            if ans.image:
+                left_img_name = _resolve_and_copy_image(
+                    ans.image,
+                    package_root=package_root,
+                    excel_dir=excel_dir,
+                    fallback_media_dirs=fallback_media_dirs,
+                    warnings=warnings,
+                )
+                if left_img_name:
+                    pair["p"].setdefault("ia", {})["i"] = f"storage://images/{left_img_name}"
+            # Apply right image (stored in ans.right_image by parser for MG)
+            if ans.right_image:
+                right_img_name = _resolve_and_copy_image(
+                    ans.right_image,
+                    package_root=package_root,
+                    excel_dir=excel_dir,
+                    fallback_media_dirs=fallback_media_dirs,
+                    warnings=warnings,
+                )
+                if right_img_name:
+                    pair["r"].setdefault("ia", {})["i"] = f"storage://images/{right_img_name}"
             pairs.append(pair)
         slide["C"]["m"] = pairs
 
     elif tp == "TypeIn":
+        accepted = [ans.text for ans in row.answers if ans.text]
         slide["C"]["chs"] = [
-            {"i": _new_id(), "t": ans.text}
-            for ans in row.answers
-            if ans.text
+            {"i": _new_id(), "t": answer} for answer in accepted
         ]
 
     elif tp == "WordBank":
@@ -647,17 +698,22 @@ def _apply_row_to_slide(
         answers = [ans.text for ans in row.answers if ans.text]
         plain = strip_plain(row.question_text)
         blank_span = f'<span id="{blank_id}"></span>'
+        escaped_question = html.escape(plain)
+        if "___" in escaped_question:
+            fill_content = escaped_question.replace("___", blank_span, 1)
+        else:
+            fill_content = f"{escaped_question} {blank_span}".strip()
         rich_html = (
             f'<p style="font-size:18px;font-family:{FONT_CONTENT};color:#000000">'
-            f'<span>{html.escape(plain)}</span>​{blank_span}​</p>'
+            f'<span>{fill_content}</span></p>'
         )
         apply_text_to_node(rt, plain, "content")
         rt["h"] = rich_html
         rt["d"] = [plain, {"id": blank_id}]
         if answers:
-            _upsert_blank_answer(rt, blank_id, answers[0], "qmFillInTheBlank")
+            _upsert_blank_answer(rt, blank_id, answers, "qmFillInTheBlank")
 
-    elif tp == "Numeric":
+    elif tp in ("Numeric", "MultipleNumeric"):
         slide["C"]["chs"] = [
             {"i": _new_id(), "t": ans.text}
             for ans in row.answers
@@ -681,6 +737,7 @@ def build_quiz_from_excel(
     excel_dir: Path,
     group_title: str = "Imported Questions",
     quiz_title: str | None = None,
+    teky_quiz: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """
     Inject parsed Excel rows into quiz JSON (adds a new question group).
@@ -750,10 +807,34 @@ def build_quiz_from_excel(
             })
 
     quiz = copy.deepcopy(quiz_json)
-    if quiz_title:
-        quiz.setdefault("d", {})["T"] = quiz_title
+    if teky_quiz:
+        teky_meta = copy.deepcopy(teky_quiz)
+        cover_ref = teky_meta.get("coverImage")
+        if cover_ref:
+            cover_warnings: list[str] = []
+            cover_name = _resolve_and_copy_image(
+                cover_ref,
+                package_root=package_root,
+                excel_dir=excel_dir,
+                fallback_media_dirs=fallback_dirs,
+                warnings=cover_warnings,
+            )
+            if cover_name:
+                teky_meta["coverImage"] = cover_name
+            elif cover_warnings:
+                # Avoid returning an Excel-relative URL that is guaranteed to
+                # produce a broken image and repeated asset 404 responses.
+                teky_meta["coverImage"] = ""
+                target = next((item for item in report if item.get("status") == "imported"), None)
+                if target is not None:
+                    target.setdefault("warnings", []).extend(cover_warnings)
+        quiz["_teky"] = teky_meta
+    resolved_title = quiz_title or (teky_quiz or {}).get("title")
+    if resolved_title:
+        quiz.setdefault("d", {})["T"] = resolved_title
 
     groups = quiz.setdefault("d", {}).setdefault("sl", {}).setdefault("g", [])
-    groups.insert(0, {"T": group_title, "S": new_slides})
+    groups.clear()
+    groups.append({"T": group_title, "S": new_slides})
 
     return quiz, report

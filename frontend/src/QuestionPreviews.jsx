@@ -230,7 +230,15 @@ export function SequencePreview({
             }}
           >
             <span className="sequence-index" aria-hidden>{i + 1}.</span>
-            <div className="sequence-item" style={cardStyle}>
+            <div className={`sequence-item ${item.image || choices?.[i]?.image ? 'has-image' : ''}`} style={cardStyle}>
+              {(item.image || choices?.[i]?.image) && (
+                <img
+                  className="sequence-item-img"
+                  src={assetUrl(sessionId, item.image || choices?.[i]?.image)}
+                  alt=""
+                  draggable={false}
+                />
+              )}
               {editing && wysiwyg && onChoiceTextChange ? (
                 <CanvasRichText
                   className="sequence-text"

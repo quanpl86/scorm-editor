@@ -84,6 +84,14 @@ export async function exportSession(sessionId, title) {
   return res.blob()
 }
 
+export async function exportCmsJson(sessionId) {
+  const res = await fetch(`${API}/session/${sessionId}/export-cms-json-local`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error((await res.json()).detail || 'Export CMS JSON thất bại')
+  return res.json()
+}
+
 export async function exportMedia(sessionId) {
   const res = await fetch(`${API}/session/${sessionId}/export-media`, {
     method: 'POST',
@@ -113,7 +121,7 @@ export async function exportSingleMediaLocal(sessionId, filename, targetName) {
 export async function uploadImage(sessionId, filename, file) {
   const form = new FormData()
   form.append('file', file)
-  const res = await fetch(`${API}/session/${sessionId}/asset/${encodeURIComponent(filename)}`, {
+  const res = await fetch(`${API}/session/${sessionId}/asset/${encodeURIComponent(filename)}?s3=true`, {
     method: 'POST',
     body: form,
   })
@@ -128,10 +136,12 @@ export async function uploadNewImage(sessionId, file) {
     : `${Date.now()}${Math.random().toString(16).slice(2)}`
   const filename = `img-${id.slice(0, 40)}.${ext}`
   const result = await uploadImage(sessionId, filename, file)
-  return { ...result, filename }
+  return { filename, ...result }
 }
 
 export function assetUrl(sessionId, filename) {
+  if (!filename) return '';
+  if (filename.startsWith('http') || filename.startsWith('data:')) return filename;
   return `${API}/session/${sessionId}/asset/${encodeURIComponent(filename)}?t=${Date.now()}`
 }
 

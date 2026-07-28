@@ -14,7 +14,7 @@ export function quizHasDirtyFlags(quiz) {
   const slideDirty = (s) => s && Object.keys(s).some((k) => k.startsWith('_dirty'))
   if (slideDirty(quiz.introSlide)) return true
   if (quiz.resultSlides?.some(slideDirty)) return true
-  return (quiz.questions || []).some((q) => q.deleted || slideDirty(q))
+  return (quiz.questions || []).some((q) => q.deleted || q.isNew || slideDirty(q))
 }
 
 export function useQuizHistory(initialQuiz = null) {

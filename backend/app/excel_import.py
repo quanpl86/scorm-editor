@@ -34,6 +34,7 @@ EXCEL_TYPE_MAP: dict[str, str] = {
     "HS": "Hotspot",
     "ESSAY": "Essay",
     "LIKERT": "LikertScale",
+    "MNUM": "MultipleNumeric",
 }
 
 SUPPORTED_TYPES = {
@@ -47,6 +48,7 @@ SUPPORTED_TYPES = {
     "WordBank",
     "InfoSlide",
     "Numeric",
+    "MultipleNumeric",
 }
 
 # Parsed from Excel but not injectable — clear skip reason in import report
@@ -90,6 +92,7 @@ class ParsedAnswer:
     image: str | None = None
     audio: str | None = None
     video: str | None = None
+    right_image: str | None = None  # For Matching: image of the right side
 
 
 @dataclass
@@ -101,17 +104,119 @@ class ExcelQuestion:
     image: str | None = None
     video: str | None = None
     audio: str | None = None
+    difficulty: str | None = None
+    topic: str | None = None
+    explanation: str | None = None
     answers: list[ParsedAnswer] = field(default_factory=list)
     correct_feedback: ParsedMediaRefs = field(default_factory=ParsedMediaRefs)
     incorrect_feedback: ParsedMediaRefs = field(default_factory=ParsedMediaRefs)
     points: float | None = None
     errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 def _cell_str(value: Any) -> str:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return ""
     return str(value).strip()
+
+
+def _coerce_setting_value(key: str, value: Any) -> Any:
+    """Normalize values from the optional Quiz Settings sheet."""
+    raw = _cell_str(value)
+    if key in {"isPublic", "shuffleQuestions", "shuffleAnswers", "allowReview"}:
+        return raw.lower() in {"1", "true", "yes", "y", "có", "x"}
+    if key in {"duration", "attemptLimit"}:
+        try:
+            return int(float(raw.replace(",", ".")))
+        except ValueError:
+            return 0
+    if key == "tags":
+        return [item.strip() for item in re.split(r"[,;\n]", raw) if item.strip()]
+    return raw
+
+
+QUIZ_SETTING_KEYS: dict[str, str] = {
+    "title": "title",
+    "quiz title": "title",
+    "description": "description",
+    "cover image": "coverImage",
+    "coverimage": "coverImage",
+    "cover": "coverImage",
+    "subject": "subject",
+    "difficulty": "difficultyLevel",
+    "difficulty level": "difficultyLevel",
+    "difficultylevel": "difficultyLevel",
+    "tags": "tags",
+    "created by": "createdBy",
+    "createdby": "createdBy",
+    "created by name": "createdByName",
+    "createdbyname": "createdByName",
+    "is public": "isPublic",
+    "ispublic": "isPublic",
+    "duration": "duration",
+    "shuffle questions": "shuffleQuestions",
+    "shufflequestions": "shuffleQuestions",
+    "shuffle answers": "shuffleAnswers",
+    "shuffleanswers": "shuffleAnswers",
+    "attempt limit": "attemptLimit",
+    "attemptlimit": "attemptLimit",
+    "show results": "showResults",
+    "showresults": "showResults",
+    "allow review": "allowReview",
+    "allowreview": "allowReview",
+    "created at": "createdAt",
+    "createdat": "createdAt",
+    "updated at": "updatedAt",
+    "updatedat": "updatedAt",
+}
+
+
+def parse_quiz_settings(path: Path) -> dict[str, Any]:
+    """Read optional `Quiz Settings` sheet as Field/Value pairs."""
+    suffix = path.suffix.lower()
+    engine = "xlrd" if suffix == ".xls" else "openpyxl"
+    try:
+        workbook = pd.ExcelFile(path, engine=engine)
+    except Exception:
+        return {}
+
+    sheet_name = next(
+        (name for name in workbook.sheet_names if name.strip().lower() in {"quiz settings", "quiz config"}),
+        None,
+    )
+    if not sheet_name:
+        return {}
+
+    df = pd.read_excel(path, sheet_name=sheet_name, header=0, engine=engine)
+    df.columns = [str(c).strip() for c in df.columns]
+    columns = {c.lower(): c for c in df.columns}
+    field_col = columns.get("field") or columns.get("key")
+    value_col = columns.get("value")
+    if not field_col or not value_col:
+        raise ValueError("Sheet 'Quiz Settings' cần có cột 'Field' và 'Value'")
+
+    quiz: dict[str, Any] = {}
+    settings: dict[str, Any] = {}
+    settings_keys = {
+        "shuffleQuestions", "shuffleAnswers", "attemptLimit", "showResults", "allowReview",
+    }
+    for _, row in df.iterrows():
+        raw_field = _cell_str(row.get(field_col))
+        if not raw_field:
+            continue
+        normalized = re.sub(r"[_\-.]+", " ", raw_field).strip().lower()
+        key = QUIZ_SETTING_KEYS.get(normalized)
+        if not key:
+            continue
+        value = _coerce_setting_value(key, row.get(value_col))
+        if key in settings_keys:
+            settings[key] = value
+        else:
+            quiz[key] = value
+    if settings:
+        quiz["settings"] = settings
+    return quiz
 
 
 def _media_kind_for_ext(ext: str) -> str | None:
@@ -164,7 +269,7 @@ def _parse_answer_cell(raw: str, excel_type: str) -> ParsedAnswer | None:
         left, right = text.split("|", 1)
         return ParsedAnswer(text=text, premise=left.strip(), response=right.strip())
 
-    if excel_type in ("NUMG", "NUM"):
+    if excel_type in ("NUMG", "NUM", "MNUM"):
         numeric = text.lstrip("=").strip()
         if numeric:
             return ParsedAnswer(text=numeric, is_correct=True)
@@ -205,13 +310,13 @@ def _validate_question(q: ExcelQuestion) -> None:
     elif tp == "Matching" and n < 2:
         q.errors.append("Matching cần ít nhất 2 cặp (premise|response)")
     elif tp == "Sequence" and n < 2:
-        q.errors.append("Sequence cần ít nhất 2 mục")
+        q.warnings.append("Sequence cần ít nhất 2 mục")
     elif tp == "TypeIn" and n < 1:
         q.errors.append("Short answer cần ít nhất 1 đáp án chấp nhận")
-    elif tp == "Numeric" and n < 1:
-        q.errors.append("Numeric cần ít nhất 1 đáp án (=số, ví dụ =5)")
+    elif tp in ("Numeric", "MultipleNumeric") and n < 1:
+        q.warnings.append("Numeric cần ít nhất 1 đáp án (=số, ví dụ =5)")
     elif tp == "FillInTheBlank" and n < 1:
-        q.errors.append("FIB cần ít nhất 1 đáp án cho ô trống")
+        q.warnings.append("FIB cần ít nhất 1 đáp án cho ô trống")
     elif tp == "WordBank" and n < 2:
         q.errors.append("WB cần ít nhất 2 từ (1 đúng * + 1 nhiễu)")
     elif tp == "WordBank" and not any(a.is_correct for a in q.answers):
@@ -244,11 +349,20 @@ def parse_excel_file(path: Path, *, sheet_index: int = 0) -> list[ExcelQuestion]
     image_col = col("image")
     video_col = col("video")
     audio_col = col("audio")
-    correct_fb = col("correct feedback")
-    incorrect_fb = col("incorrect feedback")
+    diff_col = col("difficulty")
+    topic_col = col("topic")
+    expl_col = col("explanation") or col("correct feedback")
+    correct_fb_col = col("correct feedback")
+    incorrect_fb_col = col("incorrect feedback")
     points_col = col("points")
     answer_cols = [col(f"answer {i}") for i in range(1, 11)]
     answer_cols = [c for c in answer_cols if c]
+
+    # Per-answer image columns: "Answer 1 Image", "Answer 2 Image", ...
+    answer_img_cols = [col(f"answer {i} image", f"image answer {i}", f"img {i}") for i in range(1, 11)]
+    # For Matching: separate left/right image columns
+    answer_left_img_cols = [col(f"answer {i} left image", f"left image {i}", f"left img {i}") for i in range(1, 11)]
+    answer_right_img_cols = [col(f"answer {i} right image", f"right image {i}", f"right img {i}") for i in range(1, 11)]
 
     questions: list[ExcelQuestion] = []
     for idx, row in df.iterrows():
@@ -270,9 +384,27 @@ def parse_excel_file(path: Path, *, sheet_index: int = 0) -> list[ExcelQuestion]
             continue
 
         answers: list[ParsedAnswer] = []
-        for ac in answer_cols:
+        for ai, ac in enumerate(answer_cols):
+            if not ac:
+                continue
             parsed = _parse_answer_cell(_cell_str(row.get(ac)), excel_type)
             if parsed:
+                # Merge dedicated image column into answer (column takes priority)
+                img_col = answer_img_cols[ai] if ai < len(answer_img_cols) else None
+                if img_col and not parsed.image:
+                    img_val = _cell_str(row.get(img_col))
+                    if img_val:
+                        parsed.image = img_val
+                # For Matching: merge left/right image columns
+                if excel_type in ("MG", "MA"):
+                    left_col = answer_left_img_cols[ai] if ai < len(answer_left_img_cols) else None
+                    right_col = answer_right_img_cols[ai] if ai < len(answer_right_img_cols) else None
+                    left_img = _cell_str(row.get(left_col)) if left_col else ""
+                    right_img = _cell_str(row.get(right_col)) if right_col else ""
+                    if left_img:
+                        parsed.image = left_img
+                    if right_img:
+                        parsed.right_image = right_img
                 answers.append(parsed)
 
         points_raw = _cell_str(row.get(points_col)) if points_col else ""
@@ -291,15 +423,18 @@ def parse_excel_file(path: Path, *, sheet_index: int = 0) -> list[ExcelQuestion]
             image=_cell_str(row.get(image_col)) if image_col else None,
             video=_cell_str(row.get(video_col)) if video_col else None,
             audio=_cell_str(row.get(audio_col)) if audio_col else None,
+            difficulty=_cell_str(row.get(diff_col)) if diff_col else "medium",
+            topic=_cell_str(row.get(topic_col)) if topic_col else "",
+            explanation=_cell_str(row.get(expl_col)) if expl_col else "",
             answers=answers,
             correct_feedback=(
-                parse_media_brackets(_cell_str(row.get(correct_fb)))
-                if correct_fb
+                parse_media_brackets(_cell_str(row.get(correct_fb_col)))
+                if correct_fb_col
                 else ParsedMediaRefs()
             ),
             incorrect_feedback=(
-                parse_media_brackets(_cell_str(row.get(incorrect_fb)))
-                if incorrect_fb
+                parse_media_brackets(_cell_str(row.get(incorrect_fb_col)))
+                if incorrect_fb_col
                 else ParsedMediaRefs()
             ),
             points=points,
@@ -327,4 +462,15 @@ def resolve_media_path(media_ref: str, excel_dir: Path, fallback_dirs: list[Path
         for probe in [base / ref, base / name, base / "media" / name]:
             if probe.exists():
                 return probe
+        # A standalone workbook cannot carry its sibling media directory.
+        # Allow the server's bundled template tree one nested directory level,
+        # but only use the result when it is unambiguous.
+        nested_matches = {
+            path.resolve()
+            for pattern in (f"*/{ref}", f"*/media/{name}")
+            for path in base.glob(pattern)
+            if path.is_file()
+        }
+        if len(nested_matches) == 1:
+            return next(iter(nested_matches))
     return None

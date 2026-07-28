@@ -247,7 +247,52 @@ function QuestionSlideOptionsPanel({ question, onChange }) {
 
   return (
     <div className="question-slide-options">
-      <h4>Tùy chọn slide</h4>
+      <h4>Cấu hình Teky LMS</h4>
+
+      <div className="meta-field">
+        <label>Độ khó</label>
+        <select
+          value={question.difficulty || 'medium'}
+          onChange={(e) => onChange({ difficulty: e.target.value })}
+        >
+          <option value="easy">Dễ (Easy)</option>
+          <option value="medium">Trung bình (Medium)</option>
+          <option value="hard">Khó (Hard)</option>
+        </select>
+      </div>
+
+      <div className="meta-field">
+        <label>Chủ đề (Topic)</label>
+        <input
+          type="text"
+          value={question.topic || ''}
+          onChange={(e) => onChange({ topic: e.target.value })}
+          placeholder="Toán học, Tin học..."
+        />
+      </div>
+
+      <div className="meta-field">
+        <label>Video câu hỏi</label>
+        <input
+          type="text"
+          value={question.video || ''}
+          onChange={(e) => onChange({ video: e.target.value })}
+          placeholder="URL Youtube / Vimeo..."
+        />
+      </div>
+
+      <div className="meta-field">
+        <label>Giải thích đáp án</label>
+        <textarea
+          value={question.explanation || ''}
+          onChange={(e) => onChange({ explanation: e.target.value })}
+          placeholder="Nhập giải thích chi tiết..."
+          rows={3}
+          style={{ width: '100%', resize: 'vertical' }}
+        />
+      </div>
+
+      <h4 style={{ marginTop: 16 }}>Tùy chọn slide</h4>
       <div className="meta-field question-points-field">
         <label htmlFor={`q-points-${question.id}`}>Điểm</label>
         <input
@@ -1470,7 +1515,7 @@ export default function LayoutCanvas({
     const pos = exportSuffix || (obj.role.startsWith('slide') ? 'ND' : (obj.role === 'image' ? `ND-${obj.index}` : obj.role))
     const safeTitle = (quizTitle || 'Quiz').trim().replace(/[^a-zA-Z0-9 _-]/g, '_').substring(0, 50)
     const targetName = `${safeTitle}_${stt}_${mediaCode || 'IMG'}-${pos}`
-    
+
     try {
       const result = await exportSingleMediaLocal(sessionId, fileUrl, targetName)
       alert(`Đã xuất file ra: ${result.path}`)

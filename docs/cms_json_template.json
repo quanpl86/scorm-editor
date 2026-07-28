@@ -1,0 +1,197 @@
+[
+  {
+    "id": "quiz_1711234567890",
+    "title": "Tên Bài Quiz / Bài Kiểm Tra",
+    "description": "Mô tả ngắn gọn về bài kiểm tra.",
+    "subject": "Lập trình",
+    "difficultyLevel": "medium",
+    "tags": ["SCORM", "Imported"],
+    "createdBy": "admin",
+    "createdByName": "Hệ thống",
+    "isPublic": false,
+    "duration": 1800,
+    "settings": {
+      "shuffleQuestions": false,
+      "shuffleAnswers": false,
+      "attemptLimit": 1,
+      "showResults": "after_submit",
+      "allowReview": true
+    },
+    "createdAt": "2026-07-28T02:00:00.000Z",
+    "updatedAt": "2026-07-28T02:00:00.000Z",
+    "questions": [
+      {
+        "id": "q_mc_01",
+        "type": "multiple_choice",
+        "question": "1. Chọn đáp án đúng nhất: Thủ đô của Việt Nam là gì?",
+        "imageUrl": "images/vietnam_map.png",
+        "points": 1,
+        "metadata": {
+          "difficulty": "medium",
+          "topic": "Địa lý"
+        },
+        "options": [
+          {
+            "id": "opt_A",
+            "text": "Hà Nội",
+            "imageUrl": "images/hanoi_pic.png"
+          },
+          {
+            "id": "opt_B",
+            "text": "TP. Hồ Chí Minh"
+          },
+          {
+            "id": "opt_C",
+            "text": "Đà Nẵng"
+          }
+        ],
+        "correctAnswer": [
+          "opt_A"
+        ]
+      },
+      {
+        "id": "q_ms_01",
+        "type": "multiple_select",
+        "question": "2. Chọn NHIỀU đáp án: Các ngôn ngữ nào dùng để làm Web Front-end?",
+        "points": 1,
+        "metadata": {
+          "difficulty": "hard",
+          "topic": "Web"
+        },
+        "options": [
+          { "id": "opt_1", "text": "HTML" },
+          { "id": "opt_2", "text": "CSS" },
+          { "id": "opt_3", "text": "Python" },
+          { "id": "opt_4", "text": "JavaScript" }
+        ],
+        "correctAnswer": [
+          "opt_1",
+          "opt_2",
+          "opt_4"
+        ]
+      },
+      {
+        "id": "q_tf_01",
+        "type": "true_false",
+        "question": "3. JavaScript và Java là cùng một ngôn ngữ lập trình.",
+        "points": 1,
+        "metadata": {
+          "difficulty": "easy",
+          "topic": "Lập trình"
+        },
+        "options": [
+          { "id": "tf_true", "text": "Đúng" },
+          { "id": "tf_false", "text": "Sai" }
+        ],
+        "correctAnswer": [
+          "false"
+        ]
+      },
+      {
+        "id": "q_match_01",
+        "type": "matching",
+        "question": "4. Nối các khái niệm ở cột trái với ý nghĩa ở cột phải:",
+        "points": 1,
+        "metadata": {
+          "difficulty": "medium",
+          "topic": "Khái niệm"
+        },
+        "pairs": [
+          {
+            "id": "pair-0",
+            "left": "HTML",
+            "leftImageUrl": "images/html_logo.png",
+            "right": "Khung xương của trang web",
+            "rightImageUrl": "images/skeleton.png"
+          },
+          {
+            "id": "pair-1",
+            "left": "CSS",
+            "right": "Trang trí và làm đẹp giao diện"
+          }
+        ],
+        "correctAnswer": [
+          "pair-0:Khung xương của trang web",
+          "pair-1:Trang trí và làm đẹp giao diện"
+        ]
+      },
+      {
+        "id": "q_ord_01",
+        "type": "ordering",
+        "question": "5. Sắp xếp các bước sau theo đúng quy trình tạo một phần mềm:",
+        "points": 1,
+        "metadata": {
+          "difficulty": "medium",
+          "topic": "Quy trình"
+        },
+        "orderingItems": [
+          { "id": "step_1", "text": "Phân tích yêu cầu" },
+          { "id": "step_2", "text": "Viết mã (Coding)" },
+          { "id": "step_3", "text": "Kiểm thử (Testing)" },
+          { "id": "step_4", "text": "Phát hành (Deploy)" }
+        ],
+        "correctAnswer": [
+          "step_1",
+          "step_2",
+          "step_3",
+          "step_4"
+        ]
+      },
+      {
+        "id": "q_fill_01",
+        "type": "fill_blank",
+        "question": "6. {blank} là một ngôn ngữ lập trình do Microsoft phát triển, là phiên bản mở rộng của JavaScript.",
+        "points": 1,
+        "metadata": {
+          "difficulty": "medium",
+          "topic": "Lý thuyết"
+        },
+        "correctAnswer": [
+          "TypeScript",
+          "TS"
+        ]
+      },
+      {
+        "id": "q_short_01",
+        "type": "short_answer",
+        "question": "7. Ngôn ngữ định dạng văn bản dùng để cấu trúc trang web gọi là gì?",
+        "points": 1,
+        "metadata": {
+          "difficulty": "easy",
+          "topic": "Lý thuyết Web"
+        },
+        "correctAnswer": [
+          "HTML",
+          "HyperText Markup Language"
+        ]
+      },
+      {
+        "id": "q_num_01",
+        "type": "numeric",
+        "question": "8. Kết quả của phép tính 25 + 17 là bao nhiêu?",
+        "points": 1,
+        "metadata": {
+          "difficulty": "easy",
+          "topic": "Toán học"
+        },
+        "correctAnswer": [
+          "42"
+        ]
+      },
+      {
+        "id": "q_mnum_01",
+        "type": "multiple_numeric",
+        "question": "9. Phương trình x^2 - 5x + 6 = 0 có hai nghiệm là (nhập nghiệm bé trước, lớn sau):",
+        "points": 1,
+        "metadata": {
+          "difficulty": "medium",
+          "topic": "Đại số"
+        },
+        "correctAnswer": [
+          "2",
+          "3"
+        ]
+      }
+    ]
+  }
+]

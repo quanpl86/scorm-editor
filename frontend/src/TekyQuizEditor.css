@@ -1,0 +1,1208 @@
+.teky-editor-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: #f4f6fa;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: #333;
+}
+
+.teky-editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  background: white;
+  border-bottom: 1px solid #eaeaea;
+}
+
+.teky-editor-title {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.teky-back-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #666;
+}
+
+.teky-title-info h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.teky-title-info span {
+  font-size: 13px;
+  color: #888;
+}
+
+.teky-btn-primary {
+  background: #ff8b00;
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 10px 24px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 6px rgba(255, 139, 0, 0.2);
+}
+
+.teky-btn-primary:hover {
+  background: #f08200;
+}
+
+.teky-editor-tabs {
+  display: flex;
+  gap: 32px;
+  padding: 0 48px;
+  background: white;
+  border-bottom: 1px solid #eaeaea;
+}
+
+.teky-editor-tabs button {
+  background: none;
+  border: none;
+  padding: 16px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #777;
+  cursor: pointer;
+  position: relative;
+}
+
+.teky-editor-tabs button.active {
+  color: #ff8b00;
+}
+
+.teky-editor-tabs button.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: #ff8b00;
+  border-radius: 3px 3px 0 0;
+}
+
+.teky-editor-body {
+  flex: 1;
+  overflow: auto;
+  padding: 32px;
+}
+
+/* CARDS */
+.teky-details-card, .teky-settings-card, .teky-question-card {
+  background: white;
+  border-radius: 16px;
+  padding: 32px;
+  max-width: 800px;
+  margin: 0 auto;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.03);
+}
+
+.teky-question-card {
+  max-width: 1000px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 24px;
+}
+
+.teky-questions-list-scroll {
+  display: flex;
+  flex-direction: column;
+}
+
+.teky-questions-layout {
+  display: flex;
+  gap: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.teky-questions-sidebar {
+  width: 260px;
+  flex-shrink: 0;
+}
+
+.teky-questions-main {
+  flex: 1;
+}
+
+/* SIDEBAR */
+.teky-sidebar-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #999;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+}
+
+.teky-type-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  background: white;
+  border: 1px solid #eee;
+  border-radius: 24px;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #555;
+  cursor: pointer;
+  text-align: left;
+}
+
+.teky-type-btn:hover {
+  background: #fafafa;
+}
+
+.teky-type-btn.active {
+  background: #e89832;
+  color: white;
+  border-color: #e89832;
+}
+
+/* FORM FIELDS */
+.teky-field-group {
+  margin-bottom: 24px;
+}
+
+.teky-field-group label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #777;
+  margin-bottom: 8px;
+}
+
+.teky-field-group input[type="text"],
+.teky-field-group input[type="number"],
+.teky-field-group textarea,
+.teky-field-group select {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #ddd;
+  border-radius: 16px;
+  font-size: 14px;
+  background: white;
+  box-sizing: border-box;
+}
+
+.teky-field-group textarea {
+  resize: vertical;
+}
+
+.teky-flex-row {
+  display: flex;
+  gap: 16px;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+.teky-input-with-btn {
+  display: flex;
+  gap: 8px;
+}
+
+.teky-input-with-btn input {
+  flex: 1;
+}
+
+.teky-input-with-btn button {
+  width: 44px;
+  border-radius: 50%;
+  border: 1px solid #ddd;
+  background: white;
+  cursor: pointer;
+}
+
+.teky-upload-control {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.teky-upload-icon-btn {
+  width: 44px !important;
+  min-width: 44px;
+  height: 44px !important;
+  padding: 0 !important;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid #d6e0eb !important;
+  border-radius: 50% !important;
+  background: #fff !important;
+  color: #70839d;
+  cursor: pointer;
+  outline: 0;
+}
+
+.teky-upload-icon-btn svg {
+  width: 19px;
+  height: 19px;
+  stroke-width: 1.8;
+}
+
+.teky-upload-icon-btn:hover {
+  border-color: #f3a13c !important;
+  color: #ef8d13;
+}
+
+.teky-upload-icon-btn:focus-visible,
+.teky-upload-label-btn:focus-visible {
+  box-shadow: 0 0 0 3px rgba(232, 152, 50, .18);
+}
+
+.teky-upload-icon-btn:disabled,
+.teky-upload-label-btn:disabled {
+  cursor: wait;
+  opacity: .65;
+}
+
+/* QUESTION CARD */
+.teky-q-header {
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #fdfdfd;
+  border-bottom: 1px solid #eee;
+  border-radius: 16px 16px 0 0;
+}
+
+.teky-q-number {
+  background: #ffe3d5;
+  color: #f76b1c;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-weight: 700;
+}
+
+.teky-q-title-preview {
+  flex: 1;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.teky-q-type-badge {
+  background: #eee;
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+}
+
+.teky-icon-btn {
+  background: none;
+  border: none;
+  color: #ff6b6b;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.teky-q-body {
+  padding: 32px;
+}
+
+.teky-metadata-row .teky-field-group {
+  flex: 1;
+}
+
+/* ANSWERS GRID */
+.teky-answers-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  margin-top: 16px;
+}
+
+.teky-answers-header label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #777;
+}
+
+.teky-btn-add-answer {
+  background: #fff3e6;
+  color: #e89832;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 16px;
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.teky-answers-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.teky-answer-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #ddd;
+  border-radius: 16px;
+}
+
+.teky-answer-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #ddd;
+  border-radius: 16px;
+}
+
+.teky-answer-item.correct, .teky-answer-card.correct {
+  border-color: #2cc973;
+  background: #f4fdf8;
+}
+
+.teky-answer-item input[type="text"] {
+  border: none;
+  background: transparent;
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  outline: none;
+}
+
+.teky-single-text-editor {
+  padding: 20px;
+  border: 1px solid #e5e9f0;
+  border-radius: 16px;
+  background: #fbfcfe;
+}
+
+.teky-single-text-editor input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px 16px;
+  border: 1px solid #dce3ec;
+  border-radius: 14px;
+  background: #fff;
+  color: #27364d;
+  font-size: 14px;
+  font-weight: 600;
+  outline: none;
+}
+
+.teky-single-text-editor input:focus {
+  border-color: #e89832;
+  box-shadow: 0 0 0 3px rgba(232, 152, 50, 0.12);
+}
+
+.teky-single-text-hint {
+  margin: 0 0 12px;
+  color: #6f7f95;
+  font-size: 13px;
+}
+
+.teky-accepted-answer-list {
+  display: grid;
+  gap: 10px;
+}
+
+.teky-accepted-answer-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 12px;
+}
+
+.teky-remove-accepted-answer {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #bdc9d8;
+  cursor: pointer;
+}
+
+.teky-remove-accepted-answer svg {
+  width: 18px;
+  height: 18px;
+}
+
+.teky-remove-accepted-answer:hover:not(:disabled) {
+  background: #fff1f0;
+  color: #ff7373;
+}
+
+.teky-remove-accepted-answer:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.teky-regex-option {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  color: #6f7f95 !important;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.teky-regex-option input {
+  width: 14px !important;
+  height: 14px;
+  margin: 0;
+  padding: 0;
+  accent-color: #ef921f;
+}
+
+.teky-matching-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.teky-matching-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+}
+
+.teky-match-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.teky-match-input-wrap {
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  padding: 12px 16px;
+}
+
+.teky-match-input-wrap input {
+  width: 100%;
+  border: none;
+  outline: none;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.teky-match-media-input {
+  display: flex;
+  gap: 8px;
+}
+
+.teky-match-media-input input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.teky-match-media-input button {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #eee;
+  background: white;
+  cursor: pointer;
+}
+
+.teky-match-img-preview {
+  margin-top: 8px;
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #eee;
+  display: inline-block;
+}
+
+.teky-match-img-preview img {
+  height: 60px;
+  object-fit: cover;
+  display: block;
+}
+
+.teky-match-img-preview .teky-img-del {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: rgba(255,255,255,0.8);
+  border: none;
+  color: #ff4d4f;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.teky-match-arrow {
+  color: #ccc;
+  font-size: 20px;
+}
+
+/* SETTINGS CARD */
+.teky-setting-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.teky-setting-row:last-child {
+  border-bottom: none;
+}
+
+.teky-setting-row h4 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.teky-setting-row p {
+  margin: 0;
+  font-size: 13px;
+  color: #888;
+}
+
+.teky-setting-row input[type="number"] {
+  width: 80px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+  text-align: center;
+}
+
+.teky-add-question-btn {
+  width: 100%;
+  padding: 20px;
+  background: transparent;
+  border: 2px dashed #f5a623;
+  color: #f5a623;
+  font-size: 16px;
+  font-weight: 700;
+  border-radius: 16px;
+  margin-top: 24px;
+  cursor: pointer;
+}
+
+.teky-add-question-btn:hover {
+  background: #fff8eb;
+}
+
+.teky-question-card.active {
+  border: 2px solid #f76b1c;
+}
+
+.teky-q-body-flex {
+  display: flex;
+  gap: 32px;
+  padding: 32px;
+}
+
+.teky-q-sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  border-right: 1px solid #eee;
+  padding-right: 24px;
+}
+
+.teky-q-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.teky-choices-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.teky-choice-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.teky-choice-toggle-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.teky-choice-letter {
+  font-weight: 700;
+  color: #555;
+}
+
+.teky-choice-text-input {
+  border: none;
+  background: transparent;
+  flex: 1;
+  font-weight: 600;
+  font-size: 14px;
+  outline: none;
+}
+
+.teky-choice-media-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.teky-choice-img-preview {
+  position: relative;
+  display: inline-block;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #eee;
+}
+
+.teky-choice-img-preview img {
+  height: 80px;
+  object-fit: cover;
+  display: block;
+}
+
+.teky-choice-img-preview .teky-img-del {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: rgba(255,255,255,0.9);
+  color: #ff4d4f;
+  border: none;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+/* Teky LMS visual alignment */
+.teky-editor-container {
+  background: #f7f9fc;
+  color: #1d293d;
+}
+
+.teky-editor-header {
+  padding: 14px 28px;
+  border-bottom: 0;
+}
+
+.teky-editor-tabs {
+  gap: 28px;
+  padding: 0 20px;
+  border-color: #dce5ef;
+}
+
+.teky-editor-tabs button {
+  padding: 14px 0;
+}
+
+.teky-editor-body {
+  padding: 28px 20px 48px;
+}
+
+.teky-btn-primary {
+  min-width: 118px;
+  padding: 12px 24px;
+  border-radius: 18px;
+  background: #ff8700;
+}
+
+.teky-details-stack {
+  max-width: 960px;
+  margin: 0 auto;
+  display: grid;
+  gap: 24px;
+}
+
+.teky-details-card,
+.teky-settings-card {
+  max-width: none;
+  margin: 0;
+  padding: 24px;
+  border: 1px solid #dbe5ef;
+  border-radius: 22px;
+  box-shadow: 0 2px 4px rgba(28, 48, 74, .04);
+}
+
+.teky-details-primary {
+  display: grid;
+  gap: 18px;
+}
+
+.teky-details-primary .teky-field-group,
+.teky-context-controls .teky-field-group {
+  margin-bottom: 0;
+}
+
+.teky-cover-editor {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.teky-cover-preview {
+  width: 124px;
+  height: 124px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 2px dashed #d7e0eb;
+  border-radius: 22px;
+  background: #fafcff;
+}
+
+.teky-cover-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.teky-cover-placeholder {
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.teky-cover-editor p {
+  margin: 0 0 9px;
+  color: #91a2bb;
+  font-size: 12px;
+}
+
+.teky-upload-label-btn {
+  width: auto !important;
+  height: 34px !important;
+  padding: 0 14px !important;
+  border-radius: 9px !important;
+  color: #53627a;
+  font-weight: 700;
+  outline: 0;
+}
+
+.teky-card-kicker {
+  display: block;
+  margin: 2px 4px 14px;
+  color: #8da0ba;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.teky-context-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.teky-context-tile {
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 18px;
+  border: 1px solid #e6ebf2;
+  border-radius: 17px;
+  background: #f8f9fc;
+}
+
+.teky-context-icon {
+  color: #00c887;
+  font-size: 24px;
+}
+
+.teky-context-icon.orange {
+  color: #ff8300;
+}
+
+.teky-context-tile div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.teky-context-tile small {
+  color: #94a5bd;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.teky-context-tile strong {
+  overflow: hidden;
+  color: #354156;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.teky-context-controls {
+  gap: 24px;
+}
+
+.teky-advanced-meta {
+  margin-top: 18px;
+  color: #75859d;
+  font-size: 12px;
+}
+
+.teky-advanced-meta summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.teky-advanced-meta[open] summary {
+  margin-bottom: 16px;
+}
+
+.teky-settings-card {
+  max-width: 670px;
+  margin: 0 auto;
+  padding: 32px;
+}
+
+.teky-settings-card h3 {
+  margin: 0 0 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e8edf3;
+}
+
+.teky-settings-icon {
+  color: #ff7d36;
+}
+
+.teky-setting-row {
+  min-height: 72px;
+  margin-bottom: 18px;
+  padding: 0 16px;
+  border: 1px solid #e7edf4;
+  border-radius: 24px;
+  background: #fbfcfe;
+}
+
+.teky-setting-row:last-child {
+  margin-bottom: 0;
+  border-bottom: 1px solid #e7edf4;
+}
+
+.teky-setting-row input[type="number"],
+.teky-setting-row select {
+  width: 192px;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid #dce4ed;
+  border-radius: 16px;
+  background: #fff;
+  color: #455268;
+  font-weight: 700;
+}
+
+.teky-setting-row input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: #1677ee;
+}
+
+.teky-questions-layout {
+  max-width: 1200px;
+  width: 100%;
+  min-width: 0;
+}
+
+.teky-question-card {
+  max-width: 1160px;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1.5px solid #dbe4ee;
+  border-radius: 28px;
+  box-shadow: 0 2px 5px rgba(28, 48, 74, .04);
+  overflow: hidden;
+}
+
+.teky-questions-main {
+  min-width: 0;
+}
+
+.teky-question-card.active {
+  border: 1.5px solid #dbe4ee;
+}
+
+.teky-q-header {
+  padding: 16px 24px;
+  border-color: #e4eaf1;
+  border-radius: 0;
+  background: #fbfcff;
+}
+
+.teky-q-number {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  background: #fff0d8;
+  color: #e98716;
+}
+
+.teky-q-title-preview {
+  min-width: 0;
+}
+
+.teky-q-type-badge {
+  flex: 0 0 auto;
+  border: 1px solid #e5e9ef;
+  background: white;
+  color: #9ba7b8;
+  font-style: italic;
+}
+
+.teky-q-body-flex {
+  gap: 0;
+  padding: 0;
+}
+
+.teky-q-sidebar {
+  width: 230px;
+  padding: 28px 24px;
+  border-color: #e5ebf2;
+  background: #fafbfe;
+}
+
+.teky-q-content {
+  padding: 28px 24px 24px;
+}
+
+.teky-type-btn {
+  min-height: 42px;
+  padding: 10px 12px;
+  border-color: #dbe3ed;
+  border-radius: 17px;
+  color: #687a93;
+  font-size: 12px;
+  box-shadow: 0 1px 2px rgba(29, 50, 78, .06);
+}
+
+.teky-type-btn.active {
+  background: #ee901f;
+  border-color: #ee901f;
+}
+
+.teky-type-btn.disabled {
+  cursor: not-allowed;
+  opacity: .58;
+}
+
+.teky-field-group input[type="text"],
+.teky-field-group input[type="number"],
+.teky-field-group textarea,
+.teky-field-group select {
+  border-color: #d6e0eb;
+  color: #263247;
+}
+
+.teky-field-group label,
+.teky-answers-header label {
+  color: #71839c;
+}
+
+.teky-choice-img-preview {
+  display: flex;
+  min-height: 90px;
+  align-items: center;
+  justify-content: center;
+  background: #f1f5f9;
+}
+
+.teky-choice-img-preview img {
+  max-width: 100%;
+  height: 90px;
+  object-fit: contain;
+}
+
+.teky-metadata-row {
+  margin: 8px -24px 0;
+  padding: 24px 24px 0;
+  border-top: 1px solid #e5ebf2;
+}
+
+.teky-toggle {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  background: #e1e8f1;
+  cursor: pointer;
+  transition: background .18s ease;
+}
+
+.teky-toggle span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(38, 50, 71, .18);
+  transition: transform .18s ease;
+}
+
+.teky-toggle.is-on {
+  background: #ef921f;
+}
+
+.teky-toggle.is-on span {
+  transform: translateX(20px);
+}
+
+.teky-toggle:focus-visible {
+  outline: 3px solid rgba(232, 152, 50, .22);
+  outline-offset: 2px;
+}
+
+.teky-answers-section {
+  margin-bottom: 24px;
+}
+
+.teky-btn-add-answer {
+  border: 1px solid #ffe0b8;
+  border-radius: 9px;
+  background: #fff8ee;
+}
+
+.teky-answer-card,
+.teky-answer-item,
+.teky-single-text-editor {
+  border-color: #e4eaf1;
+  border-radius: 22px;
+}
+
+.teky-tf-editor {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.teky-sequence-editor {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.teky-sequence-editor .sequence-card {
+  min-width: 0;
+}
+
+.teky-matching-row {
+  padding: 16px;
+  border: 1px solid #e7edf4;
+  border-radius: 22px;
+  background: #fbfcfe;
+}
+
+.teky-multiple-numeric-editor {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.teky-multiple-numeric-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+  padding: 0 12px;
+  border: 1px solid #e4eaf1;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.teky-multiple-numeric-item > span {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #f0f4f8;
+  color: #8293aa;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.teky-multiple-numeric-item input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .teky-q-body-flex {
+    display: block;
+  }
+
+  .teky-q-sidebar {
+    width: auto;
+    border-right: 0;
+    border-bottom: 1px solid #e5ebf2;
+  }
+
+  .teky-context-grid,
+  .teky-flex-row,
+  .teky-tf-editor,
+  .teky-sequence-editor,
+  .teky-multiple-numeric-editor,
+  .teky-choices-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .teky-flex-row {
+    display: grid;
+  }
+}

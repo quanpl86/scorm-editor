@@ -1,0 +1,138 @@
+[
+  {
+    "id": "quiz_sample_9_types",
+    "title": "Bài Kiểm Tra Tổng Hợp 9 Dạng Câu Hỏi",
+    "description": "Bài thi mẫu được thiết kế để kiểm thử toàn bộ 9 dạng câu hỏi được hỗ trợ trên hệ thống LMS/CMS.",
+    "coverImageUrl": "https://s3-sgn10.fptcloud.com/teky-prod/quiz-covers/quiz_sample_9_types.jpg",
+    "subject": "Công nghệ thông tin",
+    "difficultyLevel": "medium",
+    "tags": ["Sample", "Testing", "LMS"],
+    "createdBy": "admin",
+    "createdByName": "Hệ thống LMS",
+    "isPublic": true,
+    "duration": 2700,
+    "settings": {
+      "shuffleQuestions": true,
+      "shuffleAnswers": true,
+      "attemptLimit": 3,
+      "showResults": "after_submit",
+      "allowReview": true
+    },
+    "createdAt": "2026-07-28T10:00:00.000Z",
+    "updatedAt": "2026-07-28T10:00:00.000Z",
+    "questions": [
+      {
+        "id": "q1_mc",
+        "type": "multiple_choice",
+        "question": "1. Trắc nghiệm (Chọn 1): Máy tính điện tử đầu tiên trên thế giới tên là gì?",
+        "points": 1,
+        "metadata": { "difficulty": "easy", "topic": "Lịch sử máy tính" },
+        "options": [
+          { "id": "opt1", "text": "ENIAC" },
+          { "id": "opt2", "text": "EDVAC" },
+          { "id": "opt3", "text": "UNIVAC" },
+          { "id": "opt4", "text": "Z3" }
+        ],
+        "correctAnswer": ["opt1"],
+        "explanation": "ENIAC (Electronic Numerical Integrator and Computer) được chế tạo năm 1945 và được công nhận là máy tính điện tử đa mục đích đầu tiên trên thế giới."
+      },
+      {
+        "id": "q2_ms",
+        "type": "multiple_select",
+        "question": "2. Trắc nghiệm (Chọn nhiều): Những hệ điều hành nào dưới đây dành cho điện thoại di động?",
+        "points": 1,
+        "metadata": { "difficulty": "easy", "topic": "Hệ điều hành" },
+        "options": [
+          { "id": "opt1", "text": "Android" },
+          { "id": "opt2", "text": "Windows 11" },
+          { "id": "opt3", "text": "iOS" },
+          { "id": "opt4", "text": "Ubuntu" }
+        ],
+        "correctAnswer": ["opt1", "opt3"],
+        "explanation": "Android do Google phát triển và iOS do Apple phát triển là 2 hệ điều hành phổ biến nhất dành riêng cho các thiết bị di động như smartphone và tablet."
+      },
+      {
+        "id": "q3_tf",
+        "type": "true_false",
+        "question": "3. Đúng / Sai: Địa chỉ IP 192.168.1.1 là địa chỉ IP Public.",
+        "points": 1,
+        "metadata": { "difficulty": "medium", "topic": "Mạng máy tính" },
+        "options": [
+          { "id": "opt_true", "text": "Đúng" },
+          { "id": "opt_false", "text": "Sai" }
+        ],
+        "correctAnswer": ["false"],
+        "explanation": "Dải mạng 192.168.x.x là một trong 3 dải địa chỉ IP Private (cục bộ) dùng trong mạng LAN nội bộ, không thể định tuyến trực tiếp (route) ra ngoài mạng Internet toàn cầu."
+      },
+      {
+        "id": "q4_match",
+        "type": "matching",
+        "question": "4. Ghép cặp: Nối phím tắt tương ứng với chức năng của nó trên hệ điều hành Windows.",
+        "points": 1,
+        "metadata": { "difficulty": "easy", "topic": "Tin học cơ bản" },
+        "pairs": [
+          { "id": "p1", "left": "Ctrl + C", "right": "Sao chép (Copy)" },
+          { "id": "p2", "left": "Ctrl + V", "right": "Dán (Paste)" },
+          { "id": "p3", "left": "Ctrl + Z", "right": "Hoàn tác (Undo)" }
+        ],
+        "correctAnswer": [
+          "p1:Sao chép (Copy)",
+          "p2:Dán (Paste)",
+          "p3:Hoàn tác (Undo)"
+        ],
+        "explanation": "Đây là các phím tắt tiêu chuẩn toàn cầu: C là Copy, V là Paste, và Z là Undo."
+      },
+      {
+        "id": "q5_ord",
+        "type": "ordering",
+        "question": "5. Sắp xếp thứ tự: Sắp xếp các đơn vị đo lường bộ nhớ sau từ NHỎ đến LỚN.",
+        "points": 1,
+        "metadata": { "difficulty": "medium", "topic": "Phần cứng" },
+        "orderingItems": [
+          { "id": "i1", "text": "Bit" },
+          { "id": "i2", "text": "Byte" },
+          { "id": "i3", "text": "Kilobyte (KB)" },
+          { "id": "i4", "text": "Megabyte (MB)" }
+        ],
+        "correctAnswer": ["i1", "i2", "i3", "i4"],
+        "explanation": "Thứ tự đúng là: Bit (đơn vị nhỏ nhất chứa giá trị 0 hoặc 1), Byte (bằng 8 bits), KB (bằng 1024 Bytes), MB (bằng 1024 KB)."
+      },
+      {
+        "id": "q6_fill",
+        "type": "fill_blank",
+        "question": "6. Điền vào chỗ trống: Trình duyệt web mặc định đi kèm với Windows 10/11 tên là {blank}.",
+        "points": 1,
+        "metadata": { "difficulty": "easy", "topic": "Phần mềm" },
+        "correctAnswer": ["Edge", "Microsoft Edge"],
+        "explanation": "Microsoft Edge là trình duyệt web do Microsoft phát triển để thay thế cho trình duyệt Internet Explorer thế hệ cũ."
+      },
+      {
+        "id": "q7_short",
+        "type": "short_answer",
+        "question": "7. Trả lời ngắn: Ngôn ngữ đánh dấu siêu văn bản dùng để xây dựng bộ khung của trang web có tên viết tắt là gì?",
+        "points": 1,
+        "metadata": { "difficulty": "easy", "topic": "Lập trình Web" },
+        "correctAnswer": ["HTML", "html"],
+        "explanation": "HTML viết tắt của cụm từ HyperText Markup Language, là ngôn ngữ nền tảng của mọi trang web hiện nay."
+      },
+      {
+        "id": "q8_num",
+        "type": "numeric",
+        "question": "8. Đáp án số: Hệ nhị phân (Binary) sử dụng bao nhiêu chữ số cơ bản để biểu diễn dữ liệu?",
+        "points": 1,
+        "metadata": { "difficulty": "medium", "topic": "Toán rời rạc" },
+        "correctAnswer": ["2"],
+        "explanation": "Hệ nhị phân (cơ số 2) chỉ sử dụng 2 chữ số cơ bản là 0 và 1."
+      },
+      {
+        "id": "q9_mnum",
+        "type": "multiple_numeric",
+        "question": "9. Nhiều đáp án số: Giải phương trình bậc 2 sau: x^2 - 3x + 2 = 0. Nghiệm nhỏ điền trước, nghiệm lớn điền sau.",
+        "points": 1,
+        "metadata": { "difficulty": "hard", "topic": "Toán học" },
+        "correctAnswer": ["1", "2"],
+        "explanation": "Theo định lý Vi-ét hoặc nhẩm nghiệm nhanh, ta có tổng a + b + c = 1 - 3 + 2 = 0, suy ra hai nghiệm của phương trình là x1 = 1 và x2 = c/a = 2."
+      }
+    ]
+  }
+]

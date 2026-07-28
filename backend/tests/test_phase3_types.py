@@ -9,7 +9,7 @@ import pytest
 from app.excel_import import parse_excel_file
 from app.layout import extract_layout
 from app.quiz_builder import IMPORT_TEMPLATE_DIR, MASTER_SCORM, build_quiz_from_excel
-from app.scorm_parser import ScormSession, slide_to_view
+from app.scorm_parser import ScormSession, apply_question_edit, slide_to_view
 
 
 FIB_WB_SAMPLE = IMPORT_TEMPLATE_DIR / "FIB_WB_import_sample.xlsx"
@@ -118,3 +118,70 @@ def test_skip_dnd_excel_type():
         )
         assert report[0]["status"] == "skipped"
         assert "DND" in report[0]["errors"][0]
+
+
+def test_short_answer_edit_keeps_primary_answer_and_synonyms():
+    slide = {
+        "tp": "TypeIn",
+        "D": {"h": "<p>Câu hỏi</p>"},
+        "C": {"chs": [{"i": "old-1", "t": "A"}, {"i": "old-2", "t": "B"}]},
+    }
+
+    apply_question_edit(slide, {"typeInAnswers": ["HTML", "html"]})
+
+    assert slide["C"]["chs"] == [
+        {"i": "ans-0", "t": "HTML"},
+        {"i": "ans-1", "t": "html"},
+    ]
+
+
+def test_required_and_regex_settings_round_trip_in_question_view():
+    slide = {
+        "i": "question-1",
+        "tp": "TypeIn",
+        "D": {"h": "<p>Câu hỏi</p>"},
+        "C": {"chs": [{"i": "old-1", "t": "HTML"}]},
+        "s": {"e": {"pt": 1}},
+        "a": {"b": {"f": "pictureFill", "p": {"p": "fill", "i": ""}}, "o": []},
+    }
+
+    apply_question_edit(slide, {"required": True, "useRegex": True})
+    view = slide_to_view(slide, 0, 0, "Nhóm")
+
+    assert view["required"] is True
+    assert view["useRegex"] is True
+
+
+def test_fill_blank_edit_keeps_synonyms_and_uses_underscore_marker():
+    slide = {
+        "tp": "FillInTheBlank",
+        "D": {"h": "<p>Trình duyệt mặc định là ___.</p>"},
+        "C": {
+            "rt": {
+                "h": '<p><span id="qmFillInTheBlank0"></span></p>',
+                "r": [
+                    {
+                        "id": "qmFillInTheBlank0",
+                        "type": "qmFillInTheBlank",
+                        "data": {"v": ["Edge", "Microsoft Edge"]},
+                    },
+                ],
+            },
+        },
+    }
+
+    apply_question_edit(
+        slide,
+        {
+            "questionText": "Trình duyệt mặc định là ___.",
+            "blankAnswers": [
+                {"id": "qmFillInTheBlank0", "values": ["Edge", "Microsoft Edge"]},
+                {"id": "qmFillInTheBlank1", "values": ["Chrome"]},
+            ],
+        },
+    )
+
+    assert len(slide["C"]["rt"]["r"]) == 1
+    assert slide["C"]["rt"]["r"][0]["data"]["v"] == ["Edge", "Microsoft Edge"]
+    assert 'id="qmFillInTheBlank0"' in slide["C"]["rt"]["h"]
+    assert "___" not in slide["C"]["rt"]["h"]
