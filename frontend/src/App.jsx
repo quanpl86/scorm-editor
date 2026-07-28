@@ -91,7 +91,11 @@ function syncSlideCanvasHtml(slide) {
   if (slide._dirtyQuestionText || slide._dirtyQuestionFormat) {
     const dir = slide.layout.objects?.find((o) => o.I === 'direction')
     if (dir) {
-      const html = (dir.html?.trim() && extractPlainTextFromHtml(dir.html))
+      const htmlMatchesText = (
+        dir.html?.trim()
+        && extractPlainTextFromHtml(dir.html) === String(slide.questionText || '').trim()
+      )
+      const html = htmlMatchesText
         ? dir.html
         : buildStyledHtml(
           slide.questionText,
@@ -116,7 +120,11 @@ function syncSlideCanvasHtml(slide) {
   if (slide._dirtySubtitleText || slide._dirtySubtitleFormat) {
     const content = slide.layout.objects?.find((o) => o.role === 'content')
     if (content?.html != null || slide.subtitleText != null) {
-      const html = (content?.html?.trim() && extractPlainTextFromHtml(content.html))
+      const htmlMatchesText = (
+        content?.html?.trim()
+        && extractPlainTextFromHtml(content.html) === String(slide.subtitleText || '').trim()
+      )
+      const html = htmlMatchesText
         ? content.html
         : buildStyledHtml(
           slide.subtitleText || '',
@@ -146,7 +154,11 @@ function syncSlideCanvasHtml(slide) {
     const syncedChoices = slide.choices.map((ch, idx) => {
       const item = items[idx]
       const sourceHtml = ch.html || item?.html
-      const html = (sourceHtml?.trim() && extractPlainTextFromHtml(sourceHtml))
+      const htmlMatchesText = (
+        sourceHtml?.trim()
+        && extractPlainTextFromHtml(sourceHtml) === String(ch.text || '').trim()
+      )
+      const html = htmlMatchesText
         ? sourceHtml
         : buildStyledHtml(ch.text, 'content', ch.format, typography, sourceHtml)
       return { ...ch, html }

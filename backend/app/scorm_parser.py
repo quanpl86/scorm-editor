@@ -407,7 +407,13 @@ def apply_choices(slide: dict[str, Any], choices: list[dict[str, Any]]) -> None:
         if isinstance(ch.get("t"), dict):
             if choice.get("html"):
                 text = choice.get("text", "")
-                if should_apply_text(ch["t"], text, choice.get("format"), "content") or (
+                html_matches_text = strip_html(choice["html"]).strip() == str(text).strip()
+                if not html_matches_text:
+                    c_fmt = choice.get("format") if choice.get("format") is not None else extract_text_format(
+                        ch["t"].get("h", ""), ch["t"].get("t"), "content"
+                    )
+                    apply_text_to_node(ch["t"], text, "content", c_fmt)
+                elif should_apply_text(ch["t"], text, choice.get("format"), "content") or (
                     ch["t"].get("h") != choice["html"]
                 ):
                     apply_html_to_node(ch["t"], choice["html"], text, "content")
@@ -679,7 +685,13 @@ def apply_special_slide_edit(slide: dict[str, Any], edit: dict[str, Any]) -> Non
     slide.setdefault("D", {})
     if edit.get("questionHtml"):
         text = edit.get("questionText") or strip_html(edit["questionHtml"])
-        if should_apply_text(slide["D"], text, edit.get("questionFormat"), "title") or (
+        html_matches_text = strip_html(edit["questionHtml"]).strip() == str(text).strip()
+        if not html_matches_text:
+            q_fmt = edit.get("questionFormat") if edit.get("questionFormat") is not None else extract_text_format(
+                slide["D"].get("h", ""), slide["D"].get("t"), "title"
+            )
+            apply_text_to_node(slide["D"], text, "title", q_fmt)
+        elif should_apply_text(slide["D"], text, edit.get("questionFormat"), "title") or (
             slide["D"].get("h") != edit["questionHtml"]
         ):
             apply_html_to_node(slide["D"], edit["questionHtml"], text, "title")
@@ -905,7 +917,13 @@ def apply_question_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:
     slide.setdefault("D", {})
     if edit.get("questionHtml"):
         text = edit.get("questionText") or strip_html(edit["questionHtml"])
-        if should_apply_text(slide["D"], text, edit.get("questionFormat"), "title") or (
+        html_matches_text = strip_html(edit["questionHtml"]).strip() == str(text).strip()
+        if not html_matches_text:
+            q_fmt = edit.get("questionFormat") if edit.get("questionFormat") is not None else extract_text_format(
+                slide["D"].get("h", ""), slide["D"].get("t"), "title"
+            )
+            apply_text_to_node(slide["D"], text, "title", q_fmt)
+        elif should_apply_text(slide["D"], text, edit.get("questionFormat"), "title") or (
             slide["D"].get("h") != edit["questionHtml"]
         ):
             apply_html_to_node(slide["D"], edit["questionHtml"], text, "title")

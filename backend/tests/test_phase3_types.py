@@ -135,6 +135,64 @@ def test_short_answer_edit_keeps_primary_answer_and_synonyms():
     ]
 
 
+def test_question_edit_prefers_new_text_when_client_html_is_stale():
+    slide = {
+        "i": "question-1",
+        "tp": "MultipleChoice",
+        "D": {
+            "h": "<p><span>Câu hỏi ban đầu</span></p>",
+        },
+        "C": {"chs": []},
+    }
+
+    apply_question_edit(
+        slide,
+        {
+            "questionText": "Câu hỏi đã hiệu chỉnh",
+            "questionHtml": "<p><span>Câu hỏi ban đầu</span></p>",
+        },
+    )
+
+    view = slide_to_view(slide, 0, 0, "Nhóm")
+    assert view["questionText"] == "Câu hỏi đã hiệu chỉnh"
+
+
+def test_choice_edit_prefers_new_text_when_client_html_is_stale():
+    slide = {
+        "i": "question-1",
+        "tp": "MultipleChoice",
+        "D": {"h": "<p>Câu hỏi</p>"},
+        "C": {
+            "chs": [
+                {
+                    "i": "choice-1",
+                    "t": {
+                        "h": "<p><span>Đáp án ban đầu</span></p>",
+                    },
+                    "c": True,
+                },
+            ],
+        },
+    }
+
+    apply_question_edit(
+        slide,
+        {
+            "choices": [
+                {
+                    "id": "choice-1",
+                    "text": "Đáp án đã hiệu chỉnh",
+                    "html": "<p><span>Đáp án ban đầu</span></p>",
+                    "isCorrect": True,
+                },
+            ],
+        },
+    )
+
+    view = slide_to_view(slide, 0, 0, "Nhóm")
+    assert view["choices"][0]["text"] == "Đáp án đã hiệu chỉnh"
+
+
 def test_required_and_regex_settings_round_trip_in_question_view():
     slide = {
         "i": "question-1",
