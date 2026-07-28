@@ -12,6 +12,10 @@ không nhập trong Excel và không hiển thị trên Editor. `Image` thuộc 
 ảnh đại diện chung của quiz được khai báo bằng `coverImage` trong sheet
 `Quiz Settings`. Xem đặc tả tại `docs/TEKY_EXCEL_SCHEMA.md`.
 
+Hướng dẫn vận hành đầy đủ cho cả mode iSpring SCORM và mode Teky LMS nằm tại
+`docs/SCORM_EDITOR_GUIDE.md`; bản Word được sinh tại
+`docs/SCORM_Editor_Huong_Dan_Chi_Tiet.docx`.
+
 ## 1. Yêu cầu hệ thống (Prerequisites)
 Để có thể chạy dự án trên máy cá nhân (local), bạn cần phải cài đặt sẵn các công cụ sau:
 - **Python 3+**: [Tải tại đây](https://python.org) (Dùng để chạy Backend).

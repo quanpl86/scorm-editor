@@ -1,18 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 
 const SECTIONS = [
-  { id: 'intro', title: '1. Giới thiệu tổng quan' },
-  { id: 'install', title: '2. Cài đặt & khởi chạy' },
-  { id: 'input', title: '3. Đầu vào (Input)' },
-  { id: 'editor', title: '4. Giao diện & Editor' },
-  { id: 'media', title: '5. Media SCORM / iSpring' },
-  { id: 'view-json', title: '6. JSON trung gian (View)' },
-  { id: 'export', title: '7. Đầu ra (Export)' },
-  { id: 'naming', title: '8. Quy ước đặt tên ảnh' },
-  { id: 'api', title: '9. Tham chiếu API' },
-  { id: 'checklist', title: '10. Checklist thực hành' },
-  { id: 'limits', title: '11. Giới hạn & kỹ thuật' },
-  { id: 'appendix', title: '12. Phụ lục tóm tắt' },
+  { id: 'overview', title: '1. Tổng quan & tài nguyên' },
+  { id: 'scorm-mode', title: '2. Mode iSpring SCORM' },
+  { id: 'teky-mode', title: '3. Mode Teky LMS' },
+  { id: 'excel', title: '4. Excel cấu hình quiz/question' },
+  { id: 'media', title: '5. Thư mục media & link ảnh' },
+  { id: 'types', title: '6. Chín dạng question' },
+  { id: 'edit-save', title: '7. Edit & Save Quiz' },
+  { id: 'viewer', title: '8. Viewer & kiểm duyệt' },
+  { id: 'export', title: '9. Export JSON LMS' },
+  { id: 'checklist', title: '10. Checklist & xử lý lỗi' },
+  { id: 'api', title: '11. API & vận hành' },
 ]
 
 function GuideTable({ headers, rows }) {
@@ -20,18 +19,12 @@ function GuideTable({ headers, rows }) {
     <div className="guide-table-wrap">
       <table className="guide-table">
         <thead>
-          <tr>
-            {headers.map((h) => (
-              <th key={h}>{h}</th>
-            ))}
-          </tr>
+          <tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr>
         </thead>
         <tbody>
-          {rows.map((row, i) => (
-            <tr key={i}>
-              {row.map((cell, j) => (
-                <td key={j}>{cell}</td>
-              ))}
+          {rows.map((row, rowIndex) => (
+            <tr key={rowIndex}>
+              {row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}
             </tr>
           ))}
         </tbody>
@@ -51,770 +44,388 @@ function GuideNote({ children }) {
 function GuideContent() {
   return (
     <div className="guide-content">
-      {/* ── 1 ── */}
-      <section id="guide-intro" className="guide-section">
-        <h2>1. Giới thiệu tổng quan</h2>
-        <h3>1.1. SCORM Editor là gì?</h3>
+      <section id="guide-overview" className="guide-section">
+        <h2>1. Tổng quan và tài nguyên chuẩn</h2>
         <p>
-          SCORM Editor là ứng dụng web full-stack giúp mở, chỉnh sửa và xuất gói bài kiểm tra{' '}
-          <strong>SCORM 1.2</strong> từ iSpring Quiz Maker. Hỗ trợ hai luồng nhập: import gói SCORM
-          có sẵn, hoặc tạo quiz từ Excel chuẩn iSpring — sau đó chỉnh canvas, preview và export ra
-          LMS hoặc JSON Teky-school.
+          SCORM Editor có hai mode biên soạn dùng chung editor, viewer và JSON xuất bản Teky LMS:
+          <strong> iSpring SCORM</strong> dành cho package `.zip` và <strong>Teky LMS</strong> dành
+          cho Excel chuẩn kèm thư mục media.
         </p>
+        <GuideCode>{`SCORM ZIP ─┐
+           ├─> Import -> Edit -> Save Quiz -> View & Làm bài -> Export
+Excel+media┘                                ├─> SCORM 1.2 ZIP
+                                           └─> Teky LMS JSON + media S3/FPT`}</GuideCode>
+        <GuideNote>
+          Quiz ID, Question ID, ID đáp án và ID cặp ghép do hệ thống tự sinh. Không nhập ID trong
+          Excel và không cần hiển thị ID trên editor.
+        </GuideNote>
 
-        <h3>1.2. Luồng làm việc tổng quát</h3>
-        <GuideCode>{`[INPUT]  SCORM .zip  ─────────────────┐
-         Excel .xls/.xlsx ────────────┼──► Editor (session) ──► [OUTPUT]
-         Excel.zip + media/ ──────────┘
-                                            ├─ SCORM 1.2 .zip  (LMS)
-                                            ├─ Teky JSON       (*_teky.json)
-                                            └─ Media zip/local`}</GuideCode>
-
-        <h3>1.3. Kiến trúc kỹ thuật</h3>
+        <h3>1.1. Tài nguyên mẫu</h3>
         <GuideTable
-          headers={['Thành phần', 'Công nghệ', 'Vai trò']}
+          headers={['Tài nguyên', 'Vị trí/vai trò']}
           rows={[
-            ['Backend', 'Python FastAPI', 'Parse SCORM/Excel, session, save, export, preview'],
-            ['Frontend', 'React + Vite', 'UI import, editor, canvas, preview, toolbar'],
-            ['Session storage', 'backend/data/sessions/', 'Mỗi lần import tạo session riêng'],
-            ['MASTER SCORM', 'DGSA_Level5_Bài 1_...', 'Template slide khi tạo quiz từ Excel'],
-            ['Import templates', 'ImportTemplate/', 'File Excel mẫu + thư mục media'],
+            ['SCORM mẫu', 'DGSA2025-HP05-B01.zip, DGSA2025-HP05-B05.zip'],
+            ['Excel iSpring', 'ImportTemplate/Sample_import_template.xls'],
+            ['Excel media', 'ImportTemplate/Media_import_sample.xlsx'],
+            ['Excel FIB/WB/Numeric', 'ImportTemplate/FIB_WB_import_sample.xlsx'],
+            ['Gói Teky chính thức', 'ImportTemplate/Full_quiz_9_types_teky_lms.zip'],
+            ['Excel Teky nguồn chuẩn', 'Full_quiz_9_types_sample/Full_quiz_9_types_teky_lms_system_ids.xlsx'],
+            ['Media Teky', 'ImportTemplate/Full_quiz_9_types_sample/media/'],
+            ['JSON template', 'docs/cms_json_template.json'],
+            ['JSON đầy đủ', 'docs/cms_json_full_sample.json'],
+            ['Schema Excel', 'docs/TEKY_EXCEL_SCHEMA.md'],
+            ['Hướng dẫn đầy đủ', 'docs/SCORM_EDITOR_GUIDE.md và bản Word'],
           ]}
         />
-
-        <h3>1.4. Cấu trúc thư mục dự án</h3>
-        <GuideCode>{`scorm-editor/
-├── backend/app/
-│   ├── main.py           # API endpoints
-│   ├── scorm_parser.py   # Decode/encode iSpring, view, save, export
-│   ├── excel_import.py   # Parse Excel + media brackets
-│   ├── quiz_builder.py   # Inject Excel → quiz JSON + layout
-│   ├── cms_export.py     # Export Teky-school JSON
-│   ├── media_rich.py     # Audio/video/image rich text
-│   ├── layout.py         # Canvas layout / reflow
-│   └── preview.py        # Preview player + report proxy
-├── frontend/src/         # React UI
-├── docs/                 # Đặc tả + plan + Word guide
-└── start.sh              # Chạy nhanh local`}</GuideCode>
+        <p>
+          Trên màn hình import có liên kết tải trực tiếp gói 9 dạng, Excel iSpring, Excel media và
+          Excel FIB/WB/Numeric. Luôn sao chép template sang thư mục làm việc riêng trước khi soạn.
+        </p>
       </section>
 
-      {/* ── 2 ── */}
-      <section id="guide-install" className="guide-section">
-        <h2>2. Cài đặt và khởi chạy</h2>
-        <h3>2.1. Yêu cầu hệ thống</h3>
-        <ul>
-          <li>Python 3+ (backend)</li>
-          <li>Node.js &amp; npm (frontend build)</li>
-          <li>Trình duyệt hiện đại (Chrome / Edge / Firefox / Safari)</li>
-        </ul>
-
-        <h3>2.2. Chạy nhanh bằng start.sh</h3>
+      <section id="guide-scorm-mode" className="guide-section">
+        <h2>2. Mode iSpring SCORM: ZIP → Edit → View → Export</h2>
+        <h3>2.1. Import</h3>
         <ol>
-          <li>Mở Terminal, vào thư mục <code>scorm-editor</code>.</li>
-          <li>Cấp quyền: <code>chmod +x start.sh</code></li>
-          <li>Chạy: <code>./start.sh</code></li>
+          <li>Chọn <strong>Mode: iSpring SCORM</strong>.</li>
+          <li>Kéo package SCORM 1.2 `.zip` vào vùng <strong>Chỉnh sửa SCORM có sẵn</strong>.</li>
+          <li>Chờ hệ thống tìm `imsmanifest.xml`, giải mã quiz và tạo session.</li>
+          <li>Kiểm tra title, số câu, slide đặc biệt và media.</li>
         </ol>
-        <p>
-          Script: tạo venv → cài requirements → npm install → npm run build → uvicorn port 8000.
-        </p>
-        <p>
-          Truy cập: <strong>http://localhost:8000</strong>
-        </p>
+        <p>Hỗ trợ package zip lồng zip. Không sửa trực tiếp JSON key ngắn của iSpring.</p>
 
-        <h3>2.3. Chạy thủ công</h3>
-        <p><strong>Frontend:</strong></p>
-        <GuideCode>{`cd frontend
-npm install
-npm run build
-cd ..`}</GuideCode>
-        <p><strong>Backend:</strong></p>
-        <GuideCode>{`cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000`}</GuideCode>
+        <h3>2.2. Edit và Save</h3>
+        <ul>
+          <li>Sửa title, điểm đạt, nội dung câu hỏi, đáp án, feedback và reporting.</li>
+          <li>Sửa chữ/định dạng, ảnh và bố cục object trên canvas.</li>
+          <li>Sửa điểm, thời gian, shuffle answer và media đã có trong package.</li>
+          <li>Nhấn <strong>Save Quiz</strong> để ghi nội dung vào session/package.</li>
+        </ul>
 
-        <h3>2.4. Chạy test tự động</h3>
-        <GuideCode>{`cd scorm-editor/backend
-.venv/bin/pytest tests/ -v`}</GuideCode>
-      </section>
-
-      {/* ── 3 ── */}
-      <section id="guide-input" className="guide-section">
-        <h2>3. Đầu vào (Input)</h2>
-        <h3>3.1. Gói SCORM iSpring (.zip)</h3>
-        <p>
-          Import package SCORM 1.2 từ iSpring Quiz Maker để chỉnh nội dung, layout và media.
-        </p>
-        <GuideTable
-          headers={['Mục', 'Chi tiết']}
-          rows={[
-            ['API', 'POST /api/import'],
-            ['File', '.zip (hỗ trợ zip lồng zip)'],
-            ['Bên trong', 'imsmanifest.xml + res/index.html'],
-            ['Dữ liệu quiz', 'Base64 trong HTML → decode UTF-8 JSON iSpring'],
-            ['UI', 'Dropzone «Chỉnh sửa SCORM có sẵn» hoặc Load mẫu'],
-          ]}
-        />
+        <h3>2.3. View và Export</h3>
+        <ol>
+          <li>Nhấn <strong>Xem & Làm bài</strong> để kiểm tra player và tương tác.</li>
+          <li>Quay lại editor, chỉnh và Save lại nếu cần.</li>
+          <li>Dùng <strong>Export SCORM</strong> để lấy lại SCORM 1.2 zip.</li>
+          <li>Dùng <strong>Export CMS JSON</strong> để chuyển các question được hỗ trợ sang Teky LMS.</li>
+        </ol>
         <GuideNote>
-          Quiz iSpring dùng key ngắn (d, sl, tp, C, rs…). Người dùng không cần chỉnh trực tiếp JSON thô.
-        </GuideNote>
-
-        <h3>3.2. Excel iSpring QuizMaker</h3>
-        <p>
-          Tạo quiz mới dựa trên MASTER SCORM (slide templates), inject từng dòng Excel thành slide.
-        </p>
-        <GuideTable
-          headers={['Mục', 'Chi tiết']}
-          rows={[
-            ['API', 'POST /api/import/excel'],
-            ['File', '.xls / .xlsx hoặc .zip (Excel + media/)'],
-            ['Form options', 'quiz_title, group_title'],
-            ['UI', 'Dropzone Excel + form tên + nút import mẫu'],
-          ]}
-        />
-
-        <h3>3.2.1. Cột Excel (hàng 1 = header)</h3>
-        <GuideTable
-          headers={['Cột', 'Bắt buộc', 'Mô tả']}
-          rows={[
-            ['Question Type', 'Có', 'MC, MR, TF, TI, SEQ, MG, FIB, WB, IS, NUMG…'],
-            ['Question Text', 'Có*', 'Nội dung câu hỏi (*TF có thể chỉ có Image)'],
-            ['Image', 'Không', 'Ảnh câu hỏi — đường dẫn tương đối'],
-            ['Audio', 'Không', 'Audio đọc đề'],
-            ['Video', 'Không', 'Video bài học; cần poster (cột Image)'],
-            ['Answer 1…10', 'Theo loại', 'Đáp án; * = đúng; brackets media'],
-            ['Correct Feedback', 'Không', 'Phản hồi khi đúng + media'],
-            ['Incorrect Feedback', 'Không', 'Phản hồi khi sai + media'],
-            ['Points', 'Không', 'Điểm câu hỏi'],
-          ]}
-        />
-
-        <h3>3.2.2. Map loại câu hỏi Excel → iSpring</h3>
-        <GuideTable
-          headers={['Mã Excel', 'Loại iSpring', 'Ghi chú']}
-          rows={[
-            ['MC', 'MultipleChoice', 'Trắc nghiệm 1 đáp án đúng'],
-            ['MR', 'MultipleResponse', 'Chọn nhiều'],
-            ['TF', 'TrueFalse', 'Đúng / Sai'],
-            ['TI / SA', 'TypeIn', 'Nhập câu trả lời ngắn'],
-            ['NUM / NUMG', 'Numeric', 'Số (clone template TypeIn)'],
-            ['SEQ', 'Sequence', 'Sắp xếp thứ tự'],
-            ['MG / MA', 'Matching', 'Nối cặp'],
-            ['FIB / FITB', 'FillInTheBlank', 'Điền khuyết'],
-            ['WB', 'WordBank', 'Kéo từ vào chỗ trống'],
-            ['IS', 'InfoSlide', 'Slide thông tin (không chấm điểm)'],
-            ['DND, DIB, HS, ESSAY…', '—', 'Parse nhưng SKIP (không import Excel)'],
-          ]}
-        />
-
-        <h3>3.2.3. Cú pháp media trong ô Excel (brackets)</h3>
-        <p><strong>Cú pháp rõ ràng (khuyến nghị):</strong></p>
-        <GuideCode>{`[image=media\\ten_anh.jpg]
-[audio=media\\ten_audio.mp3]
-[video=media\\ten_video.mp4]
-[sound=media\\ten_audio.mp3]    ← alias audio`}</GuideCode>
-        <p><strong>Cú pháp ngắn theo đuôi file:</strong></p>
-        <GuideCode>{`[media\\anh.png]      → image
-[media\\voice.mp3]    → audio
-[media\\clip.mp4]     → video`}</GuideCode>
-        <p><strong>Đáp án đúng + media:</strong></p>
-        <GuideCode>{`*Con heo [audio=media\\voice_heo.mp3]
-*Đáp án A [image=media\\icon_a.png]`}</GuideCode>
-        <p><strong>Nhiều media trong feedback:</strong></p>
-        <GuideCode>{`Giỏi lắm! [audio=media\\voice_chuc.mp3] [image=media\\star.png]
-Thử lại nhé [audio=media\\voice_goi_y.mp3] [image=media\\goi_y.jpg]`}</GuideCode>
-
-        <h3>3.2.4. Định dạng file media hỗ trợ</h3>
-        <GuideTable
-          headers={['Loại', 'Đuôi file']}
-          rows={[
-            ['Ảnh', '.jpg .jpeg .png .gif .bmp .webp'],
-            ['Audio', '.mp3 .wav .m4a .ogg'],
-            ['Video', '.mp4 .webm .mov'],
-          ]}
-        />
-
-        <h3>3.2.5. File mẫu có sẵn</h3>
-        <GuideTable
-          headers={['File', 'Vai trò', 'Nút UI']}
-          rows={[
-            ['Sample_import_template.xls', 'Đầy đủ MC/MR/TF/TI/MG/SEQ/IS/NUMG', 'Import mẫu Excel'],
-            ['Media_import_sample.xlsx', 'Audio/video mầm non', 'Import mẫu Audio/Video'],
-            ['FIB_WB_import_sample.xlsx', 'FIB, Word Bank, Numeric', 'Import mẫu FIB / WB / Numeric'],
-            ['media/', 'Ảnh, voice_*.mp3, sample_lesson.mp4', 'Cùng cấp Excel trong zip'],
-          ]}
-        />
-
-        <h3>3.3. Nguyên tắc media</h3>
-        <ul>
-          <li>Media <strong>local only</strong> — copy vào package; không dùng direct URL (YouTube, Drive…).</li>
-          <li>Video luôn cần ảnh poster (cột Image hoặc <code>[image=...]</code>).</li>
-          <li>Media thiếu file → warning trong ImportReport, không fail cả dòng.</li>
-          <li>Sau import: <code>ensure_media_registry()</code> đăng ký rs.i / rs.a / rs.v.</li>
-        </ul>
-      </section>
-
-      {/* ── 4 ── */}
-      <section id="guide-editor" className="guide-section">
-        <h2>4. Giao diện và tính năng Editor</h2>
-        <h3>4.1. Trang Import</h3>
-        <ul>
-          <li>
-            <strong>Tạo quiz từ Excel:</strong> form tên quiz/nhóm; hướng dẫn cột; tải template;
-            dropzone; 3 nút import mẫu.
-          </li>
-          <li>
-            <strong>Chỉnh sửa SCORM có sẵn:</strong> dropzone .zip; Load mẫu ZIP / thư mục.
-          </li>
-          <li>
-            <strong>ImportReport:</strong> imported / errors / skipped / media warnings; link «Mở
-            slide #N».
-          </li>
-        </ul>
-
-        <h3>4.2. Meta quiz</h3>
-        <GuideTable
-          headers={['Trường', 'Mô tả']}
-          rows={[
-            ['Tên quiz', 'Ghi vào d.T của iSpring'],
-            ['Điểm đạt (%)', 'passingScore — ngưỡng Result slide'],
-            ['Reporting — Gửi server', 'Bật + URL nhận kết quả'],
-            ['Reporting — Email admin', 'Bật + email + filter (passed/failed/both)'],
-            ['Reporting — Email học viên', 'Bật + filter'],
-          ]}
-        />
-
-        <h3>4.3. Danh sách câu hỏi</h3>
-        <ul>
-          <li>Hiển thị theo nhóm (groups) và thứ tự slide.</li>
-          <li>Chọn slide để chỉnh Nội dung / Canvas / Preview.</li>
-          <li>Xóa câu hỏi (nếu editable); hiển thị loại, điểm, preview ngắn.</li>
-        </ul>
-
-        <h3>4.4. Tab Nội dung (Question Editor)</h3>
-        <ul>
-          <li>Sửa questionText; định dạng chữ (TextFormatToolbar).</li>
-          <li>Điểm (points), giới hạn thời gian, xáo đáp án (shuffle).</li>
-        </ul>
-        <GuideTable
-          headers={['Loại', 'Chỉnh sửa trên tab Nội dung']}
-          rows={[
-            ['MultipleChoice / MR / TF', 'choices[]: text, isCorrect, image, audio, video'],
-            ['Sequence', 'choices / sequenceItems + thứ tự'],
-            ['Matching', 'matchingPairs (left/right text + image)'],
-            ['TypeIn / Numeric', 'typeInAnswers[]'],
-            ['FIB / WordBank', 'blankAnswers, richHtml, wordBankWords'],
-            ['InfoSlide', 'Nội dung thông tin / media'],
-            ['Hotspot / DND…', 'Hạn chế — ưu tiên Canvas; notice readonly/partial'],
-          ]}
-        />
-        <p><strong>Feedback đúng / sai:</strong></p>
-        <GuideTable
-          headers={['Field view', 'Ý nghĩa']}
-          rows={[
-            ['correct / incorrect', 'Text phản hồi'],
-            ['correctAudio / incorrectAudio', 'File trong res/data/audios/'],
-            ['correctImage / incorrectImage', 'Ảnh inline feedback'],
-            ['correctVideo / incorrectVideo', 'Video inline feedback'],
-          ]}
-        />
-
-        <h3>4.5. Tab Canvas (LayoutCanvas)</h3>
-        <ul>
-          <li>Kéo thả / resize object trên canvas theo tọa độ iSpring.</li>
-          <li>Sửa text inline; icon, shape, typography; font nhúng từ package.</li>
-          <li>Choice layout: reflow hàng đáp án MC/MR/TF/Sequence.</li>
-          <li>Matching preview; blank HTML cho FIB/WB.</li>
-          <li>Hotspot / kéo thả: chỉnh layout trên Canvas.</li>
-        </ul>
-        <GuideNote>
-          Sau import Excel, backend gọi reflow_imported_slide() để giảm overlap text/media.
-        </GuideNote>
-
-        <h3>4.6. Preview</h3>
-        <ul>
-          <li>Preview player: <code>GET /api/session/&#123;id&#125;/preview/player</code></li>
-          <li>Mock SCORM API để làm thử bài.</li>
-          <li>Report proxy CORS — host cho phép ispringsolutions.com, teky.vn.</li>
-        </ul>
-
-        <h3>4.7. Auto-save &amp; lịch sử</h3>
-        <ul>
-          <li>
-            <strong>useAutoSync:</strong> đồng bộ dirty fields lên server (PUT session).
-          </li>
-          <li>
-            <strong>useQuizHistory:</strong> undo/redo.
-          </li>
-          <li>
-            Save ghi quiz JSON (quiz_data.json) + encode base64 trong index.html.
-          </li>
-        </ul>
-
-        <h3>4.8. Upload / thay ảnh</h3>
-        <ul>
-          <li>
-            <code>POST /api/session/&#123;id&#125;/asset/&#123;filename&#125;</code> — thay file ảnh.
-          </li>
-          <li>uploadNewImage tạo tên <code>img-&#123;uuid&#125;.ext</code>.</li>
-        </ul>
-        <GuideNote>
-          Upload audio/video từ UI editor hạn chế — ưu tiên re-import Excel hoặc file trong package.
+          InfoSlide, IntroSlide và ResultSlide không trở thành question trong JSON Teky. Dạng iSpring
+          không có mapping Teky cũng được bỏ qua khi export JSON.
         </GuideNote>
       </section>
 
-      {/* ── 5 ── */}
+      <section id="guide-teky-mode" className="guide-section">
+        <h2>3. Mode Teky LMS: Excel + media → Edit → View → JSON</h2>
+        <h3>3.1. Gói import khuyến nghị</h3>
+        <GuideCode>{`Ten_quiz.zip
+├── Ten_quiz.xlsx
+└── media/
+    ├── quiz_cover.jpg
+    ├── q01_question.jpg
+    ├── q01_answer_a.png
+    ├── q04_left_01.jpg
+    ├── q04_right_01.jpg
+    ├── voice_question.mp3
+    └── sample_lesson.mp4`}</GuideCode>
+        <p>
+          Excel và `media/` phải cùng cấp trong zip. Import riêng `.xlsx` chỉ phù hợp khi media đã
+          có trong bộ template cục bộ; gói nội dung thực tế luôn nên dùng zip.
+        </p>
+
+        <h3>3.2. Quy trình chuẩn</h3>
+        <ol>
+          <li>Chọn <strong>Mode: Teky LMS</strong>.</li>
+          <li>Sao chép gói `Full_quiz_9_types_teky_lms.zip` để tạo bộ nội dung mới.</li>
+          <li>Điền `Quiz Settings`, `Quiz Questions` và thay media.</li>
+          <li>Nén Excel + thư mục media, rồi import vào vùng <strong>Tạo quiz từ Excel</strong>.</li>
+          <li>Xử lý toàn bộ error/media warning trong ImportReport.</li>
+          <li>Hiệu chỉnh ở Quiz Details, Questions và Settings.</li>
+          <li>Nhấn Save Quiz, sau đó Xem & Làm bài.</li>
+          <li>Export CMS JSON và kiểm tra URL S3/FPT trước khi import LMS.</li>
+        </ol>
+      </section>
+
+      <section id="guide-excel" className="guide-section">
+        <h2>4. Excel cấu hình toàn bộ quiz và question</h2>
+        <h3>4.1. Sheet Quiz Settings</h3>
+        <GuideTable
+          headers={['Field', 'Ý nghĩa']}
+          rows={[
+            ['title, description', 'Tiêu đề và mô tả quiz'],
+            ['coverImage', 'Ảnh đại diện toàn quiz, ví dụ media/quiz_cover.jpg'],
+            ['subject, difficultyLevel, tags', 'Môn học, độ khó chung, tag'],
+            ['createdBy, createdByName, isPublic', 'Thông tin tác giả/công khai'],
+            ['duration', 'Thời lượng theo giây; UI hiển thị phút'],
+            ['shuffleQuestions, shuffleAnswers', 'Trộn câu hỏi/đáp án'],
+            ['attemptLimit', 'Số lần làm; 0 là không giới hạn'],
+            ['showResults, allowReview', 'Thời điểm hiện kết quả và quyền xem lại'],
+            ['createdAt, updatedAt', 'ISO-8601; để trống để hệ thống tự sinh'],
+          ]}
+        />
+        <GuideNote>
+          `coverImage` là ảnh đại diện chung của quiz. Cột `Image` trong sheet Questions là ảnh nội
+          dung riêng của từng câu hỏi.
+        </GuideNote>
+
+        <h3>4.2. Sheet Quiz Questions</h3>
+        <GuideTable
+          headers={['Cột', 'Nội dung']}
+          rows={[
+            ['Question Type', 'Mã MC, MR, TF, MG, SEQ, FIB/WB, TI, NUM, MNUM'],
+            ['Question Text', 'Nội dung đề bài; FIB dùng ___ tại vị trí trống'],
+            ['Image, Audio, Video', 'Media cấp question'],
+            ['Answer 1…10', 'Nội dung đáp án; dùng * để đánh dấu đáp án đúng khi áp dụng'],
+            ['Answer N Image', 'Ảnh đáp án N'],
+            ['Answer N Left/Right Image', 'Ảnh hai vế của Matching'],
+            ['Difficulty, Topic', 'Độ khó và chủ đề từng question'],
+            ['Explanation', 'Giải thích sau khi nộp bài'],
+            ['Points', 'Điểm câu hỏi'],
+            ['Correct/Incorrect Feedback', 'Feedback iSpring tùy chọn'],
+          ]}
+        />
+        <p>
+          Không tạo cột Quiz ID hoặc Question ID. Hệ thống sinh ID duy nhất khi import, giữ ổn định
+          trong session và sử dụng khi xuất bản.
+        </p>
+      </section>
+
       <section id="guide-media" className="guide-section">
-        <h2>5. Media — ánh xạ SCORM / iSpring</h2>
-        <h3>5.1. Ma trận media theo vị trí</h3>
-        <GuideTable
-          headers={['Vị trí', 'Ảnh', 'Audio', 'Video', 'Khai báo Excel']}
-          rows={[
-            ['Câu hỏi', 'Có', 'Có', 'Có', 'Cột Image / Audio / Video'],
-            ['Đáp án', 'Có', 'Có', 'Có', 'Brackets trong Answer N'],
-            ['Feedback đúng', 'Có', 'Có', 'Có', 'Correct Feedback'],
-            ['Feedback sai', 'Có', 'Có', 'Có', 'Incorrect Feedback'],
-          ]}
-        />
-
-        <h3>5.2. Storage &amp; registry</h3>
-        <GuideCode>{`storage://images/{filename}
-storage://sounds/{filename}
-storage://videos/{filename}
-
-rs.i  → registry ảnh
-rs.a  → registry audio
-rs.v  → registry video`}</GuideCode>
+        <h2>5. Tạo thư mục media và gắn link ảnh trên Excel</h2>
+        <h3>5.1. Quy ước</h3>
         <ul>
-          <li>Ảnh: <code>res/data/images/img-import-*.ext</code></li>
-          <li>Audio: <code>res/data/audios/snd-import-*.ext</code></li>
-          <li>Video: <code>res/data/videos/vid-import-*.ext</code></li>
+          <li>Dùng đường dẫn tương đối bắt đầu bằng <code>media/</code>.</li>
+          <li>Không dùng đường dẫn máy cá nhân như `/Users/...` hoặc `C:\Users\...`.</li>
+          <li>Tên file nên không dấu, không khoảng trắng và có tiền tố question.</li>
+          <li>Tên trong Excel phải khớp chính xác tên file, gồm cả chữ hoa/thường.</li>
         </ul>
 
-        <h3>5.3. JSON object iSpring (tóm tắt)</h3>
+        <h3>5.2. Vị trí gắn media</h3>
         <GuideTable
-          headers={['Media', 'JSON / object', 'Ghi chú']}
+          headers={['Vị trí', 'Cột/cú pháp']}
           rows={[
-            ['Ảnh câu hỏi', 'slide.at.i + slidePicture', 'Không gắn vào choice đầu'],
-            ['Audio câu hỏi', 'slide.at.a + slideAudio', ''],
-            ['Video câu hỏi', 'slide.at.v (+ pi poster)', 'Bắt buộc poster'],
-            ['Ảnh đáp án', 'choice.ia.i', 'Icon / ảnh lựa chọn'],
-            ['Audio đáp án', 'choice.f.a', 'Voice từng đáp án (mầm non)'],
-            ['Video đáp án', 'choice.t.r[] type video', 'Cần poster = ảnh đáp án'],
-            ['Feedback text', 'slide.s.F.c.v / F.i.v', 'h, d, t'],
-            ['Feedback audio', 'slide.s.F.c.a / F.i.a', ''],
-            ['Feedback inline media', 'slide.s.F.c.v.r[]', 'image / video rich'],
+            ['Cover quiz', 'Quiz Settings → coverImage'],
+            ['Ảnh/audio/video question', 'Image, Audio, Video'],
+            ['Ảnh đáp án', 'Answer N Image'],
+            ['Matching trái/phải', 'Answer N Left Image / Right Image'],
+            ['Trong nội dung ô', '[image=media/file.png], [audio=...], [video=...]'],
           ]}
         />
+        <GuideCode>{`Image: media/q01_question.jpg
+Answer 1 Image: media/q01_answer_a.png
+Answer 1: *Đáp án đúng [audio=media/q01_correct.mp3]
+Correct Feedback: Chính xác! [image=media/star.png]`}</GuideCode>
 
-        <h3>5.4. Mẫu thiết kế mầm non (voice-first)</h3>
-        <GuideCode>{`Câu hỏi:  Audio (đọc đề) + Image (minh họa) + Video (tùy chọn)
-Đáp án:   text ngắn + [audio=...] riêng  hoặc [image=...]
-Feedback: Đúng → voice chúc mừng; Sai → voice gợi ý + ảnh`}</GuideCode>
-        <GuideCode>{`media/
-  voice_de_cau_01.mp3
-  voice_dap_an_a.mp3
-  voice_dung.mp3
-  voice_sai_goi_y.mp3
-  hinh_cau_01.jpg
-  clip_gioi_thieu.mp4`}</GuideCode>
-      </section>
-
-      {/* ── 6 ── */}
-      <section id="guide-view-json" className="guide-section">
-        <h2>6. JSON trung gian (Editor View)</h2>
+        <h3>5.3. Định dạng hỗ trợ và S3</h3>
+        <ul>
+          <li>Ảnh: jpg, jpeg, png, gif, bmp, webp.</li>
+          <li>Audio: mp3, wav, m4a, ogg.</li>
+          <li>Video: mp4, webm, mov; nên có Image làm poster.</li>
+          <li>Khi export JSON, media được upload S3/FPT nếu cấu hình hợp lệ.</li>
+        </ul>
         <p>
-          Sau import, API trả <strong>view phẳng</strong> cho UI (không phải raw iSpring). Dùng cho
-          hiển thị, chỉnh sửa và SavePayload.
-        </p>
-        <h3>6.1. Cấu trúc quiz view</h3>
-        <GuideCode>{`{
-  "sessionId": "...",
-  "title": "Tên quiz",
-  "passingScore": 80,
-  "reporting": {
-    "sendToServer": { "enabled": false, "url": "" },
-    "adminEmail": { "enabled": false, "emails": "", "filter": "passedAndFailed" },
-    "studentEmail": { "enabled": false, "filter": "passedAndFailed" }
-  },
-  "groups": [{ "title": "...", "questionCount": N }],
-  "introSlide": { ... },
-  "resultSlides": [ ... ],
-  "questions": [ /* slide_to_view */ ],
-  "questionCount": N
-}`}</GuideCode>
-
-        <h3>6.2. Cấu trúc một câu hỏi (slide view)</h3>
-        <GuideCode>{`{
-  "id": "slide-id",
-  "type": "MultipleChoice",
-  "groupIndex": 0,
-  "questionIndex": 0,
-  "groupTitle": "Imported Questions",
-  "questionText": "...",
-  "feedback": { "correct": "...", "incorrect": "..." },
-  "choices": [{ "id", "text", "isCorrect", "image", "audio", "video" }],
-  "matchingPairs": [],
-  "sequenceItems": [],
-  "typeInAnswers": [],
-  "blankAnswers": [],
-  "wordBankWords": [],
-  "slideImages": ["img-....jpg"],
-  "editableLevel": "full|partial|readonly",
-  "points": 1,
-  "layout": { ... }
-}`}</GuideCode>
-
-        <h3>6.3. SavePayload (PUT session)</h3>
-        <GuideCode>{`{
-  "title": "...",
-  "passingScore": 80,
-  "reporting": { ... },
-  "introSlide": { ... },
-  "resultSlides": [ ... ],
-  "questions": [ /* chỉnh từ view */ ]
-}`}</GuideCode>
-        <p>
-          Backend apply_question_edit + apply_quiz_meta + apply_reporting_settings → ghi lại iSpring
-          quiz JSON.
+          JSON cuối dùng `coverImageUrl`, `imageUrl`, `leftImageUrl`, `rightImageUrl`, `videoUrl`.
+          Nếu không thấy file, ImportReport hiển thị media warning thay vì làm hỏng toàn bộ quiz.
         </p>
       </section>
 
-      {/* ── 7 ── */}
+      <section id="guide-types" className="guide-section">
+        <h2>6. Xây dựng nội dung với 9 dạng question</h2>
+        <GuideTable
+          headers={['Excel', 'JSON Teky', 'Cách xây dựng']}
+          rows={[
+            ['MC', 'multiple_choice', 'Nhiều lựa chọn, đúng duy nhất một đáp án'],
+            ['MR', 'multiple_select', 'Nhiều lựa chọn, có thể đúng nhiều đáp án'],
+            ['TF', 'true_false', 'Chọn Đúng hoặc Sai'],
+            ['MG / MA', 'matching', 'Các cặp Vế trái|Vế phải, hỗ trợ ảnh hai vế'],
+            ['SEQ', 'ordering', 'Answer 1…N chính là thứ tự đúng'],
+            ['FIB / WB', 'fill_blank', 'Một textbox; đề dùng ___; hỗ trợ đáp án tương đồng'],
+            ['TI / SA', 'short_answer', 'Một textbox; hỗ trợ từ đồng nghĩa và RegEx'],
+            ['NUM / NUMG', 'numeric', 'Một giá trị số chính xác'],
+            ['MNUM', 'multiple_numeric', 'Nhiều giá trị/ô số theo thứ tự'],
+          ]}
+        />
+        <GuideNote>
+          FIB và Short Answer trên LMS đều chỉ có một textbox. Nút THÊM TỪ ĐỒNG NGHĨA thêm các
+          giá trị chấp nhận cho cùng textbox; không tạo thêm textbox trả lời.
+        </GuideNote>
+        <ul>
+          <li><strong>Required:</strong> bật/tắt bắt buộc trả lời cho từng question.</li>
+          <li><strong>RegEx:</strong> chỉ bật sau khi đã kiểm thử biểu thức và dữ liệu mẫu.</li>
+          <li><strong>Explanation:</strong> nội dung giải thích hiển thị sau khi nộp.</li>
+          <li>DND, DIB, Hotspot, Essay, Likert không thuộc 9 dạng import Excel chuẩn Teky.</li>
+        </ul>
+      </section>
+
+      <section id="guide-edit-save" className="guide-section">
+        <h2>7. Edit và Save Quiz</h2>
+        <h3>7.1. Ba khu vực editor</h3>
+        <ul>
+          <li><strong>Quiz Details:</strong> title, description, cover, subject, difficulty, duration, tags.</li>
+          <li><strong>Questions:</strong> text, media, điểm, topic, required, explanation và đáp án.</li>
+          <li><strong>Settings:</strong> attempts, shuffle, allow review và show results.</li>
+        </ul>
+
+        <h3>7.2. Thêm/xoá và upload</h3>
+        <p>
+          Có thể thêm/xoá question, lựa chọn, cặp Matching, item Ordering, ô Multiple Numeric và từ
+          đồng nghĩa. Nút upload ảnh/video cập nhật media trong session; preview ảnh dùng tỷ lệ
+          `object-fit: contain` để không méo.
+        </p>
+
+        <h3>7.3. Quy tắc lưu</h3>
+        <ul>
+          <li><strong>Save Quiz</strong> là nút lưu chính thức cho toàn bộ session.</li>
+          <li>Trước khi View hoặc Export, luôn Save Quiz.</li>
+          <li>Text mới được đồng bộ với HTML; HTML cũ không được phép ghi đè text mới.</li>
+          <li>Thêm/xoá nội dung chỉ hoàn tất sau khi save thành công.</li>
+        </ul>
+      </section>
+
+      <section id="guide-viewer" className="guide-section">
+        <h2>8. Viewer và kiểm duyệt trước xuất bản</h2>
+        <p>Nhấn <strong>Xem & Làm bài</strong> để review giao diện/tương tác giống Teky LMS:</p>
+        <ul>
+          <li>MC radio, MR checkbox, TF hai lựa chọn.</li>
+          <li>Matching chọn cặp, Ordering sắp xếp.</li>
+          <li>FIB/Short Answer một textbox; Numeric là ô số.</li>
+          <li>Multiple Numeric có nhiều ô theo danh sách đáp án số.</li>
+          <li>Hiển thị ảnh question, ảnh đáp án, chủ đề, điểm và timer.</li>
+        </ul>
+        <GuideTable
+          headers={['Kiểm tra', 'Tiêu chí đạt']}
+          rows={[
+            ['Media', 'Không ảnh vỡ, không còn media warning'],
+            ['FIB', 'Dấu ___ đúng vị trí, chỉ một textbox'],
+            ['Đáp án', 'Đúng nội dung, số lượng, correct answer và từ đồng nghĩa'],
+            ['Matching/Ordering', 'Đúng cặp/thứ tự và đúng ảnh'],
+            ['Cấu hình', 'Required, điểm, explanation, submit và review hoạt động'],
+          ]}
+        />
+      </section>
+
       <section id="guide-export" className="guide-section">
-        <h2>7. Đầu ra (Export)</h2>
-        <h3>7.1. Export SCORM 1.2 (.zip) — LMS</h3>
-        <GuideTable
-          headers={['Mục', 'Chi tiết']}
-          rows={[
-            ['API', 'POST /api/session/{id}/export'],
-            ['Body', '{ "title": "tùy chọn" }'],
-            ['Kết quả', 'application/zip — gói SCORM 1.2'],
-            ['Nội dung', 'imsmanifest.xml + res/ + index.html (quiz base64)'],
-          ]}
-        />
-        <p><strong>Checklist upload LMS:</strong></p>
+        <h2>9. Export JSON chuẩn Teky LMS</h2>
         <ol>
-          <li>Export zip → upload LMS hỗ trợ SCORM 1.2.</li>
-          <li>Làm thử: MC, TF, NUMG, media audio/video.</li>
-          <li>Kiểm tra điểm từng câu + màn hình kết quả.</li>
-          <li>Bật reporting email → thử gửi (LMS hoặc preview proxy).</li>
+          <li>Save Quiz.</li>
+          <li>Nhấn <strong>Export CMS JSON</strong>.</li>
+          <li>Backend chuyển toàn bộ question sang 9 type Teky.</li>
+          <li>Media được upload S3/FPT nếu cấu hình S3 hợp lệ.</li>
+          <li>JSON được ghi vào thư mục JSON-EXPORT.</li>
         </ol>
-
-        <h3>7.2. Export Teky-school JSON (CMS)</h3>
-        <GuideTable
-          headers={['Mục', 'Chi tiết']}
-          rows={[
-            ['API', 'POST /api/session/{id}/export-cms-json-local'],
-            ['File', '~/Downloads/SNLT-CHECKQUIZ/JSON-EXPORT/{title}_teky.json'],
-            ['Schema', 'Giống scorm-cvt parseScormToTekyJson'],
-            ['Format file', 'Mảng bọc: [ quiz_object ]'],
-            ['Ảnh', 'Public URL FPT S3 khi upload thành công; không dùng base64'],
-            ['Code', 'backend/app/cms_export.py → quiz_to_cms_json()'],
-          ]}
-        />
-
-        <h3>7.2.1. Object quiz Teky</h3>
+        <GuideCode>{`~/Downloads/SNLT-CHECKQUIZ/JSON-EXPORT/{quiz_title}_teky.json`}</GuideCode>
+        <p>File cuối được bọc dạng mảng `[quiz]`:</p>
         <GuideCode>{`[
   {
-    "id": "quiz_1780130018131",
-    "title": "Untitled Quiz",
-    "description": "Được chuyển đổi từ SCORM Editor.",
-    "subject": "Lập trình",
-    "difficultyLevel": "medium",
-    "tags": ["SCORM", "Imported"],
-    "createdBy": "admin",
-    "isPublic": false,
-    "duration": 1800,
-    "questions": [ ... ],
-    "settings": {
-      "shuffleQuestions": false,
-      "shuffleAnswers": false,
-      "attemptLimit": 1,
-      "showResults": "after_submit",
-      "allowReview": true
-    },
-    "createdAt": "...Z",
-    "updatedAt": "...Z"
+    "id": "quiz_...",
+    "title": "...",
+    "coverImageUrl": "https://s3-sgn10.fptcloud.com/...",
+    "settings": {},
+    "questions": []
   }
 ]`}</GuideCode>
-
-        <h3>7.2.2. Map loại iSpring → Teky</h3>
-        <GuideTable
-          headers={['iSpring type', 'Teky type', 'Fields chính']}
-          rows={[
-            ['MultipleChoice / MultipleChoiceText', 'multiple_choice', 'options[], correctAnswer: [id]'],
-            ['MultipleResponse', 'multiple_select', 'options[], correctAnswer: [id,…]'],
-            ['TrueFalse', 'true_false', 'options[], correctAnswer: ["true"|"false"]'],
-            ['TypeIn / Numeric / FIB / WordBank', 'fill_blank', 'correctAnswer: [text,…]'],
-            ['Matching', 'matching', 'pairs[], correctAnswer: ["pair-0:right",…]'],
-            ['Sequence', 'ordering', 'orderingItems[], correctAnswer: [id theo thứ tự]'],
-            ['InfoSlide / Intro / Result', '(bỏ qua)', 'Không đưa vào questions[]'],
-          ]}
-        />
-
-        <h3>7.2.3. Ví dụ multiple_choice</h3>
-        <GuideCode>{`{
-  "id": "ts66r2idjy78-...",
-  "type": "multiple_choice",
-  "question": "Để bắt đầu chạy một chương trình...?",
-  "points": 1,
-  "metadata": { "difficulty": "medium", "topic": "Imported Questions" },
-  "imageUrl": "images/img-....jpg",
-  "options": [
-    { "id": "2j16y7h...", "text": "Một lá cờ xanh", "imageUrl": "images/img-....jpg" },
-    { "id": "2aejpty...", "text": "Một ngôi sao vàng", "imageUrl": "images/img-....jpg" }
-  ],
-  "correctAnswer": ["2j16y7h..."]
-}`}</GuideCode>
-
-        <h3>7.2.4. Matching &amp; Ordering</h3>
-        <GuideCode>{`"pairs": [{ "id": "pair-0", "left": "...", "right": "...", "leftImageUrl": "..." }],
-"correctAnswer": ["pair-0:right text", "pair-1:..."]
-
-"orderingItems": [{ "id": "...", "text": "..." }],
-"correctAnswer": ["id1", "id2", "id3"]  // đúng thứ tự`}</GuideCode>
-
-        <h3>7.3. Export Media</h3>
-        <GuideTable
-          headers={['API', 'Kết quả']}
-          rows={[
-            ['POST .../export-media', 'Zip toàn bộ media của package'],
-            ['POST .../export-media-local', 'Copy media ra thư mục local máy server'],
-            ['POST .../export-single-media-local', 'Xuất 1 file media với tên đích'],
-          ]}
-        />
-      </section>
-
-      {/* ── 8 ── */}
-      <section id="guide-naming" className="guide-section">
-        <h2>8. Quy ước đặt tên khi Export Ảnh</h2>
         <p>
-          Khi export ảnh, hệ thống gán hậu tố theo vai trò hình ảnh để tránh trùng lặp.
+          Đối chiếu `docs/cms_json_template.json` và `docs/cms_json_full_sample.json`. Nếu upload S3
+          thất bại, exporter có thể trả `images/&lt;filename&gt;` cho quy trình local/QA; không dùng
+          đường dẫn này như URL production.
         </p>
-        <h3>8.1. Nội dung câu hỏi &amp; ảnh nền/minh họa</h3>
-        <p>
-          Background, Picture/Image, minh họa thân câu hỏi → nhóm Nội dung (ND).
-        </p>
-        <ul>
-          <li>Hậu tố: <code>_IMG-ND</code> hoặc <code>_IMG-ND-[số thứ tự]</code></li>
-        </ul>
-        <h3>8.2. Feedback &amp; slide Intro / Result</h3>
-        <ul>
-          <li>Hậu tố: <code>_IMG-ND-[số thứ tự]</code></li>
-        </ul>
-        <h3>8.3. Ảnh trong từng dạng đáp án</h3>
-        <GuideTable
-          headers={['Loại câu hỏi', 'Hậu tố']}
-          rows={[
-            ['Matching — vế trái', '_IMG-VT1, _IMG-VT2, …'],
-            ['Matching — vế phải', '_IMG-VP1, _IMG-VP2, …'],
-            ['Multiple Choice / TrueFalse', '_IMG-DA1, _IMG-DA2, _IMG-DA3, …'],
-            ['Multiple Response', '_IMG-DA1, _IMG-DA2, …'],
-            ['Sequence', '_IMG-DA1, _IMG-DA2, … (trên xuống)'],
-            ['Hotspot', '_IMG-content (ảnh vùng tương tác)'],
-            ['FIB / TypeIn / WordBank', 'Không ảnh trong đáp án text; ảnh khác → _IMG-ND'],
-          ]}
-        />
       </section>
 
-      {/* ── 9 ── */}
-      <section id="guide-api" className="guide-section">
-        <h2>9. Tham chiếu API đầy đủ</h2>
-        <h3>9.1. Health &amp; Import</h3>
-        <GuideTable
-          headers={['Method', 'Path', 'Mô tả']}
-          rows={[
-            ['GET', '/api/health', 'Health check'],
-            ['POST', '/api/import', 'Upload SCORM .zip'],
-            ['POST', '/api/import/sample?source=zip|dir', 'Load mẫu'],
-            ['POST', '/api/import/excel', 'Upload Excel hoặc zip Excel+media'],
-            ['GET', '/api/import/excel/templates', 'Danh sách template'],
-            ['GET', '/api/import/excel/templates/{id}', 'Download template'],
-            ['POST', '/api/import/excel/sample', 'Import Sample_import_template'],
-            ['POST', '/api/import/excel/media-sample', 'Import Media_import_sample'],
-            ['POST', '/api/import/excel/fib-wb-sample', 'Import FIB_WB sample'],
-          ]}
-        />
-        <h3>9.2. Session</h3>
-        <GuideTable
-          headers={['Method', 'Path', 'Mô tả']}
-          rows={[
-            ['GET', '/api/session/{id}', 'Lấy view hiện tại'],
-            ['PUT', '/api/session/{id}', 'Save (SavePayload JSON)'],
-            ['GET', '/api/session/{id}/asset/{filename}', 'Lấy asset media'],
-            ['POST', '/api/session/{id}/asset/{filename}', 'Upload/thay asset'],
-            ['GET', '/api/session/{id}/fonts', 'Font manifest'],
-            ['GET', '/api/session/{id}/res/{path}', 'File trong package res/'],
-          ]}
-        />
-        <h3>9.3. Export &amp; Preview</h3>
-        <GuideTable
-          headers={['Method', 'Path', 'Mô tả']}
-          rows={[
-            ['POST', '/api/session/{id}/export', 'SCORM zip'],
-            ['POST', '/api/session/{id}/export-cms-json-local', 'Teky JSON → Downloads'],
-            ['POST', '/api/session/{id}/export-media', 'Media zip download'],
-            ['POST', '/api/session/{id}/export-media-local', 'Media local path'],
-            ['POST', '/api/session/{id}/export-single-media-local', '1 file media local'],
-            ['GET', '/api/session/{id}/preview/player', 'HTML player preview'],
-            ['POST', '/api/session/{id}/preview/report-proxy', 'Proxy báo cáo CORS'],
-            ['GET', '/api/session/{id}/preview/res/{path}', 'Res cho player'],
-          ]}
-        />
-      </section>
-
-      {/* ── 10 ── */}
       <section id="guide-checklist" className="guide-section">
-        <h2>10. Checklist thực hành</h2>
-        <h3>10.1. Tạo template Excel mới</h3>
-        <ul>
-          <li>Sheet đầu tiên; hàng 1 đúng tên cột iSpring.</li>
-          <li>Thư mục <code>media/</code> cùng cấp file Excel (hoặc trong zip).</li>
-          <li>Đường dẫn <code>media\...</code> khớp tên file (phân biệt hoa thường trên Linux).</li>
-          <li>Video luôn kèm ảnh poster.</li>
-          <li>Audio đáp án: bracket trong từng Answer N cần voice riêng.</li>
-          <li>Feedback: tách voice đúng/sai bằng file mp3 khác nhau.</li>
-          <li>Import → kiểm tra ImportReport (0 error, xem warnings).</li>
-          <li>Preview Slide View: nghe audio câu hỏi + feedback.</li>
-        </ul>
-
-        <h3>10.2. Quy trình biên soạn đầy đủ</h3>
+        <h2>10. Checklist xuất bản và xử lý lỗi</h2>
+        <h3>10.1. Checklist</h3>
         <ol>
-          <li>Import SCORM hoặc Excel (+ media zip).</li>
-          <li>Xem ImportReport; sửa các dòng error (nếu Excel).</li>
-          <li>Chỉnh meta quiz: tên, điểm đạt, reporting.</li>
-          <li>Sửa nội dung từng câu (text, đáp án, điểm, feedback).</li>
-          <li>Chỉnh layout trên Canvas nếu cần.</li>
-          <li>Preview player — làm thử bài.</li>
-          <li>Save (auto-sync).</li>
-          <li>Export SCORM zip cho LMS và/hoặc Teky JSON + media.</li>
+          <li>Sao chép template và tạo thư mục làm việc riêng.</li>
+          <li>Điền Quiz Settings, Questions và đặt media đúng path.</li>
+          <li>Zip Excel + media, import và xử lý hết warning/error.</li>
+          <li>Edit Quiz Details, Questions, Settings và Save Quiz.</li>
+          <li>View & Làm bài, kiểm tra đủ 9 dạng.</li>
+          <li>Export JSON, so với template/full sample và kiểm tra URL S3.</li>
+          <li>Import JSON lên Teky LMS và smoke test lần cuối.</li>
         </ol>
 
-        <h3>10.3. QA regression gợi ý</h3>
-        <ul>
-          <li>3 template × import → save → export (test_qa_e2e.py).</li>
-          <li>Re-open zip export → session view khớp.</li>
-          <li>Sửa điểm / text sau import → save → export → dữ liệu khớp.</li>
-        </ul>
-      </section>
-
-      {/* ── 11 ── */}
-      <section id="guide-limits" className="guide-section">
-        <h2>11. Giới hạn và lưu ý kỹ thuật</h2>
+        <h3>10.2. Lỗi thường gặp</h3>
         <GuideTable
-          headers={['Hạng mục', 'Trạng thái / ghi chú']}
+          headers={['Hiện tượng', 'Cách xử lý']}
           rows={[
-            ['Direct URL media (YouTube, Drive…)', 'Chưa hỗ trợ — chỉ file local'],
-            ['Upload audio/video từ UI editor', 'Hạn chế; ưu tiên Excel re-import'],
-            ['DND / DIB / Hotspot / Essay từ Excel', 'Skip có lý do trong ImportReport'],
-            ['Hotspot / DND trên SCORM gốc', 'Chỉnh layout Canvas; partial/readonly'],
-            ['SCORM version export', '1.2 (iSpring MASTER)'],
-            ['Points', 'slide.s.e.pt, t: byQuestion'],
-            ['Reporting iSpring', 'd.s.r — ss, ads, sts'],
-            ['FIB/WB blank IDs', 'Giữ span id qmFillInTheBlank / qmWordBank trong rt.h'],
-            ['CORS frontend dev', 'localhost:5173 và :8000'],
-          ]}
-        />
-        <h3>11.1. Module backend quan trọng</h3>
-        <GuideTable
-          headers={['Module', 'Trách nhiệm']}
-          rows={[
-            ['scorm_parser.py', 'Decode/encode quiz, quiz_to_view, save, export zip, media registry'],
-            ['excel_import.py', 'Parse Excel + media brackets + validate loại'],
-            ['quiz_builder.py', 'Inject rows → slides từ MASTER; reflow; points'],
-            ['cms_export.py', 'iSpring view → Teky JSON'],
-            ['media_rich.py', 'Embed audio/video/image rich text'],
-            ['layout.py / typography.py', 'Canvas layout, reflow import, typography'],
-            ['preview.py', 'Player HTML, report proxy allowlist'],
+            ['Không tìm thấy media/...', 'Kiểm tra file trong zip và chữ hoa/thường; Excel + media cùng cấp'],
+            ['Cover bị vỡ', 'Kiểm tra Quiz Settings.coverImage; import zip đầy đủ'],
+            ['Text quay lại sau Save', 'Restart app ở bản mới, import lại rồi Save Quiz'],
+            ['Thêm đáp án rồi biến mất', 'Nhập nội dung và Save Quiz; không dựa vào auto-save cũ'],
+            ['JSON thiếu câu', 'Kiểm tra loại mapping, deleted và trạng thái Save'],
+            ['S3 URL trống', 'Kiểm tra credential/bucket/quyền upload và media trong session'],
+            ['.xls thiếu xlrd', 'Cài backend/requirements.txt hoặc dùng .xlsx chuẩn Teky'],
           ]}
         />
       </section>
 
-      {/* ── 12 ── */}
-      <section id="guide-appendix" className="guide-section">
-        <h2>12. Phụ lục — Tóm tắt nhanh</h2>
-        <h3>12.1. Input vs Output</h3>
+      <section id="guide-api" className="guide-section">
+        <h2>11. API và vận hành</h2>
+        <GuideCode>{`cd scorm-editor
+./start.sh
+# Mở http://localhost:8000`}</GuideCode>
         <GuideTable
-          headers={['', 'Nội dung']}
+          headers={['Method', 'API', 'Vai trò']}
           rows={[
-            ['Input chính', 'SCORM zip iSpring HOẶC Excel (template iSpring) ± media local'],
-            ['JSON editor', 'View phẳng: title, questions[], choices, layout, feedback…'],
-            [
-              'JSON CMS (Teky)',
-              '[quiz] với type multiple_choice | multiple_select | true_false | fill_blank | matching | ordering',
-            ],
-            ['Export LMS', 'SCORM 1.2 .zip (raw iSpring JSON trong package)'],
+            ['POST', '/api/import', 'Import SCORM zip'],
+            ['POST', '/api/import/excel', 'Import Excel hoặc zip Excel+media'],
+            ['GET', '/api/import/excel/templates', 'Danh sách/tải template'],
+            ['GET', '/api/session/{id}', 'Đọc editor view'],
+            ['PUT', '/api/session/{id}', 'Save Quiz'],
+            ['POST', '/api/session/{id}/asset/{filename}', 'Upload media'],
+            ['GET', '/api/session/{id}/preview/player', 'Viewer/player'],
+            ['POST', '/api/session/{id}/export', 'Export SCORM zip'],
+            ['POST', '/api/session/{id}/export-cms-json-local', 'Export JSON Teky'],
+            ['POST', '/api/session/{id}/export-media', 'Export media zip'],
           ]}
         />
-        <h3>12.2. Tài liệu &amp; mẫu liên quan</h3>
-        <GuideTable
-          headers={['Tài nguyên', 'Đường dẫn']}
-          rows={[
-            ['Plan import Excel', 'scorm-editor/docs/EXCEL_IMPORT_PLAN.md'],
-            ['Đặc tả media', 'scorm-editor/docs/MEDIA_TEMPLATE_SPEC.md'],
-            ['Word guide', 'scorm-editor/docs/SCORM_Editor_Huong_Dan_Chi_Tiet.docx'],
-            ['README chạy app', 'scorm-editor/README.md'],
-            ['Template Excel', 'ImportTemplate/'],
-            ['Output mẫu Teky (scorm-cvt)', 'scorm-cvt/scorm-cvt/output/*_teky.json'],
-          ]}
-        />
-        <p className="guide-end">— Hết tài liệu · SCORM Editor Guide v1.0 —</p>
+        <p className="guide-end">— Hết tài liệu · SCORM Editor Guide —</p>
       </section>
     </div>
   )
 }
 
-/**
- * Full-screen guide modal with sticky TOC sidebar.
- */
 export function UserGuideModal({ open, onClose }) {
   const bodyRef = useRef(null)
   const [activeId, setActiveId] = useState(SECTIONS[0].id)
 
   useEffect(() => {
     if (!open) return undefined
-    const prev = document.body.style.overflow
+    const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-
-    const onKey = (e) => {
-      if (e.key === 'Escape') onClose()
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') onClose()
     }
-    window.addEventListener('keydown', onKey)
+    window.addEventListener('keydown', onKeyDown)
     return () => {
-      document.body.style.overflow = prev
-      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', onKeyDown)
     }
   }, [open, onClose])
 
   useEffect(() => {
     if (!open || !bodyRef.current) return undefined
     const root = bodyRef.current
-    const nodes = SECTIONS.map((s) => root.querySelector(`#guide-${s.id}`)).filter(Boolean)
-    if (!nodes.length) return undefined
-
+    const sectionNodes = SECTIONS.map((section) => root.querySelector(`#guide-${section.id}`)).filter(Boolean)
     const observer = new IntersectionObserver(
       (entries) => {
         const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)
-        if (visible[0]?.target?.id) {
-          setActiveId(visible[0].target.id.replace(/^guide-/, ''))
-        }
+          .filter((entry) => entry.isIntersecting)
+          .sort((left, right) => right.intersectionRatio - left.intersectionRatio)
+        if (visible[0]?.target?.id) setActiveId(visible[0].target.id.replace(/^guide-/, ''))
       },
       { root, rootMargin: '-10% 0px -70% 0px', threshold: [0, 0.2, 0.5] },
     )
-    nodes.forEach((n) => observer.observe(n))
+    sectionNodes.forEach((node) => observer.observe(node))
     return () => observer.disconnect()
   }, [open])
 
   if (!open) return null
 
   const scrollTo = (id) => {
-    const el = bodyRef.current?.querySelector(`#guide-${id}`)
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    const element = bodyRef.current?.querySelector(`#guide-${id}`)
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' })
       setActiveId(id)
     }
   }
@@ -827,25 +438,22 @@ export function UserGuideModal({ open, onClose }) {
           <div className="guide-modal-heading">
             <h2 id="guide-title">Hướng dẫn SCORM Editor</h2>
             <p className="guide-modal-sub">
-              Tài liệu chi tiết toàn bộ tính năng · Import · Editor · Export SCORM &amp; Teky JSON
+              Hai mode · SCORM ZIP · Excel Teky LMS + media · Editor · Viewer · JSON LMS
             </p>
           </div>
-          <button type="button" className="btn guide-close-btn" onClick={onClose}>
-            Đóng
-          </button>
+          <button type="button" className="btn guide-close-btn" onClick={onClose}>Đóng</button>
         </header>
-
         <div className="guide-modal-body">
           <nav className="guide-toc" aria-label="Mục lục">
             <div className="guide-toc-label">Mục lục</div>
-            {SECTIONS.map((s) => (
+            {SECTIONS.map((section) => (
               <button
-                key={s.id}
+                key={section.id}
                 type="button"
-                className={`guide-toc-item ${activeId === s.id ? 'active' : ''}`}
-                onClick={() => scrollTo(s.id)}
+                className={`guide-toc-item ${activeId === section.id ? 'active' : ''}`}
+                onClick={() => scrollTo(section.id)}
               >
-                {s.title}
+                {section.title}
               </button>
             ))}
           </nav>
@@ -858,15 +466,10 @@ export function UserGuideModal({ open, onClose }) {
   )
 }
 
-/**
- * Guide trigger button used on homepage (and optionally editor header).
- */
 export function GuideButton({ className = '', onClick }) {
   return (
     <button type="button" className={`btn btn-guide ${className}`.trim()} onClick={onClick}>
-      <span className="btn-guide-icon" aria-hidden>
-        📖
-      </span>
+      <span className="btn-guide-icon" aria-hidden>📖</span>
       Guide
     </button>
   )

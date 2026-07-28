@@ -33,6 +33,22 @@ def _error_overlaps(slide):
     return [w for w in layout.get("overlaps", []) if w.get("severity") == "error"]
 
 
+def test_extract_layout_defaults_non_picture_background():
+    layout = extract_layout({"tp": "MultipleChoice", "a": {"b": {"f": "solidFill"}, "o": []}})
+
+    assert layout["background"] is None
+    assert layout["backgroundMode"] == "fill"
+    assert layout["backgroundFit"] == "cover"
+
+
+def test_extract_layout_defaults_missing_background():
+    layout = extract_layout({"tp": "MultipleChoice"})
+
+    assert layout["background"] is None
+    assert layout["backgroundMode"] == "fill"
+    assert layout["backgroundFit"] == "cover"
+
+
 def test_imported_slides_have_no_layout_overlap_errors(sample_import):
     session, report = sample_import
     imported = [r for r in report if r["status"] == "imported"]

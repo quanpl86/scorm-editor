@@ -226,7 +226,7 @@ def extract_object_image_zoom(obj: dict[str, Any], slide: dict[str, Any]) -> boo
 def extract_background_meta(slide: dict[str, Any]) -> dict[str, Any]:
     bg = slide.get("a", {}).get("b", {})
     if bg.get("f") != "pictureFill":
-        return {"image": None, "mode": "fill"}
+        return {"image": None, "mode": "fill", "objectFit": "cover"}
     props = bg.get("p", {})
     mode = props.get("p", "fill") or "fill"
     return {
@@ -796,9 +796,9 @@ def extract_layout(slide: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "canvas": {"w": CANVAS_W, "h": CANVAS_H},
-        "background": bg_meta["image"],
-        "backgroundMode": bg_meta["mode"],
-        "backgroundFit": bg_meta["objectFit"],
+        "background": bg_meta.get("image"),
+        "backgroundMode": bg_meta.get("mode", "fill"),
+        "backgroundFit": bg_meta.get("objectFit", "cover"),
         "slidePicture": extract_slide_attachment_image(slide),
         "slideAttachmentZoom": extract_slide_attachment_zoom(slide),
         "choiceColumns": choice_columns,
