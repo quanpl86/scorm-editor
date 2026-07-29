@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { HiOutlineArrowUpTray, HiOutlineTrash } from 'react-icons/hi2';
 import './TekyQuizEditor.css';
-import { assetUrl, uploadNewImage } from './api';
+import { API, assetUrl, uploadNewImage } from './api';
 
 function UploadButton({ sessionId, onUploadComplete, label = '' }) {
   const [uploading, setUploading] = useState(false);
@@ -71,6 +71,17 @@ export default function TekyQuizEditor({
           </div>
         </div>
         <div className="teky-editor-actions">
+          {quiz?.tekyQuiz?.lessonCode && (
+            <button
+              type="button"
+              className="teky-btn-secondary"
+              onClick={() => window.open(`${API}/import/excel/templates/zip/${quiz.tekyQuiz.lessonCode}`, '_blank')}
+              title="Tải thư mục Excel mẫu và Media của bài học này"
+              style={{ marginRight: '8px' }}
+            >
+              ⬇️ Tải Excel gốc
+            </button>
+          )}
           <button
             type="button"
             className="teky-btn-primary"

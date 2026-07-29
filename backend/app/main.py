@@ -284,6 +284,39 @@ def download_excel_template(template_id: str):
     return FileResponse(path, filename=meta["label"])
 
 
+@app.get("/api/import/excel/templates/zip/{lesson_code}")
+def download_lesson_template_zip(lesson_code: str):
+    import io
+    import zipfile
+    from fastapi.responses import StreamingResponse
+
+    safe_code = _sanitize_filename_part(lesson_code)
+    if not safe_code:
+        raise HTTPException(400, "Mã bài học không hợp lệ")
+
+    lesson_dir = IMPORT_TEMPLATE_DIR / safe_code
+    if not lesson_dir.is_dir():
+        raise HTTPException(404, f"Không tìm thấy thư mục của bài học: {safe_code}")
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file_path in lesson_dir.rglob("*"):
+            if file_path.is_file() and file_path.name != ".DS_Store":
+                arcname = file_path.relative_to(lesson_dir).as_posix()
+                # Wrap inside a root folder named after the lesson
+                zf.write(file_path, f"{safe_code}/{arcname}")
+
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_code}.zip"',
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
+    )
+
+
 @app.post("/api/import/tsv-to-lesson")
 def import_tsv_to_lesson(payload: TsvLessonPublishPayload):
     """
