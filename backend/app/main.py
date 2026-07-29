@@ -590,8 +590,7 @@ def export_session(session_id: str, payload: ExportPayload | None = None):
         raise HTTPException(400, f"Lỗi export: {exc}") from exc
 
 
-@app.post("/api/session/{session_id}/export-cms-json-local")
-def export_cms_json_local(session_id: str, request: Request):
+def _generate_cms_json(session_id: str, request: Request):
     """
     Export all questions from SCORM quiz as Teky-school JSON (same schema as scorm-cvt)
     and save directly to JSON-EXPORT/ beside ImportTemplate/ in the project.
@@ -701,6 +700,23 @@ def export_cms_json_local(session_id: str, request: Request):
             target_lesson,
             quiz_view.get("title") or quiz_obj.get("title"),
         )
+        
+        return cms_content, filename, quiz_obj, quiz_view, cover_url, export_warnings, lesson_code, target_lesson
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(400, f"Lỗi export Teky JSON: {exc}") from exc
+
+@app.post("/api/session/{session_id}/export-cms-json-local")
+def export_cms_json_local(session_id: str, request: Request):
+    """
+    Export all questions from SCORM quiz as Teky-school JSON (same schema as scorm-cvt)
+    and save directly to JSON-EXPORT/ beside ImportTemplate/ in the project.
+    """
+    from pathlib import Path
+    
+    try:
+        cms_content, filename, quiz_obj, quiz_view, cover_url, export_warnings, lesson_code, target_lesson = _generate_cms_json(session_id, request)
 
         target_dir = JSON_EXPORT_DIR
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -720,10 +736,37 @@ def export_cms_json_local(session_id: str, request: Request):
             "coverImageUrl": cover_url or None,
             "warnings": export_warnings,
         }
-    except FileNotFoundError as exc:
-        raise HTTPException(404, str(exc)) from exc
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(400, f"Lỗi export Teky JSON: {exc}") from exc
+
+@app.post("/api/session/{session_id}/export-cms-json")
+def export_cms_json(session_id: str, request: Request):
+    """
+    Export all questions from SCORM quiz as Teky-school JSON and download it.
+    """
+    try:
+        cms_content, filename, quiz_obj, quiz_view, cover_url, export_warnings, lesson_code, target_lesson = _generate_cms_json(session_id, request)
+        
+        from urllib.parse import quote
+        safe_filename = quote(filename.encode("utf-8"))
+        
+        return Response(
+            content=cms_content.encode("utf-8"),
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{safe_filename}",
+                "X-Export-Filename": safe_filename,
+                "Access-Control-Expose-Headers": "X-Export-Filename"
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(400, f"Lỗi export Teky JSON: {exc}") from exc
+
+
 
 
 @app.post("/api/session/{session_id}/export-media")

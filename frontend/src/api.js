@@ -128,11 +128,16 @@ export async function exportSession(sessionId, title) {
 }
 
 export async function exportCmsJson(sessionId) {
-  const res = await fetch(`${API}/session/${sessionId}/export-cms-json-local`, {
+  const res = await fetch(`${API}/session/${sessionId}/export-cms-json`, {
     method: 'POST',
   })
   if (!res.ok) throw new Error((await res.json()).detail || 'Export CMS JSON thất bại')
-  return res.json()
+  
+  const filename = res.headers.get('X-Export-Filename') || 'cms-export.json'
+  return {
+    blob: await res.blob(),
+    filename: decodeURIComponent(filename),
+  }
 }
 
 export async function exportMedia(sessionId) {

@@ -2367,8 +2367,16 @@ export default function App() {
     setSaving(true)
     try {
       await persistQuiz()
-      const result = await exportCmsJson(quiz.sessionId)
-      showToast(`✅ Đã lưu ${result.questionCount} câu hỏi → ${result.path}`)
+      const { blob, filename } = await exportCmsJson(quiz.sessionId)
+      
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename || 'cms-export.json'
+      a.click()
+      URL.revokeObjectURL(url)
+      
+      showToast(`✅ Đã tải xuống file ${filename || 'JSON'} thành công`)
     } catch (err) {
       showToast(err.message, 'error')
     } finally {
