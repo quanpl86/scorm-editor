@@ -1,43 +1,96 @@
 # Hướng dẫn SCORM Editor
 
-Phiên bản cập nhật theo dự án hiện tại: hai mode biên soạn nội dung, editor, viewer và xuất JSON chuẩn Teky LMS.
+Phiên bản cập nhật 2026-07-29: ba tab import (TSV → Excel / Excel file / SCORM Zip), template **SNLT-HP01-B01**, Context `subject` + `targetLesson`, xuất JSON Teky LMS.
 
 ## 1. Tổng quan
 
-SCORM Editor hỗ trợ hai quy trình độc lập nhưng dùng chung một editor và một định dạng JSON xuất bản:
+SCORM Editor hỗ trợ biên soạn nội dung và xuất bản quiz Teky LMS:
 
-1. **Mode iSpring SCORM**: import gói SCORM 1.2 `.zip` đã tạo từ iSpring QuizMaker, chỉnh sửa, xem thử và xuất lại SCORM hoặc JSON Teky LMS.
-2. **Mode Teky LMS**: import Excel chuẩn kèm thư mục `media`, chỉnh nội dung/cấu hình quiz, xem trên viewer và xuất JSON Teky LMS.
+1. **Mode Teky LMS (khuyến nghị)**: TSV/form + Excel chuẩn SNLT, editor, viewer, export CMS JSON.
+2. **Mode iSpring SCORM**: import gói SCORM 1.2 `.zip`, chỉnh sửa, export SCORM hoặc JSON.
 
-Luồng dữ liệu chung:
+### 1.1. Ba tab trang Import
+
+| Tab | Mục đích |
+|---|---|
+| **TSV → Excel** | Luồng chính: form Settings / dán settings TSV + dán `quiz_questions.tsv` → tạo `ImportTemplate/{MãBài}/` |
+| **Tạo quiz từ Excel** | Upload `.xls` / `.xlsx` / zip Excel+media |
+| **Chỉnh sửa SCORM Zip** | Import package iSpring SCORM 1.2 |
+
+### 1.2. Luồng dữ liệu chung
 
 ```text
-SCORM ZIP ─┐
-           ├─> Import session -> Edit -> Save Quiz -> View & Làm bài -> Export
-Excel+media┘                                      ├─> SCORM 1.2 ZIP
-                                                 └─> Teky LMS JSON + URL media S3/FPT
+TSV/form ─┐
+Excel+media ├─> Tạo package / session -> Edit -> Save Quiz
+SCORM ZIP ─┘         -> View & Làm bài -> Export
+                                          ├─> SCORM 1.2 ZIP (mode SCORM)
+                                          └─> Teky LMS JSON + URL media S3/FPT
 ```
 
-`Quiz ID`, `Question ID`, ID đáp án và ID cặp ghép do hệ thống tự sinh. Người biên soạn không nhập ID trong Excel và không cần nhìn thấy ID trên editor.
+`Quiz ID`, `Question ID` do hệ thống tự sinh. Không nhập ID trong Excel/TSV.
+
+### 1.3. Context Information (Teky LMS)
+
+| UI Context | Field JSON / Excel | Ý nghĩa |
+|---|---|---|
+| RELATED SUBJECT | `subject` | **Tên học phần** |
+| TARGET LESSON | `targetLesson` | **Tên bài học** |
 
 ## 2. Tài nguyên mẫu của dự án
 
 | Tài nguyên | Vị trí | Mục đích |
 |---|---|---|
-| SCORM mẫu bài 1 | `DGSA2025-HP05-B01.zip` | Import, kiểm tra editor/canvas và export |
-| SCORM mẫu bài 5 | `DGSA2025-HP05-B05.zip` | Kiểm tra một package iSpring khác |
-| Excel iSpring gốc | `ImportTemplate/Sample_import_template.xls` | MC, MR, TF, TI, MG, SEQ, IS, NUMG |
-| Excel media | `ImportTemplate/Media_import_sample.xlsx` | Câu hỏi có ảnh, audio, video |
-| Excel FIB/WB/Numeric | `ImportTemplate/FIB_WB_import_sample.xlsx` | Điền khuyết, Word Bank và số |
-| Gói Teky LMS chính thức | `ImportTemplate/Full_quiz_9_types_teky_lms.zip` | Excel cấu hình đầy đủ + toàn bộ media |
-| Excel Teky LMS | `ImportTemplate/Full_quiz_9_types_sample/Full_quiz_9_types_teky_lms_system_ids.xlsx` | Nguồn chuẩn để biên soạn quiz |
-| Media Teky LMS | `ImportTemplate/Full_quiz_9_types_sample/media/` | Cover, ảnh câu hỏi và ảnh đáp án |
-| Schema Excel Teky | `docs/TEKY_EXCEL_SCHEMA.md` | Đặc tả cột và cấu hình |
-| JSON template | `docs/cms_json_template.json` | Khung JSON đủ 9 dạng câu hỏi |
-| JSON mẫu đầy đủ | `docs/cms_json_full_sample.json` | Dữ liệu tham chiếu để import LMS |
-| Excel 9 dạng rút gọn | `docs/Quiz_Template_9_Types.xlsx` | Mẫu tham khảo nhanh |
+| **Template chuẩn v2** | `ImportTemplate/SNLT-HP01-B01/` | Excel schema v2 + media (chỉ ảnh) |
+| Agent drop-in | `docs/agent-drop-in/` | Prompt + header TSV cho AI Agent |
+| Schema Excel | `docs/TEKY_EXCEL_SCHEMA.md` | Cột Questions / Settings |
+| Quy trình Word | `docs/Quy_Trinh_Xay_Dung_Xuat_Ban_Cau_Hoi_On_Tap.docx` | SOP end-to-end v2 |
+| JSON template | `docs/cms_json_template.json` | Khung JSON (có `targetLesson`) |
+| JSON full sample | `docs/cms_json_full_sample.json` | Mẫu 9 dạng |
+| Script TSV→xlsx | `scripts/tsv_to_snlt_xlsx.py` | CLI đổ TSV vào template |
+| Excel iSpring (legacy) | `ImportTemplate/Sample_import_template.xls` | Mẫu iSpring cũ |
+| Gói 9 types (legacy) | `ImportTemplate/Full_quiz_9_types_*` | Tham chiếu; pipeline mới dùng SNLT |
 
-Nên giữ nguyên các file mẫu gốc. Khi tạo quiz mới, sao chép cả Excel và thư mục `media` sang một thư mục làm việc mới.
+Giữ nguyên template gốc. Package bài mới nằm dưới `ImportTemplate/{MãBài}/`.
+
+## 2A. Luồng chính: TSV → Excel → Editor → Export JSON
+
+Chi tiết đầy đủ: `docs/Quy_Trinh_Xay_Dung_Xuat_Ban_Cau_Hoi_On_Tap.docx`.
+
+### 2A.1. Soạn nội dung
+
+1. Chuẩn bị LO / Lesson / Project (có thể một phần).
+2. (Tuỳ chọn) Dùng AI Agent với `docs/agent-drop-in/` → nhận `quiz_questions.tsv` (+ settings TSV).
+3. Schema câu hỏi: 35 cột (TEXT trước, MEDIA sau), tối đa 6 đáp án; media ảnh `media/…`; Video YouTube/Vimeo; Audio HTTPS.
+
+### 2A.2. Tab «TSV → Excel»
+
+1. **Tên Bài học** = mã package, ví dụ `SNLT-HP01-B02`.
+2. **Quiz Settings**:
+   - **Nhập tay**: title, description, coverImage, **Tên học phần (subject)**, **Tên bài học (targetLesson)**, difficulty, tags, duration (phút), attemptLimit, showResults, createdBy (mặc định Teky Academy), shuffle/review/public.
+   - Hoặc **Dán TSV** `quiz_settings.tsv`.
+3. Dán **quiz_questions.tsv**.
+4. Tùy chọn: ghi đè thư mục; seed media từ SNLT-HP01-B01.
+5. **Import → Excel & mở Editor**.
+
+Hệ thống tạo:
+
+```text
+ImportTemplate/SNLT-HP01-B02/
+├── SNLT-HP01-B02.xlsx
+└── media/
+```
+
+API: `POST /api/import/tsv-to-lesson`.
+
+### 2A.3. Biên tập → Save → Viewer → Export
+
+1. Quiz Details + Context (học phần / bài học).
+2. Questions / Settings.
+3. Gắn ảnh vào `media/`.
+4. **Save Quiz**.
+5. Viewer.
+6. **Export CMS JSON** → `subject` + `targetLesson` + `questions[]`.
+7. Import JSON vào Teky LMS; gắn HP/BH; smoke test.
 
 ## 3. Mode iSpring SCORM: ZIP -> Edit -> View -> Export
 
@@ -297,7 +350,7 @@ Các mã `DND`, `DIB`, `HS`, `ESSAY`, `LIKERT` có thể tồn tại trong SCORM
 
 ### 8.1. Quiz Details
 
-Sửa title, description, cover, subject, độ khó chung, duration, tags và thông tin nâng cao.
+Sửa title, description, cover, **subject (học phần)**, **targetLesson (bài học)**, độ khó, duration, tags.
 
 ### 8.2. Questions
 
@@ -358,6 +411,8 @@ File được bọc dạng mảng:
   {
     "id": "quiz_...",
     "title": "...",
+    "subject": "Tên học phần",
+    "targetLesson": "Tên bài học",
     "coverImageUrl": "https://s3-sgn10.fptcloud.com/...",
     "settings": {},
     "questions": []

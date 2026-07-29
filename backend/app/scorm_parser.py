@@ -776,6 +776,7 @@ def slide_to_view(slide: dict[str, Any], group_index: int, question_index: int, 
         "useRegex": bool(slide.get("_metadata", {}).get("useRegex", False)),
         "explanation": slide.get("_metadata", {}).get("explanation", ""),
         "video": slide.get("_metadata", {}).get("video", ""),
+        "audio": slide.get("_metadata", {}).get("audio", ""),
         "timeLimit": time_limit,
         "timeLimitEnabled": time_enabled,
         "shuffleAnswers": shuffle_answers,
@@ -1093,7 +1094,7 @@ def apply_question_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:
             _prune_orphan_slide_picture(slide)
 
     # Save Teky LMS metadata
-    for key in ("difficulty", "topic", "required", "useRegex", "explanation", "video"):
+    for key in ("difficulty", "topic", "required", "useRegex", "explanation", "video", "audio"):
         if edit.get(key) is not None:
             slide.setdefault("_metadata", {})[key] = edit[key]
 

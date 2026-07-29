@@ -31,6 +31,11 @@ from .scorm_parser import (
     quiz_to_view,
     resolve_asset_path,
 )
+from .tsv_snlt_publish import (
+    TsvPublishError,
+    publish_lesson_package,
+    split_combined_tsv,
+)
 
 app = FastAPI(title="SCORM Editor", version="1.0.0")
 
@@ -97,6 +102,20 @@ class ExportPayload(BaseModel):
     title: str | None = None
 
 
+class TsvLessonPublishPayload(BaseModel):
+    """Dán TSV → tạo gói ImportTemplate/{lessonCode}/ + (tuỳ chọn) mở Editor."""
+
+    lessonCode: str
+    settingsTsv: str = ""
+    questionsTsv: str = ""
+    combinedTsv: str | None = None
+    overwrite: bool = False
+    seedMediaFromTemplate: bool = False
+    openInEditor: bool = True
+    quizTitle: str | None = None
+    groupTitle: str = "Imported Questions"
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
@@ -128,12 +147,46 @@ def _find_excel_file(root: Path) -> Path | None:
     return None
 
 
+def _sanitize_filename_part(value: str | None) -> str:
+    """Keep Unicode (VN) letters; strip path-illegal characters."""
+    import re
+
+    s = (value or "").strip()
+    for ch in '\\/:*?"<>|\n\r\t':
+        s = s.replace(ch, "_")
+    s = re.sub(r"\s+", " ", s).strip(" .")
+    return s
+
+
+def build_cms_export_filename(
+    lesson_code: str | None,
+    target_lesson: str | None,
+    title: str | None = None,
+) -> str:
+    """
+    Chuẩn tên file export JSON:
+      [SNLT-HP01-B04] Ôn tập 1.json
+    = [{Tên Bài học / lessonCode}] {Tên bài học / targetLesson}.json
+    """
+    code = _sanitize_filename_part(lesson_code) or "QUIZ"
+    lesson = _sanitize_filename_part(target_lesson) or _sanitize_filename_part(title) or "export"
+    if lesson.lower().endswith(".json"):
+        lesson = lesson[: -len(".json")].rstrip()
+    # Cap length for filesystem friendliness
+    if len(code) > 64:
+        code = code[:64].rstrip()
+    if len(lesson) > 120:
+        lesson = lesson[:120].rstrip()
+    return f"[{code}] {lesson}.json"
+
+
 def _create_quiz_from_excel(
     excel_path: Path,
     *,
     excel_dir: Path,
     quiz_title: str | None = None,
     group_title: str = "Imported Questions",
+    lesson_code: str | None = None,
 ) -> dict:
     if not MASTER_SCORM.exists():
         raise HTTPException(
@@ -143,9 +196,30 @@ def _create_quiz_from_excel(
 
     rows = parse_excel_file(excel_path)
     teky_quiz = parse_quiz_settings(excel_path)
+    media_fallback_dirs: list[Path] = []
+    matching_workbooks = [
+        candidate
+        for candidate in IMPORT_TEMPLATE_DIR.rglob(excel_path.name)
+        if candidate.is_file()
+    ]
+    if len(matching_workbooks) == 1:
+        media_fallback_dirs.append(matching_workbooks[0].parent)
+    lesson_dir = IMPORT_TEMPLATE_DIR / excel_path.stem
+    if lesson_dir.is_dir() and lesson_dir not in media_fallback_dirs:
+        media_fallback_dirs.append(lesson_dir)
     # Quiz IDs are system-owned, just like question IDs. Generate once per
     # import, persist in the editor session, and reuse for every export.
     teky_quiz["id"] = f"quiz_{uuid.uuid4().hex}"
+    # Persist lesson package code for export filename: [SNLT-HP01-B04] …
+    resolved_lesson_code = (lesson_code or teky_quiz.get("lessonCode") or "").strip()
+    if not resolved_lesson_code:
+        # ImportTemplate/SNLT-HP01-B04/SNLT-HP01-B04.xlsx → SNLT-HP01-B04
+        if excel_path.parent.name == excel_path.stem:
+            resolved_lesson_code = excel_path.stem
+        else:
+            resolved_lesson_code = excel_path.stem
+    if resolved_lesson_code:
+        teky_quiz["lessonCode"] = resolved_lesson_code
     session = ScormSession.create_from_source(MASTER_SCORM)
     quiz_json, report = build_quiz_from_excel(
         session.quiz_json,
@@ -155,6 +229,7 @@ def _create_quiz_from_excel(
         group_title=group_title,
         quiz_title=quiz_title,
         teky_quiz=teky_quiz,
+        additional_media_dirs=media_fallback_dirs,
     )
     session.quiz_json = quiz_json
     ensure_media_registry(session.quiz_json, session.package_root)
@@ -164,11 +239,14 @@ def _create_quiz_from_excel(
     imported = sum(1 for r in report if r.get("status") == "imported")
     media_warnings: list[dict[str, Any]] = []
     for row in report:
+        quiz_warnings = set(row.get("quizWarnings") or [])
         for warning in row.get("warnings") or []:
+            is_quiz_warning = warning in quiz_warnings
             media_warnings.append({
-                "row": row.get("row"),
-                "type": row.get("type"),
-                "slideId": row.get("slideId"),
+                "row": None if is_quiz_warning else row.get("row"),
+                "type": "QUIZ" if is_quiz_warning else row.get("type"),
+                "slideId": None if is_quiz_warning else row.get("slideId"),
+                "scope": "quiz" if is_quiz_warning else "question",
                 "message": warning,
             })
 
@@ -209,6 +287,84 @@ def download_excel_template(template_id: str):
     if not path.is_file():
         raise HTTPException(404, f"File template không tồn tại: {meta['label']}")
     return FileResponse(path, filename=meta["label"])
+
+
+@app.post("/api/import/tsv-to-lesson")
+def import_tsv_to_lesson(payload: TsvLessonPublishPayload):
+    """
+    Dán TSV (settings + questions) → tạo
+    ImportTemplate/{lessonCode}/{lessonCode}.xlsx + media/
+    rồi (mặc định) import vào Editor session.
+    """
+    settings_tsv = (payload.settingsTsv or "").strip()
+    questions_tsv = (payload.questionsTsv or "").strip()
+    if payload.combinedTsv and payload.combinedTsv.strip():
+        try:
+            settings_tsv, questions_tsv = split_combined_tsv(payload.combinedTsv)
+        except TsvPublishError as exc:
+            raise HTTPException(400, str(exc)) from exc
+    if not settings_tsv or not questions_tsv:
+        raise HTTPException(
+            400,
+            "Cần settingsTsv + questionsTsv, hoặc combinedTsv có marker "
+            "### quiz_settings.tsv / ### quiz_questions.tsv",
+        )
+
+    try:
+        package = publish_lesson_package(
+            payload.lessonCode,
+            settings_tsv,
+            questions_tsv,
+            overwrite=payload.overwrite,
+            seed_media_from_template=payload.seedMediaFromTemplate,
+        )
+    except TsvPublishError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(400, f"Không thể tạo gói bài học: {exc}") from exc
+
+    excel_path = Path(package["excelPath"])
+    lesson_dir = Path(package["lessonDir"])
+    response: dict[str, Any] = {
+        "ok": True,
+        "package": package,
+        "message": (
+            f"Đã tạo ImportTemplate/{package['lessonCode']}/"
+            f"{package['lessonCode']}.xlsx và media/"
+        ),
+    }
+
+    if not payload.openInEditor:
+        return response
+
+    try:
+        view = _create_quiz_from_excel(
+            excel_path,
+            excel_dir=lesson_dir,
+            quiz_title=payload.quizTitle,
+            group_title=payload.groupTitle or "Imported Questions",
+            lesson_code=package["lessonCode"],
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            400,
+            f"Đã tạo Excel/media nhưng import Editor thất bại: {exc}. "
+            f"Gói nằm tại {package.get('relativeExcel')}",
+        ) from exc
+
+    view["tsvPublish"] = package
+    view["importSummary"] = {
+        **(view.get("importSummary") or {}),
+        "lessonCode": package["lessonCode"],
+        "lessonDir": package["lessonDir"],
+        "excelPath": package["excelPath"],
+        "mediaDir": package["mediaDir"],
+        "tsvQuestionCount": package.get("questionCount"),
+        "tsvWarnings": package.get("warnings") or [],
+    }
+    return view
 
 
 @app.post("/api/import/excel")
@@ -452,15 +608,40 @@ def export_cms_json_local(session_id: str, request: Request):
         from .s3_service import upload_file_to_s3
         upload_cache: dict[str, str | None] = {}
 
+        def _local_asset_candidates(filename: str) -> list[Path]:
+            """Resolve filename to local package files (images folder + basename)."""
+            raw = (filename or "").strip().replace("\\", "/")
+            name = Path(raw).name
+            found: list[Path] = []
+            tried: set[str] = set()
+            for cand in (raw, name, raw.split("/")[-1]):
+                if not cand or cand in tried:
+                    continue
+                tried.add(cand)
+                try:
+                    p = session.asset_path(cand)
+                    if p and Path(p).exists():
+                        found.append(Path(p))
+                except FileNotFoundError:
+                    pass
+            for folder in ("res/data/images", "data/images", "images"):
+                p = session.package_root / folder / name
+                if p.is_file():
+                    found.append(p)
+            # de-dupe
+            uniq: list[Path] = []
+            seen: set[str] = set()
+            for p in found:
+                key = str(p.resolve())
+                if key not in seen:
+                    seen.add(key)
+                    uniq.append(p)
+            return uniq
+
         def handle_s3_upload(filename: str) -> str | None:
             if filename in upload_cache:
                 return upload_cache[filename]
-            try:
-                local_path = session.asset_path(filename)
-            except FileNotFoundError:
-                upload_cache[filename] = None
-                return None
-            if local_path and Path(local_path).exists():
+            for local_path in _local_asset_candidates(filename):
                 s3_url = upload_file_to_s3(str(local_path))
                 if s3_url:
                     upload_cache[filename] = s3_url
@@ -468,19 +649,62 @@ def export_cms_json_local(session_id: str, request: Request):
             upload_cache[filename] = None
             return None
 
+        # Recover cover if cleared at import (media was missing) but file now in package
+        teky = quiz_view.setdefault("tekyQuiz", {}) or {}
+        if not (teky.get("coverImage") or "").strip():
+            for folder in ("res/data/images", "data/images", "images"):
+                d = session.package_root / folder
+                if not d.is_dir():
+                    continue
+                for pattern in ("*quiz_cover*", "*cover*"):
+                    hits = sorted(d.glob(pattern))
+                    if hits:
+                        teky["coverImage"] = hits[0].name
+                        quiz_view["tekyQuiz"] = teky
+                        break
+                if (teky.get("coverImage") or "").strip():
+                    break
+
         quiz_obj = quiz_to_cms_json(quiz_view, session_id, base_url=base, s3_uploader=handle_s3_upload)
+
+        cover_url = quiz_obj.get("coverImageUrl") or ""
+        export_warnings: list[str] = []
+        if not cover_url:
+            export_warnings.append(
+                "Thiếu coverImageUrl — kiểm tra coverImage (media/quiz_cover.jpg) "
+                "và file trong media/ khi import; Save rồi export lại."
+            )
+        elif not str(cover_url).startswith("http"):
+            export_warnings.append(
+                f"coverImageUrl đang là path tương đối ({cover_url}) — CMS LMS "
+                "cần URL HTTPS (S3). Kiểm tra cấu hình S3 và upload khi export."
+            )
 
         # Wrap in array — same format as scorm-cvt saves to output/
         cms_content = _json.dumps([quiz_obj], ensure_ascii=False, indent=2)
 
-        # Build safe filename from quiz title
-        safe_title = (quiz_view.get("title") or "quiz-export").strip()
-        safe_title = "".join(c if c.isalnum() or c in " _-" else "_" for c in safe_title)[:80]
+        # Filename: [Tên Bài học] Tên bài học (Target Lesson).json
+        # e.g. [SNLT-HP01-B04] Ôn tập 1.json
+        teky_meta = quiz_view.get("tekyQuiz") or {}
+        lesson_code = (
+            teky_meta.get("lessonCode")
+            or (quiz_obj.get("lessonCode") if isinstance(quiz_obj, dict) else None)
+            or ""
+        )
+        target_lesson = (
+            teky_meta.get("targetLesson")
+            or quiz_obj.get("targetLesson")
+            or ""
+        )
+        filename = build_cms_export_filename(
+            lesson_code,
+            target_lesson,
+            quiz_view.get("title") or quiz_obj.get("title"),
+        )
 
         target_dir = JSON_EXPORT_DIR
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        filename = f"{safe_title}_teky.json"
         target_file = target_dir / filename
         target_file.write_text(cms_content, encoding="utf-8")
 
@@ -488,8 +712,13 @@ def export_cms_json_local(session_id: str, request: Request):
         return {
             "success": True,
             "path": str(target_file),
+            "filename": filename,
             "questionCount": q_count,
             "title": quiz_view.get("title", ""),
+            "lessonCode": lesson_code or None,
+            "targetLesson": target_lesson or None,
+            "coverImageUrl": cover_url or None,
+            "warnings": export_warnings,
         }
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc)) from exc

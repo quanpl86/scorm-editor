@@ -221,33 +221,41 @@ button, input, textarea, select {
   min-width: 0;
 }
 
-/* Import page */
+/* Import page — must scroll when content exceeds viewport
+   (.app / body use overflow:hidden for the editor workspace) */
 .import-page {
   flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 40px;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 16px clamp(12px, 3vw, 28px) 40px;
 }
 
 .import-card {
   width: 100%;
-  max-width: 720px;
+  max-width: 960px;
+  flex-shrink: 0;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 40px;
+  padding: clamp(16px, 3vw, 28px) clamp(14px, 3vw, 32px) clamp(20px, 3vw, 36px);
   box-shadow: var(--shadow);
-  text-align: center;
+  text-align: left;
+  margin: 0 auto;
 }
 
 .import-card-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   text-align: left;
-  margin-bottom: 8px;
+  margin-bottom: 16px;
 }
 
 .import-card-header > div {
@@ -255,28 +263,162 @@ button, input, textarea, select {
   min-width: 0;
 }
 
-.import-card-header .btn-guide {
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
 .import-card h2 {
-  font-size: 1.5rem;
-  margin-bottom: 8px;
+  font-size: clamp(1.15rem, 2.5vw, 1.4rem);
+  margin-bottom: 6px;
 }
 
 .import-card-header h2 {
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .import-card p {
   color: var(--muted);
-  margin-bottom: 28px;
-  font-size: 0.95rem;
+  margin-bottom: 0;
+  font-size: 0.9rem;
 }
 
 .import-card-header p {
   margin-bottom: 0;
+}
+
+/* Import tabs */
+.import-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px;
+  margin-bottom: 18px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.import-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 8px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  white-space: nowrap;
+}
+
+.import-tab:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.import-tab.is-active {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.import-tab:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.import-tab-icon {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.import-tab-label-short {
+  display: none;
+}
+
+.import-tab-panel {
+  text-align: left;
+  animation: import-tab-in 0.18s ease;
+}
+
+@keyframes import-tab-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.import-section-hint-left {
+  text-align: left !important;
+  margin-bottom: 16px !important;
+}
+
+.import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.import-template-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.import-column-guide-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-top: 8px;
+}
+
+.import-column-guide-scroll table {
+  min-width: 420px;
+}
+
+@media (max-width: 640px) {
+  .import-tab-label {
+    display: none;
+  }
+
+  .import-tab-label-short {
+    display: inline;
+  }
+
+  .import-tabs {
+    gap: 4px;
+  }
+
+  .import-tab {
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.78rem;
+    padding: 8px 4px;
+    min-height: 52px;
+  }
+
+  .import-form-fields {
+    grid-template-columns: 1fr !important;
+  }
+
+  .sample-buttons {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sample-buttons .btn {
+    width: 100%;
+  }
+
+  .dropzone {
+    padding: 28px 16px !important;
+  }
 }
 
 .dropzone {
@@ -373,9 +515,15 @@ button, input, textarea, select {
 
 .import-form-fields {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 14px;
+}
+
+@media (min-width: 720px) {
+  .import-form-fields:has(.import-field-wide) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .import-field {
@@ -387,17 +535,222 @@ button, input, textarea, select {
   color: var(--muted);
 }
 
-.import-field input {
+.import-field input,
+.import-field select {
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 0.9rem;
   color: var(--text);
   background: var(--bg);
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.import-field input:disabled {
+.import-field select {
+  cursor: pointer;
+  appearance: auto;
+}
+
+.import-field input:disabled,
+.import-field select:disabled,
+.import-field textarea:disabled {
   opacity: 0.6;
+}
+
+.import-field-wide {
+  grid-column: 1 / -1;
+}
+
+.field-req {
+  color: var(--danger);
+  font-style: normal;
+  font-weight: 700;
+}
+
+.field-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.settings-block {
+  margin: 4px 0 16px;
+  padding: 14px 14px 16px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.settings-block-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.settings-block-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.settings-form .import-form-fields {
+  margin-bottom: 10px;
+}
+
+.settings-textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.88rem;
+  color: var(--text);
+  background: var(--bg);
+  resize: vertical;
+  min-height: 56px;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.settings-checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px;
+  margin-top: 4px;
+}
+
+.settings-form-note {
+  margin-top: 10px;
+}
+
+.settings-title-override {
+  margin-top: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.tsv-mode-block {
+  margin-bottom: 14px;
+  align-items: center;
+}
+
+.tsv-mode-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--label);
+  margin-right: 4px;
+}
+
+@media (max-width: 640px) {
+  .settings-checks {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-block-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+.import-section-hint code {
+  font-size: 0.78rem;
+  background: var(--accent-subtle);
+  color: var(--accent);
+  padding: 1px 6px;
+  border-radius: 4px;
+  word-break: break-word;
+}
+
+.tsv-mode-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.tsv-mode-toggle label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.tsv-paste-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+@media (min-width: 800px) {
+  .tsv-paste-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  }
+}
+
+.tsv-paste-area {
+  width: 100%;
+  min-height: min(28vh, 160px);
+  max-height: 50vh;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--bg);
+  resize: vertical;
+  white-space: pre;
+  tab-size: 2;
+  box-sizing: border-box;
+}
+
+.tsv-paste-area-lg {
+  min-height: min(36vh, 220px);
+}
+
+.tsv-paste-area:disabled {
+  opacity: 0.6;
+}
+
+.tsv-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0 14px;
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+}
+
+.tsv-check {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.tsv-loading-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: 0.88rem;
+  color: var(--muted);
 }
 
 .import-column-guide {

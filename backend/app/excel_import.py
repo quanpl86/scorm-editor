@@ -64,6 +64,7 @@ SKIP_IMPORT_TYPES: dict[str, str] = {
 IMAGE_EXTS = frozenset({"jpg", "jpeg", "png", "gif", "bmp", "webp"})
 AUDIO_EXTS = frozenset({"mp3", "wav", "m4a", "ogg"})
 VIDEO_EXTS = frozenset({"mp4", "webm", "mov"})
+MAX_ANSWERS = 6
 
 MEDIA_TAG_RE = re.compile(
     r"\[(?P<tag>image|audio|video|sound)\s*=\s*(?P<path>[^\]]+)\]",
@@ -107,6 +108,8 @@ class ExcelQuestion:
     difficulty: str | None = None
     topic: str | None = None
     explanation: str | None = None
+    required: bool = False
+    use_regex: bool = False
     answers: list[ParsedAnswer] = field(default_factory=list)
     correct_feedback: ParsedMediaRefs = field(default_factory=ParsedMediaRefs)
     incorrect_feedback: ParsedMediaRefs = field(default_factory=ParsedMediaRefs)
@@ -119,6 +122,11 @@ def _cell_str(value: Any) -> str:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return ""
     return str(value).strip()
+
+
+def _cell_bool(value: Any) -> bool:
+    raw = _cell_str(value).lower()
+    return raw in {"1", "true", "yes", "y", "có", "x", "bắt buộc", "required"}
 
 
 def _coerce_setting_value(key: str, value: Any) -> Any:
@@ -143,7 +151,28 @@ QUIZ_SETTING_KEYS: dict[str, str] = {
     "cover image": "coverImage",
     "coverimage": "coverImage",
     "cover": "coverImage",
+    # Related Subject (Context) = tên học phần
     "subject": "subject",
+    "related subject": "subject",
+    "relatedsubject": "subject",
+    "ten hoc phan": "subject",
+    "tên học phần": "subject",
+    "hoc phan": "subject",
+    # Target Lesson (Context) = tên bài học
+    "target lesson": "targetLesson",
+    "targetlesson": "targetLesson",
+    "target_lesson": "targetLesson",
+    "ten bai hoc": "targetLesson",
+    "tên bài học": "targetLesson",
+    "bai hoc": "targetLesson",
+    "lesson": "targetLesson",
+    # Mã package / Tên Bài học (thư mục ImportTemplate)
+    "lesson code": "lessonCode",
+    "lessoncode": "lessonCode",
+    "lesson_code": "lessonCode",
+    "ten bai hoc package": "lessonCode",
+    "ma bai hoc": "lessonCode",
+    "mã bài học": "lessonCode",
     "difficulty": "difficultyLevel",
     "difficulty level": "difficultyLevel",
     "difficultylevel": "difficultyLevel",
@@ -352,17 +381,39 @@ def parse_excel_file(path: Path, *, sheet_index: int = 0) -> list[ExcelQuestion]
     diff_col = col("difficulty")
     topic_col = col("topic")
     expl_col = col("explanation") or col("correct feedback")
+    required_col = col("required", "mandatory", "bắt buộc")
+    regex_col = col("use regex", "useregex", "regex", "sử dụng regex")
     correct_fb_col = col("correct feedback")
     incorrect_fb_col = col("incorrect feedback")
     points_col = col("points")
-    answer_cols = [col(f"answer {i}") for i in range(1, 11)]
+    answer_cols = [col(f"answer {i}") for i in range(1, MAX_ANSWERS + 1)]
     answer_cols = [c for c in answer_cols if c]
 
     # Per-answer image columns: "Answer 1 Image", "Answer 2 Image", ...
-    answer_img_cols = [col(f"answer {i} image", f"image answer {i}", f"img {i}") for i in range(1, 11)]
+    answer_img_cols = [
+        col(f"answer {i} image", f"image answer {i}", f"img {i}")
+        for i in range(1, MAX_ANSWERS + 1)
+    ]
     # For Matching: separate left/right image columns
-    answer_left_img_cols = [col(f"answer {i} left image", f"left image {i}", f"left img {i}") for i in range(1, 11)]
-    answer_right_img_cols = [col(f"answer {i} right image", f"right image {i}", f"right img {i}") for i in range(1, 11)]
+    answer_left_img_cols = [
+        col(f"answer {i} left image", f"left image {i}", f"left img {i}")
+        for i in range(1, MAX_ANSWERS + 1)
+    ]
+    answer_right_img_cols = [
+        col(f"answer {i} right image", f"right image {i}", f"right img {i}")
+        for i in range(1, MAX_ANSWERS + 1)
+    ]
+    overflow_cols = [
+        candidate
+        for i in range(MAX_ANSWERS + 1, 11)
+        for candidate in (
+            col(f"answer {i}"),
+            col(f"answer {i} image", f"image answer {i}", f"img {i}"),
+            col(f"answer {i} left image", f"left image {i}", f"left img {i}"),
+            col(f"answer {i} right image", f"right image {i}", f"right img {i}"),
+        )
+        if candidate
+    ]
 
     questions: list[ExcelQuestion] = []
     for idx, row in df.iterrows():
@@ -426,6 +477,8 @@ def parse_excel_file(path: Path, *, sheet_index: int = 0) -> list[ExcelQuestion]
             difficulty=_cell_str(row.get(diff_col)) if diff_col else "medium",
             topic=_cell_str(row.get(topic_col)) if topic_col else "",
             explanation=_cell_str(row.get(expl_col)) if expl_col else "",
+            required=_cell_bool(row.get(required_col)) if required_col else False,
+            use_regex=_cell_bool(row.get(regex_col)) if regex_col else False,
             answers=answers,
             correct_feedback=(
                 parse_media_brackets(_cell_str(row.get(correct_fb_col)))
@@ -439,6 +492,10 @@ def parse_excel_file(path: Path, *, sheet_index: int = 0) -> list[ExcelQuestion]
             ),
             points=points,
         )
+        if any(_cell_str(row.get(overflow_col)) for overflow_col in overflow_cols):
+            q.errors.append(
+                f"Tối đa {MAX_ANSWERS} đáp án hoặc {MAX_ANSWERS} cặp ghép cho mỗi câu hỏi"
+            )
         if ispring_type in SKIP_IMPORT_TYPES:
             pass
         elif ispring_type not in SUPPORTED_TYPES:

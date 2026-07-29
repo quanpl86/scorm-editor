@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 from .scorm_parser import (
@@ -52,27 +53,64 @@ def _clean(text: str | None) -> str:
     return re.sub(r"\s+", " ", strip_html(text)).strip()
 
 
+def _normalize_asset_filename(filename: str | None) -> str | None:
+    """Strip media/images/storage prefixes → bare file name for package lookup."""
+    if not filename:
+        return None
+    f = str(filename).strip().replace("\\", "/")
+    if not f:
+        return None
+    if f.startswith("http://") or f.startswith("https://"):
+        return f
+    f = f.split("?")[0].split("%7B")[0].split("{")[0]
+    for prefix in (
+        "storage://images/",
+        "storage://sounds/",
+        "storage://videos/",
+        "res/data/images/",
+        "res/data/audios/",
+        "res/data/videos/",
+        "data/images/",
+        "media/",
+        "images/",
+    ):
+        if f.lower().startswith(prefix):
+            f = f[len(prefix) :]
+            break
+    # keep only file name (CMS/S3 use basename after package copy)
+    name = Path(f).name if f else ""
+    return name or None
+
+
 def _asset_url(
     session_id: str,
     filename: str | None,
     base_url: str,
     s3_uploader: Callable[[str], str | None] = None,
 ) -> str | None:
-    """Return S3 URL if uploader provided, else relative images/ path."""
+    """Return public S3 URL if uploader provided, else relative images/ path for local QA."""
     if not filename:
         return None
-    if filename.startswith("http"):
-        return filename
+    raw = str(filename).strip()
+    if raw.startswith("http://") or raw.startswith("https://"):
+        return raw
+
+    clean = _normalize_asset_filename(raw)
+    if not clean:
+        return None
 
     if s3_uploader:
-        # Clean filename to strip iSpring query params if present
-        clean_filename = filename.split("?")[0].split("%7B")[0]
-        s3_url = s3_uploader(clean_filename)
-        if s3_url:
-            return s3_url
+        # Try original + normalized names
+        for candidate in (raw, clean, f"media/{clean}", f"images/{clean}"):
+            try:
+                s3_url = s3_uploader(candidate)
+            except Exception:
+                s3_url = None
+            if s3_url:
+                return s3_url
 
-    # Fallback to local images/ path
-    return f"images/{filename}"
+    # Fallback local/QA path (CMS LMS thường KHÔNG load được relative path này)
+    return f"images/{clean}"
 
 
 def _convert_mc_options(
@@ -102,23 +140,86 @@ def _convert_mc_options(
     return options, correct_ids
 
 
+def _tf_polarity(text: str) -> str | None:
+    """
+    Classify a choice label as 'true' / 'false' / None (not a TF label).
+    Strips punctuation so 'Đúng.' / 'Sai!' still match.
+    """
+    raw = _clean(text).lower().strip()
+    if not raw:
+        return None
+    # remove trailing/leading punctuation & spaces
+    normalized = re.sub(r"^[\s\.\,\!\?\:\;\"'\(\)\[\]…]+|[\s\.\,\!\?\:\;\"'\(\)\[\]…]+$", "", raw)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+
+    true_labels = {
+        "đúng", "dung", "true", "yes", "y", "t", "đ", "d", "1",
+        "đúng rồi", "chính xác", "đúng.", "true.",
+    }
+    false_labels = {
+        "sai", "false", "no", "n", "f", "0", "không", "khong",
+        "sai rồi", "sai.", "false.",
+    }
+    if normalized in true_labels:
+        return "true"
+    if normalized in false_labels:
+        return "false"
+    # starts with đúng/true (e.g. "Đúng (True)")
+    if normalized.startswith("đúng") or normalized.startswith("dung") or normalized.startswith("true"):
+        return "true"
+    if normalized.startswith("sai") or normalized.startswith("false"):
+        return "false"
+    return None
+
+
 def _convert_true_false(
     choices: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """
-    Returns (options, correctAnswer) for TrueFalse.
-    correctAnswer: ['true'] or ['false']
+    Returns (options, correctAnswer) for TrueFalse — always exactly 2 options
+    matching Teky LMS CMS schema:
+
+      options: [{id: "true", text: "Đúng"}, {id: "false", text: "Sai"}]
+      correctAnswer: ["true"] | ["false"]
     """
-    options: list[dict[str, Any]] = []
-    correct: list[str] = []
-    for ch in choices:
-        text = _clean(ch.get("text", ""))
-        opt = {"id": ch.get("id", ""), "text": text}
-        options.append(opt)
-        if ch.get("isCorrect"):
-            lower = text.lower()
-            correct.append("true" if lower in ("đúng", "true", "yes", "đ") else "false")
-    return options, correct
+    # Determine which polarity is marked correct
+    correct_polarity: str | None = None
+    for ch in choices or []:
+        if not ch.get("isCorrect"):
+            continue
+        pol = _tf_polarity(ch.get("text", "") or "")
+        if pol:
+            correct_polarity = pol
+            break
+        # marked correct but text not recognized as TF label —
+        # if it's the first choice assume true, else false (legacy MC-like order)
+        # Prefer scanning all isCorrect first; fallback below.
+
+    if correct_polarity is None:
+        # Fallback: first isCorrect choice by index among TF-like labels only
+        for ch in choices or []:
+            pol = _tf_polarity(ch.get("text", "") or "")
+            if pol is None:
+                continue
+            if ch.get("isCorrect"):
+                correct_polarity = pol
+                break
+        if correct_polarity is None:
+            # any isCorrect among first two slots
+            for idx, ch in enumerate((choices or [])[:2]):
+                if ch.get("isCorrect"):
+                    # slot 0 → true, slot 1 → false (common iSpring order Đúng/Sai)
+                    correct_polarity = "true" if idx == 0 else "false"
+                    break
+
+    if correct_polarity not in ("true", "false"):
+        correct_polarity = "true"
+
+    options = [
+        {"id": "true", "text": "Đúng"},
+        {"id": "false", "text": "Sai"},
+    ]
+    return options, [correct_polarity]
 
 
 def _convert_matching(
@@ -222,6 +323,10 @@ def _slide_to_teky(
             video_url = s3_uploader(question_video) or question_video
         q["videoUrl"] = video_url
 
+    question_audio = slide_view.get("audio")
+    if question_audio:
+        q["audioUrl"] = question_audio
+
     choices = slide_view.get("choices") or []
     matching_pairs = slide_view.get("matchingPairs") or []
     sequence_items = slide_view.get("sequenceItems") or []
@@ -292,11 +397,24 @@ def quiz_to_cms_json(
         if q:
             questions.append(q)
 
+    # Context Information (Teky LMS UI):
+    # - subject / Related Subject → tên học phần
+    # - targetLesson / Target Lesson → tên bài học
+    groups = quiz_view.get("groups") or []
+    group_title = (groups[0].get("title") if groups else None) or None
+    target_lesson = (
+        configured.get("targetLesson")
+        or configured.get("target_lesson")
+        or group_title
+        or ""
+    )
+
     result = {
         "id": configured.get("id") or f"quiz_{int(time.time() * 1000)}",
         "title": configured.get("title") or title,
         "description": configured.get("description", "Được chuyển đổi từ SCORM Editor."),
         "subject": configured.get("subject", "Lập trình"),
+        "targetLesson": target_lesson or None,
         "difficultyLevel": configured.get("difficultyLevel", "medium"),
         "tags": tags,
         "createdBy": configured.get("createdBy", "admin"),
@@ -314,6 +432,8 @@ def quiz_to_cms_json(
         "createdAt": configured.get("createdAt") or now,
         "updatedAt": configured.get("updatedAt") or now,
     }
+    if not result.get("targetLesson"):
+        result.pop("targetLesson", None)
     cover_url = _asset_url(
         session_id,
         configured.get("coverImage"),

@@ -354,6 +354,10 @@ def _media_warning(label: str, ref: str) -> str:
     return f"Không tìm thấy {label}: {ref}"
 
 
+def _is_remote_url(ref: str | None) -> bool:
+    return bool(ref and ref.lower().startswith(("https://", "http://")))
+
+
 def _resolve_and_copy_image(
     ref: str | None,
     *,
@@ -406,7 +410,51 @@ def _resolve_and_copy_video(
 
 
 def _clear_template_attachments(slide: dict[str, Any]) -> None:
+    """
+    Strip media inherited from MASTER SCORM slide templates.
+
+    Cloned MC/TF/… slides keep the master's pictureFill background and
+    slidePicture objects even when Excel/TSV has no Image column — users
+    then see "ghost" images that are not in their media/ folder.
+    """
     slide.pop("at", None)
+
+    area = slide.get("a")
+    if not isinstance(area, dict):
+        return
+
+    # Background: reset pictureFill → solid white (iSpring solidFill)
+    bg = area.get("b")
+    if isinstance(bg, dict) and bg.get("f") == "pictureFill":
+        area["b"] = {"f": "solidFill", "s": {"c": 16777215, "a": 1}}
+
+    # Remove media layout objects; re-added when row has image/audio/video
+    objects = area.get("o")
+    if isinstance(objects, list):
+        area["o"] = [
+            obj
+            for obj in objects
+            if not isinstance(obj, dict)
+            or obj.get("tp")
+            not in {
+                "slidePicture",
+                "slideVideo",
+                "slideAudio",
+                "image",
+                "video",
+                "audio",
+            }
+        ]
+        # Also clear pictureFill on remaining shapes (icon decorations etc.)
+        for obj in area["o"]:
+            if not isinstance(obj, dict):
+                continue
+            styles = obj.get("S")
+            if not isinstance(styles, dict):
+                continue
+            fill = styles.get("b")
+            if isinstance(fill, dict) and fill.get("f") == "pictureFill":
+                styles["b"] = {"f": "solidFill", "s": {"c": 16777215, "a": 0}}
 
 
 def _ensure_slide_object(
@@ -531,10 +579,11 @@ def _apply_row_to_slide(
     slide["_metadata"] = {
         "difficulty": row.difficulty,
         "topic": row.topic,
-        "required": False,
-        "useRegex": False,
+        "required": row.required,
+        "useRegex": row.use_regex,
         "explanation": row.explanation,
         "video": row.video,
+        "audio": row.audio,
     }
 
     question_image = _resolve_and_copy_image(
@@ -547,40 +596,43 @@ def _apply_row_to_slide(
     if question_image:
         _apply_question_image(slide, question_image)
 
-    audio_name = _resolve_and_copy_audio(
-        row.audio,
-        package_root=package_root,
-        excel_dir=excel_dir,
-        fallback_media_dirs=fallback_media_dirs,
-        warnings=warnings,
-    )
-    if audio_name:
-        _apply_slide_audio(slide, audio_name)
+    if not _is_remote_url(row.audio):
+        audio_name = _resolve_and_copy_audio(
+            row.audio,
+            package_root=package_root,
+            excel_dir=excel_dir,
+            fallback_media_dirs=fallback_media_dirs,
+            warnings=warnings,
+        )
+        if audio_name:
+            slide["_metadata"]["audio"] = ""
+            _apply_slide_audio(slide, audio_name)
 
-    video_name = _resolve_and_copy_video(
-        row.video,
-        package_root=package_root,
-        excel_dir=excel_dir,
-        fallback_media_dirs=fallback_media_dirs,
-        warnings=warnings,
-    )
-    if video_name:
-        slide["_metadata"]["video"] = video_name
-        poster_name = question_image
-        if not poster_name:
-            poster_name = _resolve_and_copy_image(
-                row.image,
-                package_root=package_root,
-                excel_dir=excel_dir,
-                fallback_media_dirs=fallback_media_dirs,
-                warnings=warnings,
-            )
-        if poster_name:
-            _apply_slide_video(slide, video_name, poster_name, package_root=package_root)
-        else:
-            warnings.append(
-                f"Video {row.video} cần ảnh câu hỏi (poster) — bỏ qua gắn video"
-            )
+    if not _is_remote_url(row.video):
+        video_name = _resolve_and_copy_video(
+            row.video,
+            package_root=package_root,
+            excel_dir=excel_dir,
+            fallback_media_dirs=fallback_media_dirs,
+            warnings=warnings,
+        )
+        if video_name:
+            slide["_metadata"]["video"] = video_name
+            poster_name = question_image
+            if not poster_name:
+                poster_name = _resolve_and_copy_image(
+                    row.image,
+                    package_root=package_root,
+                    excel_dir=excel_dir,
+                    fallback_media_dirs=fallback_media_dirs,
+                    warnings=warnings,
+                )
+            if poster_name:
+                _apply_slide_video(slide, video_name, poster_name, package_root=package_root)
+            else:
+                warnings.append(
+                    f"Video {row.video} cần ảnh câu hỏi (poster) — bỏ qua gắn video"
+                )
 
     tp = row.ispring_type
     slide.setdefault("C", {})
@@ -588,11 +640,25 @@ def _apply_row_to_slide(
     if tp in ("MultipleChoice", "MultipleResponse", "TrueFalse"):
         template = _choice_template(slide["C"].get("chs", []))
         chs = []
-        for ans in row.answers:
+        answers = list(row.answers)
+        # TF: only two options (Đúng/Sai). Extra columns often are explanation leakage.
+        if tp == "TrueFalse":
+            answers = answers[:2]
+            # Normalize labels if recognizable; keep author text otherwise but cap at 2
+            if len(answers) < 2:
+                warnings.append("TF thiếu 2 đáp án — bổ sung Đúng/Sai")
+        for ans in answers:
             ch = copy.deepcopy(template)
             ch.pop("ia", None)
             ch.pop("f", None)
-            _apply_choice_text(ch, ans.text, is_correct=ans.is_correct)
+            label = ans.text
+            if tp == "TrueFalse":
+                low = (label or "").strip().lower().rstrip(".!?,;:")
+                if low in ("đúng", "dung", "true", "yes", "t", "đ", "1"):
+                    label = "Đúng"
+                elif low in ("sai", "false", "no", "f", "0", "không", "khong"):
+                    label = "Sai"
+            _apply_choice_text(ch, label, is_correct=ans.is_correct)
             _apply_choice_media(
                 ch,
                 ans,
@@ -602,6 +668,22 @@ def _apply_row_to_slide(
                 warnings=warnings,
             )
             chs.append(ch)
+        # Ensure TF always has exactly Đúng + Sai if only one answer provided
+        if tp == "TrueFalse" and len(chs) == 1:
+            other = copy.deepcopy(template)
+            other.pop("ia", None)
+            other.pop("f", None)
+            first_correct = bool(chs[0].get("c"))
+            first_text = ""
+            tnode = chs[0].get("t")
+            if isinstance(tnode, dict):
+                from .scorm_parser import strip_html
+                first_text = strip_html(tnode.get("h") or tnode.get("a") or "")
+            else:
+                first_text = str(tnode or "")
+            other_label = "Sai" if first_text.strip().lower().startswith("đúng") or first_text.strip().lower() == "true" else "Đúng"
+            _apply_choice_text(other, other_label, is_correct=not first_correct)
+            chs.append(other)
         slide["C"]["chs"] = chs
 
     elif tp == "Sequence":
@@ -635,11 +717,22 @@ def _apply_row_to_slide(
             if not ans.premise or not ans.response:
                 continue
             pair = copy.deepcopy(pair_tpl)
+            pair.setdefault("p", {})
+            pair.setdefault("r", {})
             pair["p"]["i"] = _new_id()
             pair["r"]["i"] = _new_id()
-            apply_text_to_node(pair["p"]["t"], ans.premise, "content")
-            apply_text_to_node(pair["r"]["t"], ans.response, "content")
-            # Apply left image (stored in ans.image by parser)
+            # CRITICAL: master Matching pairs often carry left/right images (ia).
+            # Strip them first so Excel rows without Left/Right Image stay text-only.
+            pair["p"].pop("ia", None)
+            pair["r"].pop("ia", None)
+            # Clear inline rich-media remnants on text nodes if any
+            for side in ("p", "r"):
+                tnode = pair[side].get("t")
+                if isinstance(tnode, dict):
+                    tnode.pop("r", None)
+            apply_text_to_node(pair["p"].setdefault("t", {}), ans.premise, "content")
+            apply_text_to_node(pair["r"].setdefault("t", {}), ans.response, "content")
+            # Apply left image only when Excel/TSV provides it (ans.image)
             if ans.image:
                 left_img_name = _resolve_and_copy_image(
                     ans.image,
@@ -650,7 +743,7 @@ def _apply_row_to_slide(
                 )
                 if left_img_name:
                     pair["p"].setdefault("ia", {})["i"] = f"storage://images/{left_img_name}"
-            # Apply right image (stored in ans.right_image by parser for MG)
+            # Apply right image only when provided (ans.right_image)
             if ans.right_image:
                 right_img_name = _resolve_and_copy_image(
                     ans.right_image,
@@ -738,13 +831,19 @@ def build_quiz_from_excel(
     group_title: str = "Imported Questions",
     quiz_title: str | None = None,
     teky_quiz: dict[str, Any] | None = None,
+    additional_media_dirs: list[Path] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """
     Inject parsed Excel rows into quiz JSON (adds a new question group).
     Returns (updated_quiz, import_report).
     """
     templates = load_slide_templates()
-    fallback_dirs = [IMPORT_TEMPLATE_DIR, excel_dir, PROJECT_ROOT]
+    fallback_dirs = [
+        excel_dir,
+        *(additional_media_dirs or []),
+        IMPORT_TEMPLATE_DIR,
+        PROJECT_ROOT,
+    ]
     report: list[dict[str, Any]] = []
     new_slides: list[dict[str, Any]] = []
 
@@ -828,6 +927,7 @@ def build_quiz_from_excel(
                 target = next((item for item in report if item.get("status") == "imported"), None)
                 if target is not None:
                     target.setdefault("warnings", []).extend(cover_warnings)
+                    target.setdefault("quizWarnings", []).extend(cover_warnings)
         quiz["_teky"] = teky_meta
     resolved_title = quiz_title or (teky_quiz or {}).get("title")
     if resolved_title:

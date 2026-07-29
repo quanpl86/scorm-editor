@@ -2,19 +2,20 @@
 
 Dự án này là một ứng dụng Web Full-stack bao gồm Backend xây dựng bằng Python (FastAPI) và Frontend sử dụng Node.js.
 
-## Teky LMS — nguồn dữ liệu chuẩn
+## Teky LMS — nguồn dữ liệu chuẩn (schema v2)
 
-Gói import chính thức là `ImportTemplate/Full_quiz_9_types_teky_lms.zip`, gồm workbook
-`Full_quiz_9_types_teky_lms_system_ids.xlsx` và thư mục `media/`. Workbook có sheet `Quiz Questions`
-cho toàn bộ nội dung câu hỏi và sheet `Quiz Settings` cho toàn bộ cấu hình quiz theo
-`docs/cms_json_full_sample.json`. Quiz ID và Question ID đều được hệ thống tự sinh,
-không nhập trong Excel và không hiển thị trên Editor. `Image` thuộc từng câu hỏi;
-ảnh đại diện chung của quiz được khai báo bằng `coverImage` trong sheet
-`Quiz Settings`. Xem đặc tả tại `docs/TEKY_EXCEL_SCHEMA.md`.
+Gói import chính thức: `ImportTemplate/SNLT-HP01-B01/` gồm
+`SNLT-HP01-B01.xlsx` và `media/` (**chỉ ảnh**).
 
-Hướng dẫn vận hành đầy đủ cho cả mode iSpring SCORM và mode Teky LMS nằm tại
-`docs/SCORM_EDITOR_GUIDE.md`; bản Word được sinh tại
-`docs/SCORM_Editor_Huong_Dan_Chi_Tiet.docx`.
+- Sheet `Quiz Questions`: nhóm **TEXT** (Type → Use Regex) rồi nhóm **MEDIA** (Image, Video URL, Audio URL, ảnh đáp án / matching). Tối đa **Answer 1…6** (matching tối đa 6 cặp).
+- Sheet `Quiz Settings`: cấu hình quiz (`coverImage`, duration, shuffle…).
+- **Video:** chỉ URL YouTube/Vimeo. **Audio:** chỉ URL HTTPS trực tiếp — không lưu `.mp4`/`.mp3` trong `media/`.
+- Quiz ID / Question ID: hệ thống tự sinh; không nhập Excel.
+- Schema: `docs/TEKY_EXCEL_SCHEMA.md`. AI gen TSV: `docs/ai-agent-quiz/` + `docs/AI_AGENT_PROMPT_QUIZ_CONTENT_TSV.md`.
+
+Template legacy: `ImportTemplate/Full_quiz_9_types_sample/` (không dùng pipeline mới).
+
+Hướng dẫn vận hành: `docs/SCORM_EDITOR_GUIDE.md`; Word: `docs/SCORM_Editor_Huong_Dan_Chi_Tiet.docx`.
 
 ## 1. Yêu cầu hệ thống (Prerequisites)
 Để có thể chạy dự án trên máy cá nhân (local), bạn cần phải cài đặt sẵn các công cụ sau:

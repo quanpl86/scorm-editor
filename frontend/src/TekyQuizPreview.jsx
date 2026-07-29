@@ -62,6 +62,13 @@ function QuestionMedia({ question, sessionId }) {
           )}
         </div>
       )}
+      {question.audio && (
+        <div className="teky-q-media teky-q-audio">
+          <audio controls preload="metadata" src={question.audio}>
+            Trình duyệt không hỗ trợ audio.
+          </audio>
+        </div>
+      )}
     </>
   );
 }

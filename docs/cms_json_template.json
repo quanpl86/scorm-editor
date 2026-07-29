@@ -4,6 +4,7 @@
     "title": "Tên Bài Quiz / Bài Kiểm Tra",
     "description": "Mô tả ngắn gọn về bài kiểm tra.",
     "subject": "Lập trình",
+    "targetLesson": "Bài 1 — Giới thiệu",
     "difficultyLevel": "medium",
     "tags": ["SCORM", "Imported"],
     "createdBy": "admin",

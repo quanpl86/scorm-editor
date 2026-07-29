@@ -1,0 +1,18 @@
+Field	Value	Description
+title		Tên hiển thị của quiz
+description		Mô tả quiz
+coverImage	media/quiz_cover.jpg	Ảnh đại diện cấp quiz; khác với cột Image của từng câu hỏi
+subject		Môn học hoặc chủ đề cấp quiz
+difficultyLevel	medium	easy | medium | hard
+tags		Các tag phân cách bằng dấu phẩy
+createdBy	content-agent	Mã người tạo; không phải Quiz ID
+createdByName	AI Content Agent	Tên người tạo
+isPublic	False	Quiz có công khai hay không
+duration		Thời lượng làm bài, đơn vị giây
+shuffleQuestions	True	Trộn thứ tự câu hỏi
+shuffleAnswers	True	Trộn thứ tự đáp án
+attemptLimit	3	Số lần làm bài tối đa; 0 = không giới hạn
+showResults	after_submit	after_submit | immediately | never
+allowReview	True	Cho phép xem lại sau khi nộp
+createdAt		ISO-8601; để trống để hệ thống tự sinh
+updatedAt		ISO-8601; để trống để hệ thống tự sinh

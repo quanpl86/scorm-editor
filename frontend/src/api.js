@@ -34,6 +34,49 @@ export async function importExcel(file, { quizTitle, groupTitle } = {}) {
   return res.json()
 }
 
+/**
+ * Dán TSV → tạo ImportTemplate/{lessonCode}/{lessonCode}.xlsx + media/
+ * và (mặc định) mở session Editor.
+ */
+export async function publishTsvToLesson({
+  lessonCode,
+  settingsTsv = '',
+  questionsTsv = '',
+  combinedTsv = null,
+  overwrite = false,
+  seedMediaFromTemplate = false,
+  openInEditor = true,
+  quizTitle,
+  groupTitle = 'Imported Questions',
+} = {}) {
+  const res = await fetch(`${API}/import/tsv-to-lesson`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      lessonCode,
+      settingsTsv,
+      questionsTsv,
+      combinedTsv,
+      overwrite,
+      seedMediaFromTemplate,
+      openInEditor,
+      quizTitle: quizTitle || undefined,
+      groupTitle,
+    }),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    const detail = body.detail
+    const msg = typeof detail === 'string'
+      ? detail
+      : Array.isArray(detail)
+        ? detail.map((d) => d.msg || JSON.stringify(d)).join('; ')
+        : (detail && JSON.stringify(detail)) || 'Xuất bản TSV thất bại'
+    throw new Error(msg)
+  }
+  return res.json()
+}
+
 export async function importExcelSample({ quizTitle, groupTitle } = {}) {
   const params = new URLSearchParams()
   if (quizTitle) params.set('quiz_title', quizTitle)

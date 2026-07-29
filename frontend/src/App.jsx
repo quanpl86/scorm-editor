@@ -11,6 +11,7 @@ import {
   importExcelSample,
   importSample,
   importZip,
+  publishTsvToLesson,
   saveSession,
   exportMediaLocal,
   uploadImage,
@@ -503,6 +504,12 @@ function ImportReport({ report, summary, questions, onSelectSlide, onDismiss, co
             {summary.groupTitle && (
               <span className="import-report-muted">Nhóm: {summary.groupTitle}</span>
             )}
+            {summary.lessonCode && (
+              <span className="import-report-muted">
+                Bài học: {summary.lessonCode}
+                {summary.excelPath ? ` → ${summary.excelPath}` : ''}
+              </span>
+            )}
             {summary.errors > 0 && <span className="import-report-warn">{summary.errors} lỗi</span>}
             {summary.skipped > 0 && <span className="import-report-muted">{summary.skipped} bỏ qua</span>}
             {mediaWarnings.length > 0 && (
@@ -523,7 +530,9 @@ function ImportReport({ report, summary, questions, onSelectSlide, onDismiss, co
           <ul className="import-report-media-list">
             {mediaWarnings.map((w, idx) => (
               <li key={`${w.row}-${idx}`}>
-                <span className="import-report-row">Dòng {w.row}</span>
+                <span className="import-report-row">
+                  {w.scope === 'quiz' ? 'Ảnh bìa quiz' : `Dòng ${w.row}`}
+                </span>
                 <span className="import-report-type">{w.type}</span>
                 <span className="import-report-warn">{w.message}</span>
                 {w.slideId && onSelectSlide && slideIndexById[w.slideId] && (
@@ -572,19 +581,128 @@ function ImportReport({ report, summary, questions, onSelectSlide, onDismiss, co
   )
 }
 
-function ImportPage({ onImport, loading, loadingMessage, error, importReport, onOpenGuide }) {
+const IMPORT_TABS = [
+  { id: 'tsv', label: 'TSV → Excel', short: 'TSV', icon: '📋' },
+  { id: 'excel', label: 'Tạo quiz từ Excel', short: 'Excel', icon: '📊' },
+  { id: 'scorm', label: 'Chỉnh sửa SCORM Zip', short: 'SCORM', icon: '📦' },
+]
+
+const QUIZ_SETTINGS_META = {
+  title: 'Tên hiển thị của quiz',
+  description: 'Mô tả quiz',
+  coverImage: 'Ảnh đại diện cấp quiz (media/...)',
+  subject: 'Related Subject — tên học phần',
+  targetLesson: 'Target Lesson — tên bài học',
+  difficultyLevel: 'easy | medium | hard',
+  tags: 'Các tag phân cách bằng dấu phẩy',
+  createdBy: 'Mã người tạo; không phải Quiz ID',
+  createdByName: 'Tên người tạo',
+  isPublic: 'Quiz có công khai hay không',
+  duration: 'Thời lượng làm bài, đơn vị giây',
+  shuffleQuestions: 'Trộn thứ tự câu hỏi',
+  shuffleAnswers: 'Trộn thứ tự đáp án',
+  attemptLimit: 'Số lần làm bài tối đa; 0 = không giới hạn',
+  showResults: 'after_submit | immediately | never',
+  allowReview: 'Cho phép xem lại sau khi nộp',
+  createdAt: 'ISO-8601; để trống để hệ thống tự sinh',
+  updatedAt: 'ISO-8601; để trống để hệ thống tự sinh',
+}
+
+const DEFAULT_SETTINGS_FORM = {
+  title: '',
+  description: '',
+  coverImage: 'media/quiz_cover.jpg',
+  subject: '', // Related Subject = tên học phần
+  targetLesson: '', // Target Lesson = tên bài học
+  difficultyLevel: 'medium',
+  tags: '',
+  createdBy: 'Teky Academy',
+  createdByName: 'Teky Academy',
+  isPublic: false,
+  durationMinutes: 20,
+  shuffleQuestions: true,
+  shuffleAnswers: true,
+  attemptLimit: 3,
+  showResults: 'after_submit',
+  allowReview: true,
+}
+
+function escapeTsvCell(value) {
+  const s = value == null ? '' : String(value)
+  if (/[\t\n\r]/.test(s)) {
+    return s.replace(/\t/g, ' ').replace(/\r?\n/g, ' ')
+  }
+  return s
+}
+
+/** Build quiz_settings.tsv from manual form state. */
+function buildSettingsTsvFromForm(form) {
+  const minutes = Number(form.durationMinutes)
+  const durationSec = Number.isFinite(minutes) && minutes > 0
+    ? Math.round(minutes * 60)
+    : 1200
+  const attempt = Number(form.attemptLimit)
+  const attemptLimit = Number.isFinite(attempt) && attempt >= 0 ? Math.floor(attempt) : 3
+
+  const rows = [
+    ['title', form.title?.trim() || 'Untitled Quiz'],
+    ['description', form.description?.trim() || ''],
+    ['coverImage', form.coverImage?.trim() || 'media/quiz_cover.jpg'],
+    ['subject', form.subject?.trim() || ''],
+    ['targetLesson', form.targetLesson?.trim() || ''],
+    ['difficultyLevel', form.difficultyLevel || 'medium'],
+    ['tags', form.tags?.trim() || ''],
+    ['createdBy', form.createdBy?.trim() || 'Teky Academy'],
+    ['createdByName', form.createdByName?.trim() || 'Teky Academy'],
+    ['isPublic', form.isPublic ? 'True' : 'False'],
+    ['duration', String(durationSec)],
+    ['shuffleQuestions', form.shuffleQuestions ? 'True' : 'False'],
+    ['shuffleAnswers', form.shuffleAnswers ? 'True' : 'False'],
+    ['attemptLimit', String(attemptLimit)],
+    ['showResults', form.showResults || 'after_submit'],
+    ['allowReview', form.allowReview ? 'True' : 'False'],
+    ['createdAt', ''],
+    ['updatedAt', ''],
+  ]
+
+  const lines = ['Field\tValue\tDescription']
+  for (const [field, value] of rows) {
+    lines.push(
+      `${field}\t${escapeTsvCell(value)}\t${escapeTsvCell(QUIZ_SETTINGS_META[field] || '')}`,
+    )
+  }
+  return lines.join('\n')
+}
+
+function ImportPage({ onImport, loading, loadingMessage, error, errorKind, importReport }) {
   const scormInputRef = useRef(null)
   const excelInputRef = useRef(null)
+  const [importTab, setImportTab] = useState('tsv')
   const [scormDrag, setScormDrag] = useState(false)
   const [excelDrag, setExcelDrag] = useState(false)
   const [quizTitle, setQuizTitle] = useState('')
   const [groupTitle, setGroupTitle] = useState('Imported Questions')
   const [templates, setTemplates] = useState([])
   const [templatesError, setTemplatesError] = useState(null)
+  const [lessonCode, setLessonCode] = useState('')
+  const [settingsTsv, setSettingsTsv] = useState('')
+  const [questionsTsv, setQuestionsTsv] = useState('')
+  const [combinedTsv, setCombinedTsv] = useState('')
+  /** paste = dán TSV settings; form = nhập tay */
+  const [settingsInputMode, setSettingsInputMode] = useState('form')
+  const [settingsForm, setSettingsForm] = useState(() => ({ ...DEFAULT_SETTINGS_FORM }))
+  const [useCombined, setUseCombined] = useState(false)
+  const [overwriteLesson, setOverwriteLesson] = useState(true)
+  const [seedMedia, setSeedMedia] = useState(false)
+  const [tsvLocalError, setTsvLocalError] = useState(null)
 
   const excelOpts = {
     quizTitle: quizTitle.trim() || undefined,
     groupTitle: groupTitle.trim() || undefined,
+  }
+
+  const patchSettingsForm = (key, value) => {
+    setSettingsForm((prev) => ({ ...prev, [key]: value }))
   }
 
   useEffect(() => {
@@ -592,6 +710,14 @@ function ImportPage({ onImport, loading, loadingMessage, error, importReport, on
       .then((data) => setTemplates(data.templates || []))
       .catch((err) => setTemplatesError(err.message))
   }, [])
+
+  // Jump to tab matching active import error/report kind
+  useEffect(() => {
+    const kind = loadingMessage?.kind
+    if (kind === 'tsv' || kind === 'excel' || kind === 'scorm') {
+      setImportTab(kind)
+    }
+  }, [loadingMessage?.kind])
 
   const handleScormFile = async (file) => {
     if (!file?.name?.toLowerCase().endsWith('.zip')) return
@@ -606,196 +732,700 @@ function ImportPage({ onImport, loading, loadingMessage, error, importReport, on
 
   const runExcelSample = (fn) => onImport(fn, { kind: 'excel' })
 
+  const handleTsvPublish = async () => {
+    setTsvLocalError(null)
+    const code = lessonCode.trim()
+    if (!code) {
+      setTsvLocalError('Nhập tên Bài học (ví dụ SNLT-HP01-B02).')
+      return
+    }
+
+    if (useCombined) {
+      if (!combinedTsv.trim()) {
+        setTsvLocalError('Dán combined TSV (có marker ### quiz_settings.tsv / ### quiz_questions.tsv).')
+        return
+      }
+      await onImport(
+        () => publishTsvToLesson({
+          lessonCode: code,
+          settingsTsv: '',
+          questionsTsv: '',
+          combinedTsv,
+          overwrite: overwriteLesson,
+          seedMediaFromTemplate: seedMedia,
+          openInEditor: true,
+          quizTitle: quizTitle.trim() || undefined,
+          groupTitle: groupTitle.trim() || 'Imported Questions',
+        }),
+        { kind: 'tsv' },
+      )
+      return
+    }
+
+    if (!questionsTsv.trim()) {
+      setTsvLocalError('Dán quiz_questions.tsv (nội dung câu hỏi).')
+      return
+    }
+
+    let resolvedSettingsTsv = settingsTsv
+    let formForBuild = settingsForm
+    if (settingsInputMode === 'form') {
+      if (!settingsForm.title?.trim()) {
+        setTsvLocalError('Nhập tay: cần điền Tên quiz (title).')
+        return
+      }
+      // Target Lesson mặc định = tên Bài học (mã thư mục) nếu chưa nhập
+      formForBuild = {
+        ...settingsForm,
+        targetLesson: settingsForm.targetLesson?.trim() || code,
+      }
+      resolvedSettingsTsv = buildSettingsTsvFromForm(formForBuild)
+    } else if (!settingsTsv.trim()) {
+      setTsvLocalError('Dán quiz_settings.tsv hoặc chuyển sang «Nhập tay».')
+      return
+    }
+
+    // Optional form override of title when pasting settings TSV
+    const titleOverride =
+      settingsInputMode === 'form'
+        ? formForBuild.title.trim()
+        : (quizTitle.trim() || undefined)
+
+    const resolvedGroupTitle =
+      (settingsInputMode === 'form' && formForBuild.targetLesson?.trim())
+        || groupTitle.trim()
+        || code
+        || 'Imported Questions'
+
+    await onImport(
+      () => publishTsvToLesson({
+        lessonCode: code,
+        settingsTsv: resolvedSettingsTsv,
+        questionsTsv,
+        combinedTsv: null,
+        overwrite: overwriteLesson,
+        seedMediaFromTemplate: seedMedia,
+        openInEditor: true,
+        quizTitle: titleOverride || undefined,
+        groupTitle: resolvedGroupTitle,
+      }),
+      { kind: 'tsv' },
+    )
+  }
+
+  const tabError =
+    importTab === 'tsv'
+      ? (tsvLocalError || (errorKind === 'tsv' || loadingMessage?.kind === 'tsv' ? error : null))
+      : (errorKind === importTab || loadingMessage?.kind === importTab ? error : null)
+
   return (
     <div className="import-page">
       <div className="import-card">
         <div className="import-card-header">
           <div>
-            <h2>SCORM Editor</h2>
-            <p>Import gói SCORM iSpring Quiz hoặc tạo quiz mới từ template Excel iSpring QuizMaker.</p>
+            <h2>Bắt đầu làm việc</h2>
+            <p>Chọn một tab để import nội dung: TSV (Teky LMS), Excel, hoặc gói SCORM Zip.</p>
           </div>
-          {onOpenGuide && (
-            <GuideButton onClick={onOpenGuide} />
-          )}
         </div>
 
-        {error && (
+        <div className="import-tabs" role="tablist" aria-label="Phương thức import">
+          {IMPORT_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              id={`import-tab-${tab.id}`}
+              aria-selected={importTab === tab.id}
+              aria-controls={`import-panel-${tab.id}`}
+              className={`import-tab ${importTab === tab.id ? 'is-active' : ''}`}
+              disabled={loading}
+              onClick={() => {
+                setImportTab(tab.id)
+                setTsvLocalError(null)
+                // không xóa error server — vẫn hiện nếu cùng kind
+              }}
+            >
+              <span className="import-tab-icon" aria-hidden="true">{tab.icon}</span>
+              <span className="import-tab-label">{tab.label}</span>
+              <span className="import-tab-label-short">{tab.short}</span>
+            </button>
+          ))}
+        </div>
+
+        {(tabError || (error && importTab === loadingMessage?.kind)) && (
           <div className="error-banner" role="alert">
-            <strong>Import thất bại.</strong> {error}
+            <strong>Import thất bại.</strong> {tabError || error}
           </div>
         )}
-        {importReport && <ImportReport report={importReport.report} summary={importReport.summary} />}
+        {importReport && (
+          <ImportReport report={importReport.report} summary={importReport.summary} />
+        )}
 
-        <section className="import-section">
-          <h3>Tạo quiz từ Excel</h3>
-          <p className="import-section-hint">
-            Định dạng theo{' '}
-            <a
-              href="https://ispringhelpdocs.com/quizmaker9/importing-questions-from-excel-6128674.html"
-              target="_blank"
-              rel="noreferrer"
-            >
-              hướng dẫn iSpring QuizMaker
-            </a>
-            . Hỗ trợ MC, MR, TF, Short Answer, Numeric, FIB, Word Bank, Matching, Sequence, Info Slide.
-          </p>
+        {/* —— Tab: TSV → Excel —— */}
+        {importTab === 'tsv' && (
+          <section
+            className="import-tab-panel"
+            role="tabpanel"
+            id="import-panel-tsv"
+            aria-labelledby="import-tab-tsv"
+          >
+            <p className="import-section-hint import-section-hint-left">
+              Cấu hình quiz + dán câu hỏi TSV (schema v2). Hệ thống tạo{' '}
+              <code>ImportTemplate/&#123;TênBài&#125;/&#123;TênBài&#125;.xlsx</code> từ template{' '}
+              <code>SNLT-HP01-B01</code>, tạo <code>media/</code>, rồi mở Editor.
+            </p>
 
-          <div className="import-form-fields">
-            <label className="import-field">
-              <span>Tên quiz (tùy chọn)</span>
-              <input
-                type="text"
-                value={quizTitle}
-                onChange={(e) => setQuizTitle(e.target.value)}
-                placeholder="Ví dụ: Kiểm tra Toán lớp 5"
+            <div className="import-form-fields">
+              <label className="import-field">
+                <span>Tên Bài học <em className="field-req">*</em></span>
+                <input
+                  type="text"
+                  value={lessonCode}
+                  onChange={(e) => setLessonCode(e.target.value)}
+                  placeholder="Ví dụ: SNLT-HP01-B02"
+                  disabled={loading}
+                  autoComplete="off"
+                />
+              </label>
+              <label className="import-field">
+                <span>Tên nhóm câu hỏi</span>
+                <input
+                  type="text"
+                  value={groupTitle}
+                  onChange={(e) => setGroupTitle(e.target.value)}
+                  placeholder="Imported Questions"
+                  disabled={loading}
+                />
+              </label>
+            </div>
+
+            <div className="tsv-mode-toggle tsv-mode-block">
+              <span className="tsv-mode-label">Nguồn dữ liệu</span>
+              <label>
+                <input
+                  type="radio"
+                  name="tsvMode"
+                  checked={!useCombined}
+                  onChange={() => setUseCombined(false)}
+                  disabled={loading}
+                />
+                Settings + Questions riêng
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="tsvMode"
+                  checked={useCombined}
+                  onChange={() => setUseCombined(true)}
+                  disabled={loading}
+                />
+                Combined TSV (có marker)
+              </label>
+            </div>
+
+            {useCombined ? (
+              <label className="import-field import-field-wide">
+                <span>Combined TSV</span>
+                <textarea
+                  className="tsv-paste-area tsv-paste-area-lg"
+                  value={combinedTsv}
+                  onChange={(e) => setCombinedTsv(e.target.value)}
+                  placeholder={'### quiz_settings.tsv\nField\tValue\t...\n### quiz_questions.tsv\nQuestion Type\t...'}
+                  disabled={loading}
+                  spellCheck={false}
+                />
+              </label>
+            ) : (
+              <>
+                {/* —— Quiz Settings —— */}
+                <div className="settings-block">
+                  <div className="settings-block-header">
+                    <h4 className="settings-block-title">Quiz Settings</h4>
+                    <div className="tsv-mode-toggle">
+                      <label>
+                        <input
+                          type="radio"
+                          name="settingsInputMode"
+                          checked={settingsInputMode === 'form'}
+                          onChange={() => setSettingsInputMode('form')}
+                          disabled={loading}
+                        />
+                        Nhập tay
+                      </label>
+                      <label>
+                        <input
+                          type="radio"
+                          name="settingsInputMode"
+                          checked={settingsInputMode === 'paste'}
+                          onChange={() => setSettingsInputMode('paste')}
+                          disabled={loading}
+                        />
+                        Dán TSV
+                      </label>
+                    </div>
+                  </div>
+
+                  {settingsInputMode === 'form' ? (
+                    <div className="settings-form">
+                      <div className="import-form-fields">
+                        <label className="import-field import-field-wide">
+                          <span>Tên quiz (title) <em className="field-req">*</em></span>
+                          <input
+                            type="text"
+                            value={settingsForm.title}
+                            onChange={(e) => patchSettingsForm('title', e.target.value)}
+                            placeholder="Ví dụ: [HP01] B02 — Ôn tập mạng máy tính"
+                            disabled={loading}
+                          />
+                        </label>
+                        <label className="import-field import-field-wide">
+                          <span>Mô tả (description)</span>
+                          <textarea
+                            className="settings-textarea"
+                            value={settingsForm.description}
+                            onChange={(e) => patchSettingsForm('description', e.target.value)}
+                            placeholder="Mô tả ngắn nội dung / mục tiêu quiz"
+                            disabled={loading}
+                            rows={2}
+                          />
+                        </label>
+                        <label className="import-field">
+                          <span>Ảnh bìa (coverImage)</span>
+                          <input
+                            type="text"
+                            value={settingsForm.coverImage}
+                            onChange={(e) => patchSettingsForm('coverImage', e.target.value)}
+                            placeholder="media/quiz_cover.jpg"
+                            disabled={loading}
+                          />
+                        </label>
+                        <label className="import-field">
+                          <span>Tên học phần (Related Subject)</span>
+                          <input
+                            type="text"
+                            value={settingsForm.subject}
+                            onChange={(e) => patchSettingsForm('subject', e.target.value)}
+                            placeholder="Ví dụ: SNLT-HP01 · Khoa học máy tính"
+                            disabled={loading}
+                          />
+                          <span className="field-hint">JSON: subject — Context RELATED SUBJECT</span>
+                        </label>
+                        <label className="import-field">
+                          <span>Tên bài học (Target Lesson)</span>
+                          <input
+                            type="text"
+                            value={settingsForm.targetLesson}
+                            onChange={(e) => patchSettingsForm('targetLesson', e.target.value)}
+                            placeholder={lessonCode.trim() || 'Mặc định = Tên Bài học / mã thư mục'}
+                            disabled={loading}
+                          />
+                          <span className="field-hint">JSON: targetLesson — Context TARGET LESSON</span>
+                        </label>
+                        <label className="import-field">
+                          <span>Độ khó quiz</span>
+                          <select
+                            value={settingsForm.difficultyLevel}
+                            onChange={(e) => patchSettingsForm('difficultyLevel', e.target.value)}
+                            disabled={loading}
+                          >
+                            <option value="easy">easy</option>
+                            <option value="medium">medium</option>
+                            <option value="hard">hard</option>
+                          </select>
+                        </label>
+                        <label className="import-field">
+                          <span>Tags (phân cách phẩy)</span>
+                          <input
+                            type="text"
+                            value={settingsForm.tags}
+                            onChange={(e) => patchSettingsForm('tags', e.target.value)}
+                            placeholder="SNLT, HP01, B02, on-tap"
+                            disabled={loading}
+                          />
+                        </label>
+                        <label className="import-field">
+                          <span>Thời lượng (phút)</span>
+                          <input
+                            type="number"
+                            min={1}
+                            step={1}
+                            value={settingsForm.durationMinutes}
+                            onChange={(e) => patchSettingsForm('durationMinutes', e.target.value)}
+                            disabled={loading}
+                          />
+                          <span className="field-hint">
+                            = {Math.max(1, Math.round(Number(settingsForm.durationMinutes) || 0) * 60) || 0} giây trong Excel
+                          </span>
+                        </label>
+                        <label className="import-field">
+                          <span>Số lần làm (attemptLimit)</span>
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={settingsForm.attemptLimit}
+                            onChange={(e) => patchSettingsForm('attemptLimit', e.target.value)}
+                            disabled={loading}
+                          />
+                          <span className="field-hint">0 = không giới hạn</span>
+                        </label>
+                        <label className="import-field">
+                          <span>Hiện kết quả (showResults)</span>
+                          <select
+                            value={settingsForm.showResults}
+                            onChange={(e) => patchSettingsForm('showResults', e.target.value)}
+                            disabled={loading}
+                          >
+                            <option value="after_submit">after_submit</option>
+                            <option value="immediately">immediately</option>
+                            <option value="never">never</option>
+                          </select>
+                        </label>
+                        <label className="import-field">
+                          <span>Người tạo (createdBy)</span>
+                          <input
+                            type="text"
+                            value={settingsForm.createdBy}
+                            onChange={(e) => patchSettingsForm('createdBy', e.target.value)}
+                            placeholder="Teky Academy"
+                            disabled={loading}
+                          />
+                        </label>
+                        <label className="import-field">
+                          <span>Tên người tạo</span>
+                          <input
+                            type="text"
+                            value={settingsForm.createdByName}
+                            onChange={(e) => patchSettingsForm('createdByName', e.target.value)}
+                            placeholder="Teky Academy"
+                            disabled={loading}
+                          />
+                        </label>
+                      </div>
+
+                      <div className="settings-checks">
+                        <label className="tsv-check">
+                          <input
+                            type="checkbox"
+                            checked={settingsForm.shuffleQuestions}
+                            onChange={(e) => patchSettingsForm('shuffleQuestions', e.target.checked)}
+                            disabled={loading}
+                          />
+                          Trộn thứ tự câu hỏi
+                        </label>
+                        <label className="tsv-check">
+                          <input
+                            type="checkbox"
+                            checked={settingsForm.shuffleAnswers}
+                            onChange={(e) => patchSettingsForm('shuffleAnswers', e.target.checked)}
+                            disabled={loading}
+                          />
+                          Trộn thứ tự đáp án
+                        </label>
+                        <label className="tsv-check">
+                          <input
+                            type="checkbox"
+                            checked={settingsForm.allowReview}
+                            onChange={(e) => patchSettingsForm('allowReview', e.target.checked)}
+                            disabled={loading}
+                          />
+                          Cho xem lại sau khi nộp
+                        </label>
+                        <label className="tsv-check">
+                          <input
+                            type="checkbox"
+                            checked={settingsForm.isPublic}
+                            onChange={(e) => patchSettingsForm('isPublic', e.target.checked)}
+                            disabled={loading}
+                          />
+                          Quiz công khai (isPublic)
+                        </label>
+                      </div>
+                      <p className="field-hint settings-form-note">
+                        createdAt / updatedAt để trống — hệ thống tự sinh khi export.
+                      </p>
+                    </div>
+                  ) : (
+                    <label className="import-field import-field-wide">
+                      <span>quiz_settings.tsv</span>
+                      <textarea
+                        className="tsv-paste-area"
+                        value={settingsTsv}
+                        onChange={(e) => setSettingsTsv(e.target.value)}
+                        placeholder={'Field\tValue\tDescription\ntitle\t...\t...'}
+                        disabled={loading}
+                        spellCheck={false}
+                      />
+                      <span className="field-hint">
+                        Tùy chọn: ghi đè title khi import bằng ô bên dưới
+                      </span>
+                      <input
+                        type="text"
+                        className="settings-title-override"
+                        value={quizTitle}
+                        onChange={(e) => setQuizTitle(e.target.value)}
+                        placeholder="Ghi đè title (tùy chọn)"
+                        disabled={loading}
+                      />
+                    </label>
+                  )}
+                </div>
+
+                {/* —— Questions TSV —— */}
+                <label className="import-field import-field-wide">
+                  <span>quiz_questions.tsv <em className="field-req">*</em></span>
+                  <textarea
+                    className="tsv-paste-area tsv-paste-area-lg"
+                    value={questionsTsv}
+                    onChange={(e) => setQuestionsTsv(e.target.value)}
+                    placeholder={'Question Type\tQuestion Text\tAnswer 1\t...'}
+                    disabled={loading}
+                    spellCheck={false}
+                  />
+                </label>
+              </>
+            )}
+
+            <div className="tsv-options">
+              <label className="tsv-check">
+                <input
+                  type="checkbox"
+                  checked={overwriteLesson}
+                  onChange={(e) => setOverwriteLesson(e.target.checked)}
+                  disabled={loading}
+                />
+                Ghi đè nếu thư mục bài học đã tồn tại (nên bật khi import lại cùng mã)
+              </label>
+              <label className="tsv-check">
+                <input
+                  type="checkbox"
+                  checked={seedMedia}
+                  onChange={(e) => setSeedMedia(e.target.checked)}
+                  disabled={loading}
+                />
+                Copy ảnh mẫu từ SNLT-HP01-B01/media
+              </label>
+            </div>
+
+            <div className="import-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
                 disabled={loading}
-              />
-            </label>
-            <label className="import-field">
-              <span>Tên nhóm câu hỏi</span>
-              <input
-                type="text"
-                value={groupTitle}
-                onChange={(e) => setGroupTitle(e.target.value)}
-                placeholder="Imported Questions"
-                disabled={loading}
-              />
-            </label>
-          </div>
-
-          <details className="import-column-guide">
-            <summary>Hướng dẫn cột Excel</summary>
-            <table>
-              <thead>
-                <tr>
-                  <th>Cột</th>
-                  <th>Mô tả</th>
-                </tr>
-              </thead>
-              <tbody>
-                {EXCEL_COLUMN_GUIDE.map((row) => (
-                  <tr key={row.col}>
-                    <td>{row.col}</td>
-                    <td>{row.desc}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </details>
-
-          <div className="import-template-downloads">
-            <span className="import-template-label">Tải file mẫu:</span>
-            {templatesError && <span className="import-report-warn">{templatesError}</span>}
-            {templates.map((tpl) => (
-              <a
-                key={tpl.id}
-                className="import-template-link"
-                href={excelTemplateDownloadUrl(tpl.id)}
-                download={tpl.filename}
+                onClick={handleTsvPublish}
               >
-                {tpl.filename}
-              </a>
-            ))}
-          </div>
-
-          <div
-            className={`dropzone dropzone-excel ${excelDrag ? 'dragover' : ''} ${loading ? 'is-loading' : ''}`}
-            onClick={() => !loading && excelInputRef.current?.click()}
-            onDragOver={(e) => { e.preventDefault(); if (!loading) setExcelDrag(true) }}
-            onDragLeave={() => setExcelDrag(false)}
-            onDrop={(e) => {
-              e.preventDefault()
-              setExcelDrag(false)
-              if (!loading) handleExcelFile(e.dataTransfer.files[0])
-            }}
-          >
-            {loading && loadingMessage?.kind === 'excel' && (
-              <div className="dropzone-loading">
+                {loading && loadingMessage?.kind === 'tsv'
+                  ? 'Đang xuất bản…'
+                  : 'Import → Excel & mở Editor'}
+              </button>
+            </div>
+            {loading && loadingMessage?.kind === 'tsv' && (
+              <div className="tsv-loading-hint">
                 <div className="spinner" />
                 <span>{loadingMessage.text}</span>
               </div>
             )}
-            <div className="dropzone-icon">📊</div>
-            <div className="dropzone-text">
-              {loading ? 'Đang import Excel...' : 'Kéo thả file .xls / .xlsx hoặc .zip (Excel + media)'}
-            </div>
-            <div className="dropzone-hint">Ảnh đính kèm: đường dẫn tương đối như media\Columbus_ship.jpg</div>
-            <input
-              ref={excelInputRef}
-              type="file"
-              accept=".xls,.xlsx,.zip"
-              hidden
-              disabled={loading}
-              onChange={(e) => handleExcelFile(e.target.files[0])}
-            />
-          </div>
-          <div className="sample-buttons">
-            <button
-              className="btn btn-primary"
-              disabled={loading}
-              onClick={() => runExcelSample(() => importExcelSample(excelOpts))}
-            >
-              Import mẫu Excel
-            </button>
-            <button
-              className="btn"
-              disabled={loading}
-              onClick={() => runExcelSample(() => importExcelMediaSample(excelOpts))}
-            >
-              Import mẫu Audio/Video
-            </button>
-            <button
-              className="btn"
-              disabled={loading}
-              onClick={() => runExcelSample(() => importExcelFibWbSample(excelOpts))}
-            >
-              Import mẫu FIB / WB / Numeric
-            </button>
-          </div>
-        </section>
+          </section>
+        )}
 
-        <section className="import-section">
-          <h3>Chỉnh sửa SCORM có sẵn</h3>
-          <div
-            className={`dropzone ${scormDrag ? 'dragover' : ''} ${loading ? 'is-loading' : ''}`}
-            onClick={() => !loading && scormInputRef.current?.click()}
-            onDragOver={(e) => { e.preventDefault(); if (!loading) setScormDrag(true) }}
-            onDragLeave={() => setScormDrag(false)}
-            onDrop={(e) => {
-              e.preventDefault()
-              setScormDrag(false)
-              if (!loading) handleScormFile(e.dataTransfer.files[0])
-            }}
+        {/* —— Tab: Excel —— */}
+        {importTab === 'excel' && (
+          <section
+            className="import-tab-panel"
+            role="tabpanel"
+            id="import-panel-excel"
+            aria-labelledby="import-tab-excel"
           >
-            {loading && loadingMessage?.kind === 'scorm' && (
-              <div className="dropzone-loading">
-                <div className="spinner" />
-                <span>{loadingMessage.text}</span>
-              </div>
-            )}
-            <div className="dropzone-icon">📦</div>
-            <div className="dropzone-text">
-              {loading ? 'Đang mở SCORM...' : 'Kéo thả file .zip hoặc bấm để chọn'}
+            <p className="import-section-hint import-section-hint-left">
+              Upload .xls / .xlsx hoặc .zip (Excel + media). Hỗ trợ MC, MR, TF, Short Answer,
+              Numeric, FIB, Word Bank, Matching, Sequence, Info Slide.
+            </p>
+
+            <div className="import-form-fields">
+              <label className="import-field">
+                <span>Tên quiz (tùy chọn)</span>
+                <input
+                  type="text"
+                  value={quizTitle}
+                  onChange={(e) => setQuizTitle(e.target.value)}
+                  placeholder="Ví dụ: Kiểm tra Toán lớp 5"
+                  disabled={loading}
+                />
+              </label>
+              <label className="import-field">
+                <span>Tên nhóm câu hỏi</span>
+                <input
+                  type="text"
+                  value={groupTitle}
+                  onChange={(e) => setGroupTitle(e.target.value)}
+                  placeholder="Imported Questions"
+                  disabled={loading}
+                />
+              </label>
             </div>
-            <div className="dropzone-hint">Hỗ trợ SCORM 1.2 từ iSpring Quiz Maker (zip lồng zip)</div>
-            <input
-              ref={scormInputRef}
-              type="file"
-              accept=".zip"
-              hidden
-              disabled={loading}
-              onChange={(e) => handleScormFile(e.target.files[0])}
-            />
-          </div>
-          <div className="sample-buttons">
-            <button className="btn" disabled={loading} onClick={() => onImport(() => importSample('zip'), { kind: 'scorm' })}>
-              Load mẫu ZIP
-            </button>
-            <button className="btn" disabled={loading} onClick={() => onImport(() => importSample('dir'), { kind: 'scorm' })}>
-              Load mẫu thư mục
-            </button>
-          </div>
-        </section>
+
+            <details className="import-column-guide">
+              <summary>Hướng dẫn cột Excel</summary>
+              <div className="import-column-guide-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Cột</th>
+                      <th>Mô tả</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {EXCEL_COLUMN_GUIDE.map((row) => (
+                      <tr key={row.col}>
+                        <td>{row.col}</td>
+                        <td>{row.desc}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+
+            <div className="import-template-downloads">
+              <span className="import-template-label">Tải file mẫu:</span>
+              {templatesError && <span className="import-report-warn">{templatesError}</span>}
+              <div className="import-template-links">
+                {templates.map((tpl) => (
+                  <a
+                    key={tpl.id}
+                    className="import-template-link"
+                    href={excelTemplateDownloadUrl(tpl.id)}
+                    download={tpl.filename}
+                  >
+                    {tpl.filename}
+                  </a>
+                ))}
+              </div>
+            </div>
+
+            <div
+              className={`dropzone dropzone-excel ${excelDrag ? 'dragover' : ''} ${loading ? 'is-loading' : ''}`}
+              onClick={() => !loading && excelInputRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); if (!loading) setExcelDrag(true) }}
+              onDragLeave={() => setExcelDrag(false)}
+              onDrop={(e) => {
+                e.preventDefault()
+                setExcelDrag(false)
+                if (!loading) handleExcelFile(e.dataTransfer.files[0])
+              }}
+            >
+              {loading && loadingMessage?.kind === 'excel' && (
+                <div className="dropzone-loading">
+                  <div className="spinner" />
+                  <span>{loadingMessage.text}</span>
+                </div>
+              )}
+              <div className="dropzone-icon">📊</div>
+              <div className="dropzone-text">
+                {loading ? 'Đang import Excel...' : 'Kéo thả .xls / .xlsx / .zip hoặc bấm để chọn'}
+              </div>
+              <div className="dropzone-hint">Ảnh: đường dẫn tương đối media/ten_file.jpg</div>
+              <input
+                ref={excelInputRef}
+                type="file"
+                accept=".xls,.xlsx,.zip"
+                hidden
+                disabled={loading}
+                onChange={(e) => handleExcelFile(e.target.files[0])}
+              />
+            </div>
+            <div className="sample-buttons">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={loading}
+                onClick={() => runExcelSample(() => importExcelSample(excelOpts))}
+              >
+                Import mẫu Excel
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={loading}
+                onClick={() => runExcelSample(() => importExcelMediaSample(excelOpts))}
+              >
+                Import mẫu Audio/Video
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={loading}
+                onClick={() => runExcelSample(() => importExcelFibWbSample(excelOpts))}
+              >
+                Import mẫu FIB / WB / Numeric
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* —— Tab: SCORM Zip —— */}
+        {importTab === 'scorm' && (
+          <section
+            className="import-tab-panel"
+            role="tabpanel"
+            id="import-panel-scorm"
+            aria-labelledby="import-tab-scorm"
+          >
+            <p className="import-section-hint import-section-hint-left">
+              Mở gói SCORM 1.2 từ iSpring Quiz Maker để chỉnh sửa nội dung, layout và export lại.
+            </p>
+
+            <div
+              className={`dropzone ${scormDrag ? 'dragover' : ''} ${loading ? 'is-loading' : ''}`}
+              onClick={() => !loading && scormInputRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); if (!loading) setScormDrag(true) }}
+              onDragLeave={() => setScormDrag(false)}
+              onDrop={(e) => {
+                e.preventDefault()
+                setScormDrag(false)
+                if (!loading) handleScormFile(e.dataTransfer.files[0])
+              }}
+            >
+              {loading && loadingMessage?.kind === 'scorm' && (
+                <div className="dropzone-loading">
+                  <div className="spinner" />
+                  <span>{loadingMessage.text}</span>
+                </div>
+              )}
+              <div className="dropzone-icon">📦</div>
+              <div className="dropzone-text">
+                {loading ? 'Đang mở SCORM...' : 'Kéo thả file .zip hoặc bấm để chọn'}
+              </div>
+              <div className="dropzone-hint">SCORM 1.2 · hỗ trợ zip lồng zip</div>
+              <input
+                ref={scormInputRef}
+                type="file"
+                accept=".zip"
+                hidden
+                disabled={loading}
+                onChange={(e) => handleScormFile(e.target.files[0])}
+              />
+            </div>
+            <div className="sample-buttons">
+              <button
+                type="button"
+                className="btn"
+                disabled={loading}
+                onClick={() => onImport(() => importSample('zip'), { kind: 'scorm' })}
+              >
+                Load mẫu ZIP
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={loading}
+                onClick={() => onImport(() => importSample('dir'), { kind: 'scorm' })}
+              >
+                Load mẫu thư mục
+              </button>
+            </div>
+          </section>
+        )}
       </div>
     </div>
   )
@@ -1457,6 +2087,8 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  /** Giữ kind lỗi sau khi loading xong để banner Import vẫn hiện message server */
+  const [errorKind, setErrorKind] = useState(null)
   const [importReport, setImportReport] = useState(null)
   const [loadingMessage, setLoadingMessage] = useState(null)
   const [toast, setToast] = useState(null)
@@ -1533,13 +2165,25 @@ export default function App() {
   const handleImport = async (fn, { kind = 'scorm' } = {}) => {
     setLoading(true)
     setError(null)
+    setErrorKind(null)
     setImportReport(null)
+    const loadingText =
+      kind === 'excel'
+        ? 'Đang đọc Excel và tạo quiz...'
+        : kind === 'tsv'
+          ? 'Đang tạo Excel bài học từ TSV và mở Editor...'
+          : 'Đang phân tích gói SCORM...'
     setLoadingMessage({
       kind,
-      text: kind === 'excel' ? 'Đang đọc Excel và tạo quiz...' : 'Đang phân tích gói SCORM...',
+      text: loadingText,
     })
     try {
       const data = await fn()
+      // Package-only response (openInEditor false) has no sessionId
+      if (!data?.sessionId && data?.package) {
+        showToast(data.message || `Đã tạo ${data.package.relativeExcel}`)
+        return
+      }
       resetHistory(data)
       const firstImported = data.importReport?.find((r) => r.status === 'imported' && r.slideId)
       setSelectedId(firstImported?.slideId || firstSelectableId(data))
@@ -1547,16 +2191,20 @@ export default function App() {
       if (data.importReport) {
         setImportReport({ report: data.importReport, summary: data.importSummary })
         const s = data.importSummary
+        const lessonHint = s?.lessonCode ? ` · Bài ${s.lessonCode}` : ''
         showToast(
           s
-            ? `Excel: ${s.imported}/${s.total} câu import — tổng ${data.questionCount} câu trong quiz`
+            ? `Excel: ${s.imported}/${s.total} câu import — tổng ${data.questionCount} câu${lessonHint}`
             : `Đã import ${data.questionCount} câu`,
         )
       } else {
         showToast(`Đã import ${data.questionCount} câu + ${slideCount} slide đặc biệt`)
       }
     } catch (err) {
-      setError(err.message)
+      const msg = err?.message || String(err)
+      setError(msg)
+      setErrorKind(kind)
+      showToast(msg, 'error')
     } finally {
       setLoading(false)
       setLoadingMessage(null)
@@ -1762,8 +2410,8 @@ export default function App() {
           loading={loading}
           loadingMessage={loadingMessage}
           error={error}
+          errorKind={errorKind}
           importReport={importReport}
-          onOpenGuide={() => setGuideOpen(true)}
         />
         <UserGuideModal open={guideOpen} onClose={() => setGuideOpen(false)} />
       </div>

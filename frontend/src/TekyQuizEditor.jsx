@@ -19,7 +19,7 @@ function UploadButton({ sessionId, onUploadComplete, label = '' }) {
       <input
         type="file"
         style={{ display: 'none' }}
-        accept="image/*,video/*"
+        accept="image/*"
         onChange={async (e) => {
           const file = e.target.files[0];
           if (!file) return;
@@ -53,7 +53,11 @@ export default function TekyQuizEditor({
   const questions = quiz?.questions || [];
   const activeQIndex = questions.findIndex(q => q.id === activeSlide?.id);
   const visibleQuestions = questions.filter(q => !q.deleted);
-  const targetLesson = quiz?.groups?.[0]?.title || quiz?.tekyQuiz?.subject || 'Bài học';
+  const targetLesson =
+    quiz?.tekyQuiz?.targetLesson
+    || quiz?.groups?.[0]?.title
+    || quiz?.tekyQuiz?.subject
+    || 'Bài học'
 
   return (
     <div className="teky-editor-container">
@@ -156,6 +160,7 @@ export default function TekyQuizEditor({
                       points: 1,
                       slideImages: [],
                       video: '',
+                      audio: '',
                       explanation: '',
                       choices: [
                         { id: `choice_${crypto.randomUUID()}`, text: 'Đáp án 1', isCorrect: true },
@@ -249,11 +254,39 @@ function TekyQuizDetails({ quiz, onChange, sessionId }) {
         <div className="teky-context-grid">
           <div className="teky-context-tile">
             <span className="teky-context-icon">◇</span>
-            <div><small>RELATED SUBJECT</small><strong>{meta.subject || 'Chưa thiết lập môn học'}</strong></div>
+            <div>
+              <small>RELATED SUBJECT</small>
+              <strong>{meta.subject || 'Chưa thiết lập học phần'}</strong>
+            </div>
           </div>
           <div className="teky-context-tile">
             <span className="teky-context-icon orange">▱</span>
-            <div><small>TARGET LESSON</small><strong>{quiz?.groups?.[0]?.title || meta.title || 'Bài học'}</strong></div>
+            <div>
+              <small>TARGET LESSON</small>
+              <strong>
+                {meta.targetLesson || quiz?.groups?.[0]?.title || meta.title || 'Chưa thiết lập bài học'}
+              </strong>
+            </div>
+          </div>
+        </div>
+        <div className="teky-flex-row teky-context-controls">
+          <div className="teky-field-group flex-1">
+            <label>TÊN HỌC PHẦN (Related Subject)</label>
+            <input
+              type="text"
+              value={meta.subject || ''}
+              placeholder="Tên học phần"
+              onChange={e => updateMeta({ subject: e.target.value })}
+            />
+          </div>
+          <div className="teky-field-group flex-1">
+            <label>TÊN BÀI HỌC (Target Lesson)</label>
+            <input
+              type="text"
+              value={meta.targetLesson || ''}
+              placeholder="Tên bài học"
+              onChange={e => updateMeta({ targetLesson: e.target.value })}
+            />
           </div>
         </div>
         <div className="teky-flex-row teky-context-controls">
@@ -272,10 +305,6 @@ function TekyQuizDetails({ quiz, onChange, sessionId }) {
         </div>
         <details className="teky-advanced-meta">
           <summary>Thông tin nâng cao</summary>
-          <div className="teky-field-group">
-            <label>SUBJECT</label>
-            <input type="text" value={meta.subject || ''} onChange={e => updateMeta({ subject: e.target.value })} />
-          </div>
           <div className="teky-field-group">
             <label>TAGS</label>
             <input type="text" value={Array.isArray(meta.tags) ? meta.tags.join(', ') : (meta.tags || '')} onChange={e => updateMeta({ tags: e.target.value.split(',').map(v => v.trim()).filter(Boolean) })} />
@@ -501,18 +530,19 @@ function TekyQuestionForm({ question, onChange, onDelete, index, sessionId }) {
           </div>
           <div className="teky-field-group flex-1">
             <label>VIDEO CÂU HỎI</label>
-            <div className="teky-input-with-btn">
-              <input
-                type="text"
-                placeholder="Dán URL hoặc tải video..."
-                value={question.video || ''}
-                onChange={e => onChange({ video: e.target.value })}
-              />
-              <UploadButton
-                sessionId={sessionId}
-                onUploadComplete={(filename) => onChange({ video: filename })}
-              />
-            </div>
+            <input
+              type="url"
+              placeholder="URL YouTube / Vimeo..."
+              value={question.video || ''}
+              onChange={e => onChange({ video: e.target.value })}
+            />
+            <label style={{ marginTop: '14px' }}>AUDIO CÂU HỎI</label>
+            <input
+              type="url"
+              placeholder="URL audio HTTPS..."
+              value={question.audio || ''}
+              onChange={e => onChange({ audio: e.target.value })}
+            />
           </div>
 
         </div>

@@ -5,6 +5,7 @@
     "description": "Bài thi mẫu được thiết kế để kiểm thử toàn bộ 9 dạng câu hỏi được hỗ trợ trên hệ thống LMS/CMS.",
     "coverImageUrl": "https://s3-sgn10.fptcloud.com/teky-prod/quiz-covers/quiz_sample_9_types.jpg",
     "subject": "Công nghệ thông tin",
+    "targetLesson": "Bài kiểm tra tổng hợp 9 dạng",
     "difficultyLevel": "medium",
     "tags": ["Sample", "Testing", "LMS"],
     "createdBy": "admin",

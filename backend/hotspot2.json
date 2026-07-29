@@ -1,0 +1,514 @@
+{
+  "i": "sodgrnjjiydl-u8745e5rftzs",
+  "tp": "Hotspot",
+  "D": {
+    "h": "<p style=\"text-align:center;line-height:1.5em;padding-top:0em;padding-bottom:0em;font-size:20px;font-family:fnt3_18817;color:#000000;font-weight:normal;font-style:normal\"><span style=\"color:#000000;text-decoration:none;font-size:20px;font-family:fnt3_18817;font-weight:normal;font-style:normal;\">Xem video v\u00e0 cho bi\u1ebft:</span></p><p style=\"text-align:center;line-height:1.5em;padding-top:0em;padding-bottom:0em;font-size:20px;font-family:fnt3_18817;color:#000000;font-weight:normal;font-style:normal\"><span style=\"color:#000000;text-decoration:none;font-size:20px;font-family:fnt3_18817;font-weight:normal;font-style:normal;\">Nh\u1eefng c\u00f4ng c\u1ee5 \u0111\u01b0\u1ee3c s\u1eed d\u1ee5ng \u0111\u1ec3 t\u01b0\u01a1ng t\u00e1c v\u1edbi ng\u00f4i nh\u00e0 ?</span></p>",
+    "a": "<p><b>Xem video v\u00e0 cho bi\u1ebft:</b></p><p><b>Nh\u1eefng c\u00f4ng c\u1ee5 \u0111\u01b0\u1ee3c s\u1eed d\u1ee5ng \u0111\u1ec3 t\u01b0\u01a1ng t\u00e1c v\u1edbi ng\u00f4i nh\u00e0 ?</b></p>",
+    "r": [],
+    "d": [
+      "Xem video v\u00e0 cho bi\u1ebft:\nNh\u1eefng c\u00f4ng c\u1ee5 \u0111\u01b0\u1ee3c s\u1eed d\u1ee5ng \u0111\u1ec3 t\u01b0\u01a1ng t\u00e1c v\u1edbi ng\u00f4i nh\u00e0 ?"
+    ],
+    "t": {
+      "tf": {
+        "f": "Quicksand",
+        "s": 20,
+        "c": 0,
+        "b": true,
+        "i": false,
+        "u": false
+      },
+      "pf": {
+        "t": "p",
+        "a": "center",
+        "lh": 1.5,
+        "T": 0,
+        "b": 0
+      }
+    }
+  },
+  "v": true,
+  "C": {
+    "a": [
+      {
+        "t": "rectangle",
+        "l": "Rectangle 1",
+        "r": {
+          "x": 79.78723404255325,
+          "y": 143.6102211482921,
+          "w": 2553.1914893617013,
+          "h": 9655.172413793103
+        },
+        "s": 0,
+        "c": true
+      },
+      {
+        "t": "rectangle",
+        "l": "Rectangle 2",
+        "r": {
+          "x": 4994.794857776299,
+          "y": 206.89655172413586,
+          "w": 2507.163636124305,
+          "h": 9793.103448275864
+        },
+        "s": 0,
+        "c": true
+      },
+      {
+        "t": "rectangle",
+        "l": "Rectangle 3",
+        "r": {
+          "x": 7455.889195460124,
+          "y": 206.89655172413586,
+          "w": 2446.808510638297,
+          "h": 9793.103448275864
+        },
+        "s": 0,
+        "c": true
+      }
+    ],
+    "i": "storage://images/img-c0de8854ae3a9351040f05d739a1085b8163430b.png"
+  },
+  "s": {
+    "ee": true,
+    "e": {
+      "t": "byQuestion",
+      "pt": 10.0,
+      "p": 0,
+      "atp": 0
+    },
+    "t": {
+      "e": false,
+      "v": 60
+    },
+    "a": 1,
+    "ap": false,
+    "al": {
+      "e": false,
+      "v": 3
+    },
+    "B": {
+      "t": "byQuestion"
+    },
+    "F": {
+      "c": {
+        "v": {
+          "h": "<span data-count=\"0\" data-unselectable=\"\" data-block-separator=\"\" style=\"float:left;width:0px;height:0px\">\u200b</span><div style=\"padding-top:10px;padding-bottom:10px;text-align:center\"><span id=\"image11426\"></span></div><p style=\"text-align:center;line-height:1.5em;padding-top:0em;padding-bottom:0em;font-size:16px;font-family:fnt0_18817;color:#000000;font-weight:normal;font-style:normal\"><span style=\"color:#000000;text-decoration:none;font-size:16px;font-family:fnt0_18817;font-weight:normal;font-style:normal;\">---------------------------------------------------</span></p><p style=\"text-align:center;line-height:1.5em;padding-top:0em;padding-bottom:0em;font-size:16px;font-family:fnt2_18817;color:#000000;font-weight:normal;font-style:normal\"><span style=\"color:#000000;text-decoration:none;font-size:16px;font-family:fnt2_18817;font-weight:normal;font-style:normal;\">Ch\u00ednh x\u00e1c</span></p>",
+          "a": "<span id=\"image11426\"></span><p>---------------------------------------------------</p><p>Ch\u00ednh x\u00e1c</p>",
+          "r": [
+            {
+              "assetId": "storage://images/img-8cdac80c0b7e34f3f7df123df77284e9a730b304.gif",
+              "width": 320,
+              "height": 300,
+              "text": "",
+              "url": "",
+              "target": "",
+              "increaseByClick": false,
+              "id": "image11426",
+              "type": "image"
+            }
+          ],
+          "d": [
+            {
+              "id": "image11426"
+            },
+            "---------------------------------------------------\nCh\u00ednh x\u00e1c"
+          ],
+          "t": {
+            "tf": {
+              "f": "Open Sans",
+              "s": 16,
+              "c": 0,
+              "b": false,
+              "i": false,
+              "u": false,
+              "st": false
+            },
+            "pf": {
+              "t": "p",
+              "a": "left",
+              "lh": 1.5,
+              "T": 0,
+              "b": 0
+            }
+          }
+        },
+        "a": {
+          "i": "storage://sounds/snd-7814b01d554d7ad4fa30781733e6f9614ee2e96a.mp3",
+          "a": true,
+          "pe": false,
+          "pl": 1,
+          "pb": true,
+          "r": ""
+        }
+      },
+      "i": {
+        "v": {
+          "h": "<span data-count=\"0\" data-unselectable=\"\" data-block-separator=\"\" style=\"float:left;width:0px;height:0px\">\u200b</span><div style=\"padding-top:10px;padding-bottom:10px;text-align:center\"><span id=\"image11427\"></span></div><p style=\"text-align:center;line-height:1.5em;padding-top:0em;padding-bottom:0em;font-size:16px;font-family:fnt2_18817;color:#000000;font-weight:normal;font-style:normal\"><span style=\"color:#000000;text-decoration:none;font-size:16px;font-family:fnt2_18817;font-weight:normal;font-style:normal;\">--------------------------------------------------</span></p><p style=\"text-align:center;line-height:1.5em;padding-top:0em;padding-bottom:0em;font-size:16px;font-family:fnt2_18817;color:#000000;font-weight:normal;font-style:normal\"><span style=\"color:#000000;text-decoration:none;font-size:16px;font-family:fnt2_18817;font-weight:normal;font-style:normal;\">Sai r\u1ed3i</span></p><p style=\"text-align:left;line-height:1.5em;padding-top:0em;padding-bottom:0em;font-size:16px;font-family:fnt2_18817;color:#000000;font-weight:normal;font-style:normal\"><span style=\"font-size:16px;font-family:fnt2_18817;\">\u200b</span></p>",
+          "a": "<span id=\"image11427\"></span><p>--------------------------------------------------</p><p>Sai r\u1ed3i</p><p></p>",
+          "r": [
+            {
+              "assetId": "storage://images/img-931fb19cdf37b8308f2efedb83e11db0be40ef18.gif",
+              "width": 356,
+              "height": 300,
+              "text": "",
+              "url": "",
+              "target": "",
+              "increaseByClick": false,
+              "id": "image11427",
+              "type": "image"
+            }
+          ],
+          "d": [
+            {
+              "id": "image11427"
+            },
+            "--------------------------------------------------\nSai r\u1ed3i\n"
+          ],
+          "t": {
+            "tf": {
+              "f": "Open Sans",
+              "s": 16,
+              "c": 0,
+              "b": false,
+              "i": false,
+              "u": false,
+              "st": false
+            },
+            "pf": {
+              "t": "p",
+              "a": "left",
+              "lh": 1.5,
+              "T": 0,
+              "b": 0
+            }
+          }
+        },
+        "a": {
+          "i": "storage://sounds/snd-c0ab79df2226cd8e054c15d6d45e3bd29a508473.mp3",
+          "a": true,
+          "pe": false,
+          "pl": 1,
+          "pb": true,
+          "r": ""
+        }
+      },
+      "at": {
+        "v": {
+          "h": "<p style=\"text-align:left;line-height:1.5em;padding-top:0em;padding-bottom:0em;font-size:16px;font-family:fnt0_18817;color:#000000;font-weight:normal;font-style:normal\"><span style=\"color:#000000;text-decoration:none;font-size:16px;font-family:fnt0_18817;font-weight:normal;font-style:normal;\">You did not choose the correct response. Please try again.</span></p><p style=\"text-align:left;line-height:1.5em;padding-top:0em;padding-bottom:0em;font-size:16px;font-family:fnt0_18817;color:#000000;font-weight:normal;font-style:normal\"><span style=\"font-size:16px;font-family:fnt0_18817;\">\u200b</span></p><p style=\"text-align:left;line-height:1.5em;padding-top:0em;padding-bottom:0em;font-size:16px;font-family:fnt0_18817;color:#000000;font-weight:normal;font-style:normal\"><span style=\"color:#000000;text-decoration:none;font-size:16px;font-family:fnt0_18817;font-weight:normal;font-style:normal;\">You have %ANSWER_ATTEMPTS% attempts.</span></p>",
+          "a": "<p>You did not choose the correct response. Please try again.</p><p></p><p>You have %ANSWER_ATTEMPTS% attempts.</p>",
+          "r": [],
+          "d": [
+            "You did not choose the correct response. Please try again.\n\nYou have %ANSWER_ATTEMPTS% attempts."
+          ],
+          "t": {
+            "tf": {
+              "f": "Open Sans",
+              "s": 16,
+              "c": 0,
+              "b": false,
+              "i": false,
+              "u": false,
+              "st": false
+            },
+            "pf": {
+              "t": "p",
+              "a": "left",
+              "lh": 1.5,
+              "T": 0,
+              "b": 0
+            }
+          }
+        }
+      },
+      "a": {
+        "v": {
+          "h": "<p style=\"text-align:left;line-height:1.5em;padding-top:0em;padding-bottom:0em;font-size:16px;font-family:fnt0_18817;color:#000000;font-weight:normal;font-style:normal\"><span style=\"color:#000000;text-decoration:none;font-size:16px;font-family:fnt0_18817;font-weight:normal;font-style:normal;\">Thank you for your answer!</span></p>",
+          "a": "<p>Thank you for your answer!</p>",
+          "r": [],
+          "d": [
+            "Thank you for your answer!"
+          ],
+          "t": {
+            "tf": {
+              "f": "Open Sans",
+              "s": 16,
+              "c": 0,
+              "b": false,
+              "i": false,
+              "u": false,
+              "st": false
+            },
+            "pf": {
+              "t": "p",
+              "a": "left",
+              "lh": 1.5,
+              "T": 0,
+              "b": 0
+            }
+          }
+        }
+      },
+      "pc": {
+        "v": {
+          "h": "<p style=\"text-align:left;line-height:1.5em;padding-top:0em;padding-bottom:0em;font-size:16px;font-family:fnt0_18817;color:#000000;font-weight:normal;font-style:normal\"><span style=\"color:#000000;text-decoration:none;font-size:16px;font-family:fnt0_18817;font-weight:normal;font-style:normal;\">That&#39;s not exactly the correct response.</span></p>",
+          "a": "<p>That&#39;s not exactly the correct response.</p>",
+          "r": [],
+          "d": [
+            "That's not exactly the correct response."
+          ],
+          "t": {
+            "tf": {
+              "f": "Open Sans",
+              "s": 16,
+              "c": 0,
+              "b": false,
+              "i": false,
+              "u": false,
+              "st": false
+            },
+            "pf": {
+              "t": "p",
+              "a": "left",
+              "lh": 1.5,
+              "T": 0,
+              "b": 0
+            }
+          }
+        }
+      },
+      "gt": "byQuestion",
+      "st": "none"
+    },
+    "h": {
+      "a": "none",
+      "r": false
+    },
+    "w": {
+      "a": "none"
+    },
+    "sh": false
+  },
+  "a": {
+    "l": "default",
+    "L": true,
+    "o": [
+      {
+        "tp": "image",
+        "I": "Picture 1",
+        "k": true,
+        "r": {
+          "x": 57.5,
+          "y": 54.78,
+          "w": 605.0,
+          "h": 436.29
+        },
+        "s": "rectangle",
+        "S": {
+          "b": {
+            "f": "none"
+          },
+          "s": {
+            "t": "none",
+            "s": 1,
+            "d": "",
+            "c": "butt",
+            "j": "miter"
+          },
+          "a": {
+            "t": "",
+            "a": true
+          },
+          "t": {
+            "a": "doNotAutofit",
+            "v": "middle",
+            "w": true,
+            "l": 0,
+            "r": 0,
+            "t": 0,
+            "b": 0
+          }
+        },
+        "b": 0.3,
+        "rt": {
+          "h": "<p style=\"font-size:15px;font-family:fnt0_18817\"><span style=\"font-size:15px;font-family:fnt0_18817;\">\u200b</span></p>",
+          "a": "<p></p>",
+          "r": [],
+          "d": [],
+          "t": {
+            "tf": {
+              "f": "Open Sans",
+              "s": 15
+            }
+          }
+        },
+        "i": "storage://images/img-62e5a8b950b8a46b994eb455874e5d3f80feb1c9.png",
+        "z": false
+      },
+      {
+        "tp": "shape",
+        "I": "direction",
+        "k": false,
+        "r": {
+          "x": 54.18,
+          "y": 59.41,
+          "w": 625.69,
+          "h": 81.0
+        },
+        "s": "textBox",
+        "S": {
+          "b": {
+            "f": "none"
+          },
+          "s": {
+            "t": "none",
+            "s": 1,
+            "d": "",
+            "c": "butt",
+            "j": "miter"
+          },
+          "a": {
+            "t": "",
+            "a": true
+          },
+          "t": {
+            "a": "resizeShapeToFitText",
+            "v": "middle",
+            "w": true,
+            "l": 14,
+            "r": 16,
+            "t": 9,
+            "b": 12
+          }
+        },
+        "b": 0.3
+      },
+      {
+        "tp": "shape",
+        "I": "content",
+        "k": false,
+        "r": {
+          "x": 257.8,
+          "y": 401.5,
+          "w": 210.1,
+          "h": 84.5
+        },
+        "s": "rectangle",
+        "S": {
+          "b": {
+            "f": "none"
+          },
+          "s": {
+            "t": "none",
+            "s": 1,
+            "d": "",
+            "c": "butt",
+            "j": "miter"
+          },
+          "a": {
+            "t": "",
+            "a": true
+          },
+          "t": {
+            "a": "doNotAutofit",
+            "v": "middle",
+            "w": true,
+            "l": 10,
+            "r": 10,
+            "t": 5,
+            "b": 5
+          }
+        },
+        "b": 0.3
+      },
+      {
+        "tp": "video",
+        "I": "Video 1",
+        "k": true,
+        "r": {
+          "x": 159.8,
+          "y": 140.3,
+          "w": 400.5,
+          "h": 249.7
+        },
+        "s": "rectangle",
+        "S": {
+          "b": {
+            "f": "solidFill",
+            "s": {
+              "c": 16777215,
+              "a": 1
+            }
+          },
+          "s": {
+            "t": "none",
+            "s": 1,
+            "d": "",
+            "c": "butt",
+            "j": "miter"
+          },
+          "a": {
+            "t": "",
+            "a": true
+          },
+          "t": {
+            "a": "doNotAutofit",
+            "v": "middle",
+            "w": true,
+            "l": 0,
+            "r": 0,
+            "t": 0,
+            "b": 0
+          }
+        },
+        "b": 0.3,
+        "rt": {
+          "h": "<p style=\"font-size:15px;font-family:fnt0_18817\"><span style=\"font-size:15px;font-family:fnt0_18817;\">\u200b</span></p>",
+          "a": "<p></p>",
+          "r": [],
+          "d": [],
+          "t": {
+            "tf": {
+              "f": "Open Sans",
+              "s": 15
+            }
+          }
+        },
+        "v": {
+          "i": "storage://videos/video-4afc5ee4a5773fd20eba24238e888def59ffcdec.mp4",
+          "pi": "storage://images/img-161e28082fa88746ad328ddce1b142abaabd8a5b.png",
+          "w": 802,
+          "h": 500,
+          "a": false,
+          "pe": false,
+          "pl": 1,
+          "pb": false
+        }
+      }
+    ],
+    "B": [],
+    "O": {
+      "o": "{\"mediaPlaceholder\":1,\"slidePicture\":1,\"slideVideo\":1,\"slideAudio\":1,\"image\":4,\"video\":2,\"iconPlaceholder\":1,\"shape\":1,\"line\":2}",
+      "s": "{\"rectangle\":1,\"roundedRectangle\":2,\"ellipse\":1,\"textBox\":1,\"triangle\":1,\"freeform\":1}"
+    },
+    "i": {
+      "o": "{\"mediaPlaceholder\":1,\"slidePicture\":1,\"slideVideo\":1,\"slideAudio\":1,\"image\":1,\"video\":1,\"iconPlaceholder\":1,\"shape\":1,\"line\":1}",
+      "s": "{\"rectangle\":1,\"roundedRectangle\":1,\"ellipse\":1,\"textBox\":1,\"triangle\":1,\"freeform\":1}"
+    },
+    "s": "Default",
+    "b": {
+      "f": "pictureFill",
+      "p": {
+        "p": "fill",
+        "a": 1,
+        "i": "storage://images/img-55750665745938a8804a16531855ae12519463ec.png"
+      }
+    }
+  },
+  "an": {
+    "t": "none",
+    "d": "fromBottom",
+    "m": "byItems",
+    "du": 1,
+    "de": 0
+  }
+}
