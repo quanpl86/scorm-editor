@@ -22,7 +22,7 @@ from .layout import (
 from .scorm_parser import image_dimensions
 from .typography import FONT_CONTENT, apply_text_to_node, strip_plain
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MASTER_SCORM = PROJECT_ROOT / "DGSA_Level5_Bài 1_Thế giới 3D diệu kỳ - Huyền Diệu"
 IMPORT_TEMPLATE_DIR = PROJECT_ROOT / "ImportTemplate"
 SESSIONS_ROOT = Path(__file__).resolve().parent.parent / "data" / "sessions"

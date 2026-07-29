@@ -49,7 +49,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 JSON_EXPORT_DIR = IMPORT_TEMPLATE_DIR.parent / "JSON-EXPORT"
 SAMPLE_ZIP = PROJECT_ROOT / "samples" / "DGSA2025-HP05-B01.zip"
 SAMPLE_DIR = PROJECT_ROOT / "samples" / "DGSA_Level5_Bai1"
