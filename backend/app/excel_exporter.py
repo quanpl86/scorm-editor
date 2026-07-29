@@ -71,22 +71,30 @@ def export_session_to_excel_zip(session: ScormSession) -> bytes:
     def process_media(original_path: str, proposed_name: str) -> str:
         if not original_path:
             return ""
+            
+        search_path = original_path
         if original_path.startswith("http://") or original_path.startswith("https://"):
-            return original_path
+            filename = original_path.split("/")[-1].split("?")[0].split("#")[0]
+            try:
+                # Check if we have a local copy of this uploaded image
+                session.resolve_asset_path(filename)
+                search_path = filename
+            except FileNotFoundError:
+                # Not available locally (e.g. true external URL), keep it as URL
+                return original_path
             
         try:
-            full_path = session.resolve_asset_path(original_path)
+            full_path = session.resolve_asset_path(search_path)
             ext = full_path.suffix
             final_name = f"{proposed_name}{ext}"
             
-            # Avoid duplicate writes
             if final_name not in added_names:
                 zf.write(full_path, f"media/{final_name}")
                 added_names.add(final_name)
             
             return final_name
         except FileNotFoundError:
-            return ""
+            return original_path if original_path.startswith("http") else ""
 
     # Map SCORM types to Excel types
     TYPE_MAP = {
