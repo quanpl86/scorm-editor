@@ -38,6 +38,81 @@ function isAnswered(question, answer) {
   return isFilled(answer);
 }
 
+function MatchSelect({ value, options, onChange, sessionId, ariaLabel }) {
+  const [isOpen, setIsOpen] = useState(false);
+  
+  const selectedOption = options.find(o => (o.rightText || o.matchText || '') === value);
+  const displayLabel = selectedOption ? (selectedOption.rightText || selectedOption.matchText) : 'Chọn đáp án ghép nối...';
+  
+  return (
+    <div className="teky-match-custom-select" style={{ position: 'relative', flex: 1 }}>
+      <button 
+        type="button" 
+        className="teky-match-select-btn" 
+        onClick={() => setIsOpen(!isOpen)}
+        aria-label={ariaLabel}
+        style={{ 
+          width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', 
+          alignItems: 'center', padding: '10px 16px', background: '#fff', border: '1px solid #d9d9d9', 
+          borderRadius: '24px', fontSize: '14px', color: selectedOption ? '#333' : '#999',
+          minHeight: '44px'
+        }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+          {selectedOption?.rightImage && <img src={assetUrl(sessionId, selectedOption.rightImage)} alt="" style={{ height: '24px', borderRadius: '4px', objectFit: 'contain' }} />}
+          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayLabel}</span>
+        </span>
+        <span className="arrow" style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', fontSize: '12px' }}>▼</span>
+      </button>
+
+      {isOpen && (
+        <div 
+          className="teky-match-dropdown-menu" 
+          style={{ 
+            position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 100, 
+            background: '#fff', border: '1px solid #eee', borderRadius: '12px', 
+            boxShadow: '0 8px 24px rgba(0,0,0,0.12)', maxHeight: '400px', overflowY: 'auto',
+            padding: '8px'
+          }}
+        >
+          <div 
+            className="teky-match-option" 
+            onClick={() => { onChange(''); setIsOpen(false); }} 
+            style={{ padding: '8px 12px', cursor: 'pointer', color: '#666', fontSize: '13px', borderBottom: '1px dashed #eee', marginBottom: '8px' }}
+          >
+            -- Bỏ chọn --
+          </div>
+          {options.map((option, idx) => {
+            const optVal = option.rightText || option.matchText || '';
+            const isSelected = optVal === value;
+            return (
+              <div 
+                key={idx} 
+                className={`teky-match-option ${isSelected ? 'selected' : ''}`}
+                onClick={() => { onChange(optVal); setIsOpen(false); }}
+                style={{ 
+                  padding: '12px', cursor: 'pointer', borderRadius: '8px',
+                  backgroundColor: isSelected ? '#fff0e6' : '#fff',
+                  border: isSelected ? '1px solid #ff7b00' : '1px solid #eee',
+                  marginBottom: '8px', transition: 'all 0.2s'
+                }}
+              >
+                <div style={{ fontSize: '11px', color: '#999', marginBottom: '8px', fontWeight: 'bold' }}>ĐÁP ÁN {idx + 1}</div>
+                {option.rightImage && (
+                  <div style={{ marginBottom: '8px', textAlign: 'center', background: '#f5f5f5', borderRadius: '6px', padding: '8px' }}>
+                    <img src={assetUrl(sessionId, option.rightImage)} alt="" style={{ maxWidth: '100%', maxHeight: '140px', objectFit: 'contain' }} />
+                  </div>
+                )}
+                <div style={{ fontSize: '14px', color: '#333', fontWeight: isSelected ? 'bold' : 'normal' }}>{optVal}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function QuestionMedia({ question, sessionId }) {
   return (
     <>
@@ -174,19 +249,13 @@ function QuestionCard({
                   <span>{pair.leftText || pair.text}</span>
                 </div>
                 <span className="teky-match-arrow" aria-hidden>→</span>
-                <select
-                  className="teky-match-select"
-                  aria-label={`Ghép cặp ${pairIndex + 1}`}
+                <MatchSelect
+                  ariaLabel={`Ghép cặp ${pairIndex + 1}`}
                   value={answer?.[pairIndex] || ''}
-                  onChange={(event) => updateObjectAnswer(pairIndex, event.target.value)}
-                >
-                  <option value="">Select match...</option>
-                  {(question.matchingPairs || []).map((option, optionIndex) => (
-                    <option key={optionIndex} value={option.rightText || option.matchText || ''}>
-                      {option.rightText || option.matchText}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => updateObjectAnswer(pairIndex, val)}
+                  options={question.matchingPairs || []}
+                  sessionId={sessionId}
+                />
               </div>
             ))}
           </div>

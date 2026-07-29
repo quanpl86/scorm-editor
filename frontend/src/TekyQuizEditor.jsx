@@ -655,6 +655,31 @@ function TekyQuestionForm({ question, onChange, onDelete, index, sessionId }) {
                           onChange({ matchingPairs: newPairs });
                         }} placeholder="Vế phải..." />
                       </div>
+                      <div className="teky-match-media-input">
+                        <input type="text" placeholder="https://..." value={c.rightImage || ''} onChange={(e) => {
+                          const newPairs = [...(question.matchingPairs || [])];
+                          newPairs[i] = { ...newPairs[i], rightImage: e.target.value };
+                          onChange({ matchingPairs: newPairs });
+                        }} />
+                        <UploadButton
+                          sessionId={sessionId}
+                          onUploadComplete={(filename) => {
+                            const newPairs = [...(question.matchingPairs || [])];
+                            newPairs[i] = { ...newPairs[i], rightImage: filename };
+                            onChange({ matchingPairs: newPairs });
+                          }}
+                        />
+                      </div>
+                      {c.rightImage && (
+                        <div className="teky-match-img-preview">
+                          <img src={assetUrl(sessionId, c.rightImage)} alt="" />
+                          <button className="teky-img-del" onClick={() => {
+                            const newPairs = [...question.matchingPairs];
+                            newPairs[i] = { ...newPairs[i], rightImage: '' };
+                            onChange({ matchingPairs: newPairs });
+                          }}>✕</button>
+                        </div>
+                      )}
                     </div>
                     <button
                       className="teky-icon-btn-small"
