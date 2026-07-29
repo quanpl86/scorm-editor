@@ -31,7 +31,7 @@ Excel+media┘                                      ├─> SCORM 1.2 ZIP
 | Excel FIB/WB/Numeric | `ImportTemplate/FIB_WB_import_sample.xlsx` | Điền khuyết, Word Bank và số |
 | Gói Teky LMS chính thức | `ImportTemplate/Full_quiz_9_types_teky_lms.zip` | Excel cấu hình đầy đủ + toàn bộ media |
 | Excel Teky LMS | `ImportTemplate/Full_quiz_9_types_sample/Full_quiz_9_types_teky_lms_system_ids.xlsx` | Nguồn chuẩn để biên soạn quiz |
-| Media Teky LMS | `ImportTemplate/Full_quiz_9_types_sample/media/` | Cover, ảnh câu hỏi, ảnh đáp án, audio/video |
+| Media Teky LMS | `ImportTemplate/Full_quiz_9_types_sample/media/` | Cover, ảnh câu hỏi và ảnh đáp án |
 | Schema Excel Teky | `docs/TEKY_EXCEL_SCHEMA.md` | Đặc tả cột và cấu hình |
 | JSON template | `docs/cms_json_template.json` | Khung JSON đủ 9 dạng câu hỏi |
 | JSON mẫu đầy đủ | `docs/cms_json_full_sample.json` | Dữ liệu tham chiếu để import LMS |
@@ -87,37 +87,99 @@ Các slide `InfoSlide`, `IntroSlide`, `ResultSlide` không trở thành question
 
 ## 4. Mode Teky LMS: Excel + media -> Edit -> View -> JSON
 
-### 4.1. Gói import khuyến nghị
+### 4.1. Cấu trúc nguồn của một bài học
+
+Mỗi bài học phải có một thư mục riêng. File Excel và thư mục `media` nằm cùng cấp:
 
 ```text
-Ten_quiz.zip
-├── Ten_quiz.xlsx
+Quiz_Teky/
+├── quiz_teky.xlsx
 └── media/
     ├── quiz_cover.jpg
-    ├── q01_question.jpg
-    ├── q01_answer_a.png
-    ├── q04_left_01.jpg
-    ├── q04_right_01.jpg
-    ├── voice_question.mp3
-    └── sample_lesson.mp4
+    ├── question_01.jpg
+    └── answer_01_a.jpg
 ```
 
-File Excel và thư mục `media` phải cùng cấp trong file zip. Đây là cách ổn định nhất khi chuyển gói nội dung sang máy khác.
+Trong Excel, mọi ảnh dùng đường dẫn tương đối tính từ vị trí file Excel:
 
-Có thể import riêng `.xlsx` nếu media đã nằm trong bộ template của dự án, nhưng với quiz thực tế luôn nên dùng `.zip` gồm Excel + media.
+```text
+media/quiz_cover.jpg
+media/question_01.jpg
+media/answer_01_a.jpg
+```
 
-### 4.2. Quy trình
+- Ảnh đại diện toàn quiz được khai báo tại `Quiz Settings.coverImage`.
+- Ảnh nội dung câu hỏi được khai báo tại cột `Image`.
+- Ảnh lựa chọn dùng `Answer N Image`.
+- Matching dùng `Answer N Left Image` và `Answer N Right Image`.
+- Video chỉ nhập URL YouTube/Vimeo; Audio chỉ nhập URL HTTPS. Không đặt file video/audio trong `media/`.
+
+### 4.2. Import trên web/deploy: luôn dùng ZIP
+
+Khi chọn một file Excel trong trình duyệt, trình duyệt chỉ gửi chính file Excel; thư mục `media` cùng cấp trên máy người dùng không được gửi lên server. Vì vậy, với web deploy phải nén Excel và `media` thành một gói:
+
+```text
+Quiz_Teky.zip
+├── quiz_teky.xlsx
+└── media/
+    ├── quiz_cover.jpg
+    ├── question_01.jpg
+    └── answer_01_a.jpg
+```
+
+File Excel và `media/` phải cùng cấp trong ZIP. Đây cũng là cách ổn định nhất khi chuyển nội dung giữa các máy hoặc bàn giao cho người khác.
+
+### 4.3. Import riêng Excel khi chạy local
+
+Chỉ import riêng `.xlsx` khi toàn bộ nguồn bài học đã nằm trong `SCORM-PROJECT/ImportTemplate`:
+
+```text
+SCORM-PROJECT/
+└── ImportTemplate/
+    ├── SNLT-HP01-B01/
+    │   ├── SNLT-HP01-B01.xlsx
+    │   └── media/
+    │       └── quiz_cover.jpg
+    ├── SNLT-HP01-B02/
+    │   ├── SNLT-HP01-B02.xlsx
+    │   └── media/
+    │       └── quiz_cover.jpg
+    └── SNLT-HP02-B01/
+        ├── SNLT-HP02-B01.xlsx
+        └── media/
+            └── quiz_cover.jpg
+```
+
+Hệ thống dùng tên workbook để xác định đúng thư mục bài học và ưu tiên `media/` trong thư mục đó. Ví dụ, khi import `SNLT-HP01-B02.xlsx`, ảnh được tìm trong `SNLT-HP01-B02/media/`, không lấy từ bài học khác.
+
+Không dùng cách import riêng Excel nếu workbook nằm trong một thư mục bất kỳ ngoài `ImportTemplate`; server không biết đường dẫn gốc trên máy người dùng. Trong trường hợp đó hãy import ZIP.
+
+### 4.4. Quy tắc đặt tên và sắp xếp trong ImportTemplate
+
+- Tên thư mục bài học phải duy nhất.
+- Tên file Excel phải trùng chính xác tên thư mục, ví dụ `SNLT-HP01-B01/SNLT-HP01-B01.xlsx`.
+- Không đặt nhiều workbook cùng tên như `quiz.xlsx` trong các thư mục bài học khác nhau.
+- Mỗi bài học có `media/` riêng; không tạo kho ảnh dùng chung tại `ImportTemplate/media/`.
+- Trong một bài học, tên file ảnh phải duy nhất. Nên dùng tiền tố câu hỏi như `q01_question.jpg`, `q01_answer_a.jpg`.
+- Tên file trong Excel phải khớp chính xác tên thật, kể cả chữ hoa/thường.
+- Không dùng đường dẫn tuyệt đối `/Users/...`, `C:\...` hoặc đường dẫn ra ngoài bằng `../`.
+- Có thể dùng cùng tên `quiz_cover.jpg` ở nhiều bài học nếu cấu trúc thư mục và tên workbook đúng chuẩn; tuy nhiên đặt tiền tố bài học sẽ giúp QA dễ hơn.
+
+Nếu có nhiều kết quả không thể phân biệt, hệ thống báo cảnh báo media thay vì tự chọn ngẫu nhiên ảnh của bài học khác.
+
+### 4.5. Quy trình xây dựng và kiểm tra
 
 1. Chọn `Mode: Teky LMS`.
-2. Tải hoặc sao chép `Full_quiz_9_types_teky_lms.zip`.
-3. Sửa Excel và thay media trong một thư mục làm việc riêng.
-4. Nén Excel + `media/` thành zip.
-5. Import vào vùng **Tạo quiz từ Excel**.
-6. Đọc `ImportReport`: tổng dòng, imported, skipped, error và media warning.
-7. Mở **Quiz Details**, **Questions**, **Settings** để hiệu chỉnh.
-8. Nhấn **Save Quiz**.
-9. Nhấn **Xem & Làm bài** để review đúng giao diện/tương tác LMS.
-10. Nhấn **Export CMS JSON** để xuất JSON cuối cùng.
+2. Sao chép thư mục/template bài học chuẩn và đổi đồng thời tên folder + Excel.
+3. Điền `Quiz Settings`, `Quiz Questions`; đặt ảnh vào `media/`.
+4. Kiểm tra toàn bộ đường dẫn ảnh trong Excel.
+5. Chạy local: có thể import riêng Excel nếu nguồn nằm đúng trong `ImportTemplate`.
+6. Chạy web/deploy hoặc bàn giao: nén Excel + `media/` thành ZIP.
+7. Import vào vùng **Tạo quiz từ Excel**.
+8. Đọc `ImportReport`; xử lý hết error và media warning.
+9. Mở **Quiz Details**, **Questions**, **Settings** để hiệu chỉnh.
+10. Nhấn **Save Quiz**, sau đó **Xem & Làm bài** để review.
+11. Nhấn **Export CMS JSON** để xuất JSON cuối cùng.
 
 ## 5. Excel chuẩn Teky LMS
 
@@ -154,8 +216,9 @@ Workbook gồm tối thiểu hai sheet:
 |---|---|
 | `Question Type` | Mã dạng câu hỏi |
 | `Question Text` | Nội dung đề bài |
-| `Image`, `Audio`, `Video` | Media cấp question |
-| `Answer 1` ... `Answer 10` | Nội dung đáp án |
+| `Image` | Ảnh cấp question; dùng file trong thư mục `media/` |
+| `Audio`, `Video` | Chỉ dùng URL trực tuyến; Video hỗ trợ YouTube/Vimeo |
+| `Answer 1` ... `Answer 6` | Nội dung đáp án; tối đa 6 đáp án |
 | `Answer N Image` | Ảnh của đáp án N |
 | `Answer N Left Image` | Ảnh vế trái Matching |
 | `Answer N Right Image` | Ảnh vế phải Matching |
@@ -163,9 +226,10 @@ Workbook gồm tối thiểu hai sheet:
 | `Topic` | Chủ đề question |
 | `Explanation` | Giải thích hiển thị sau nộp bài |
 | `Points` | Điểm câu hỏi |
-| `Correct Feedback`, `Incorrect Feedback` | Phản hồi iSpring nếu cần |
+| `Required`, `Use Regex` | Bắt buộc trả lời và so khớp RegEx cho FIB/TI |
 
 Không thêm `Quiz ID` hoặc `Question ID`. Hệ thống tạo ID duy nhất khi import, giữ ổn định trong session và sử dụng khi export.
+Mỗi câu hỏi có tối đa 6 đáp án; dạng Matching có tối đa 6 cặp ghép.
 
 ## 6. Tạo và liên kết media
 
@@ -183,28 +247,27 @@ Không thêm `Quiz ID` hoặc `Question ID`. Hệ thống tạo ID duy nhất kh
 |---|---|
 | Cover quiz | `Quiz Settings.coverImage` |
 | Ảnh câu hỏi | `Image` |
-| Audio câu hỏi | `Audio` |
-| Video câu hỏi | `Video`; nên có `Image` làm poster |
+| Audio câu hỏi | `Audio`; URL HTTPS trực tiếp |
+| Video câu hỏi | `Video`; URL YouTube hoặc Vimeo |
 | Ảnh đáp án | `Answer N Image` |
 | Matching trái/phải | `Answer N Left Image`, `Answer N Right Image` |
-| Media trong một ô | `[image=media/file.png]`, `[audio=media/file.mp3]`, `[video=media/file.mp4]` |
 
 Ví dụ:
 
 ```text
 Image: media/q01_question.jpg
 Answer 1 Image: media/q01_answer_a.png
-Answer 1: *Đáp án đúng [audio=media/q01_correct.mp3]
-Correct Feedback: Chính xác! [image=media/star.png]
+Video: https://www.youtube.com/watch?v=VIDEO_ID
+Audio: https://cdn.example.com/audio/bai-hoc.mp3
 ```
 
 Định dạng hỗ trợ:
 
 - Ảnh: `.jpg`, `.jpeg`, `.png`, `.gif`, `.bmp`, `.webp`
-- Audio: `.mp3`, `.wav`, `.m4a`, `.ogg`
-- Video: `.mp4`, `.webm`, `.mov`
+- Audio không lưu trong `media/`; chỉ nhập URL HTTPS trực tiếp.
+- Video không lưu trong `media/`; chỉ nhập URL YouTube hoặc Vimeo.
 
-Khi import, media được copy vào package và đăng ký trong session. Khi export JSON có cấu hình S3, media được upload lên FPT S3 và các trường `coverImageUrl`, `imageUrl`, `leftImageUrl`, `rightImageUrl`, `videoUrl` nhận URL công khai.
+Khi import, ảnh được copy vào package và đăng ký trong session. Khi export JSON có cấu hình S3, ảnh được upload lên FPT S3; URL video/audio được giữ dưới dạng liên kết trực tuyến.
 
 ## 7. Chín dạng question chuẩn Teky LMS
 
@@ -283,8 +346,10 @@ Nhấn **Export CMS JSON**. Backend:
 5. Ghi file vào:
 
 ```text
-~/Downloads/SNLT-CHECKQUIZ/JSON-EXPORT/{quiz_title}_teky.json
+SCORM-PROJECT/JSON-EXPORT/{quiz_title}_teky.json
 ```
+
+`JSON-EXPORT` nằm cùng cấp với `ImportTemplate`. Hệ thống tự tạo thư mục này khi export lần đầu, không phụ thuộc thư mục `Downloads` của tài khoản đang chạy backend.
 
 File được bọc dạng mảng:
 

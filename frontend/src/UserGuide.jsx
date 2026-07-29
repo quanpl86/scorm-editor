@@ -117,28 +117,74 @@ Excel+media┘                                ├─> SCORM 1.2 ZIP
 
       <section id="guide-teky-mode" className="guide-section">
         <h2>3. Mode Teky LMS: Excel + media → Edit → View → JSON</h2>
-        <h3>3.1. Gói import khuyến nghị</h3>
-        <GuideCode>{`Ten_quiz.zip
-├── Ten_quiz.xlsx
+        <h3>3.1. Cấu trúc nguồn của một bài học</h3>
+        <GuideCode>{`Quiz_Teky/
+├── quiz_teky.xlsx
 └── media/
     ├── quiz_cover.jpg
-    ├── q01_question.jpg
-    ├── q01_answer_a.png
-    ├── q04_left_01.jpg
-    ├── q04_right_01.jpg
-    ├── voice_question.mp3
-    └── sample_lesson.mp4`}</GuideCode>
+    ├── question_01.jpg
+    └── answer_01_a.jpg
+
+Đường dẫn trong Excel:
+media/quiz_cover.jpg
+media/question_01.jpg
+media/answer_01_a.jpg`}</GuideCode>
+        <ul>
+          <li><code>Quiz Settings.coverImage</code>: ảnh đại diện toàn quiz.</li>
+          <li><code>Image</code>: ảnh nội dung câu hỏi.</li>
+          <li><code>Answer N Image</code>: ảnh đáp án.</li>
+          <li>Video dùng URL YouTube/Vimeo; Audio dùng URL HTTPS, không lưu trong media.</li>
+        </ul>
+
+        <h3>3.2. Import trên web/deploy: dùng ZIP</h3>
+        <GuideCode>{`Quiz_Teky.zip
+├── quiz_teky.xlsx
+└── media/
+    ├── quiz_cover.jpg
+    ├── question_01.jpg
+    └── answer_01_a.jpg`}</GuideCode>
         <p>
-          Excel và `media/` phải cùng cấp trong zip. Import riêng `.xlsx` chỉ phù hợp khi media đã
-          có trong bộ template cục bộ; gói nội dung thực tế luôn nên dùng zip.
+          Trình duyệt chỉ gửi file được chọn, không tự gửi thư mục media cùng cấp trên máy người
+          dùng. Vì vậy Excel và media phải cùng cấp trong ZIP khi chạy web/deploy hoặc bàn giao.
         </p>
 
-        <h3>3.2. Quy trình chuẩn</h3>
+        <h3>3.3. Import riêng Excel khi chạy local</h3>
+        <GuideCode>{`SCORM-PROJECT/
+└── ImportTemplate/
+    ├── SNLT-HP01-B01/
+    │   ├── SNLT-HP01-B01.xlsx
+    │   └── media/
+    │       └── quiz_cover.jpg
+    ├── SNLT-HP01-B02/
+    │   ├── SNLT-HP01-B02.xlsx
+    │   └── media/
+    │       └── quiz_cover.jpg
+    └── SNLT-HP02-B01/
+        ├── SNLT-HP02-B01.xlsx
+        └── media/
+            └── quiz_cover.jpg`}</GuideCode>
+        <p>
+          Hệ thống dùng tên workbook để xác định đúng thư mục bài học. Import
+          `SNLT-HP01-B02.xlsx` sẽ ưu tiên ảnh trong `SNLT-HP01-B02/media/`.
+        </p>
+
+        <h3>3.4. Quy tắc tổ chức ImportTemplate</h3>
+        <ul>
+          <li>Tên folder bài học phải duy nhất; tên Excel phải trùng chính xác tên folder.</li>
+          <li>Không dùng cùng một tên chung như <code>quiz.xlsx</code> cho nhiều bài học.</li>
+          <li>Mỗi bài học có <code>media/</code> riêng; không tạo kho dùng chung tại ImportTemplate/media.</li>
+          <li>Tên ảnh trong một bài học phải duy nhất; nên dùng tiền tố q01, q02…</li>
+          <li>Đường dẫn trong Excel luôn là <code>media/tên_file</code>, không dùng đường dẫn tuyệt đối.</li>
+          <li>Nếu nhiều file không thể phân biệt, hệ thống cảnh báo thay vì chọn ngẫu nhiên ảnh khác.</li>
+        </ul>
+
+        <h3>3.5. Quy trình chuẩn</h3>
         <ol>
           <li>Chọn <strong>Mode: Teky LMS</strong>.</li>
-          <li>Sao chép gói `Full_quiz_9_types_teky_lms.zip` để tạo bộ nội dung mới.</li>
-          <li>Điền `Quiz Settings`, `Quiz Questions` và thay media.</li>
-          <li>Nén Excel + thư mục media, rồi import vào vùng <strong>Tạo quiz từ Excel</strong>.</li>
+          <li>Sao chép template, đổi đồng thời tên folder và file Excel.</li>
+          <li>Điền Quiz Settings, Quiz Questions và đặt ảnh vào media.</li>
+          <li>Local: import riêng Excel khi nguồn nằm đúng trong ImportTemplate.</li>
+          <li>Web/deploy: nén Excel + media rồi import ZIP.</li>
           <li>Xử lý toàn bộ error/media warning trong ImportReport.</li>
           <li>Hiệu chỉnh ở Quiz Details, Questions và Settings.</li>
           <li>Nhấn Save Quiz, sau đó Xem & Làm bài.</li>
@@ -174,14 +220,15 @@ Excel+media┘                                ├─> SCORM 1.2 ZIP
           rows={[
             ['Question Type', 'Mã MC, MR, TF, MG, SEQ, FIB/WB, TI, NUM, MNUM'],
             ['Question Text', 'Nội dung đề bài; FIB dùng ___ tại vị trí trống'],
-            ['Image, Audio, Video', 'Media cấp question'],
-            ['Answer 1…10', 'Nội dung đáp án; dùng * để đánh dấu đáp án đúng khi áp dụng'],
+            ['Image', 'Ảnh cấp question; dùng file trong thư mục media'],
+            ['Video, Audio', 'Chỉ dùng URL trực tuyến; Video hỗ trợ YouTube/Vimeo'],
+            ['Answer 1…6', 'Tối đa 6 đáp án; dùng * để đánh dấu đáp án đúng khi áp dụng'],
             ['Answer N Image', 'Ảnh đáp án N'],
             ['Answer N Left/Right Image', 'Ảnh hai vế của Matching'],
             ['Difficulty, Topic', 'Độ khó và chủ đề từng question'],
             ['Explanation', 'Giải thích sau khi nộp bài'],
             ['Points', 'Điểm câu hỏi'],
-            ['Correct/Incorrect Feedback', 'Feedback iSpring tùy chọn'],
+            ['Required, Use Regex', 'Bắt buộc trả lời và so khớp RegEx cho FIB/TI'],
           ]}
         />
         <p>
@@ -205,23 +252,24 @@ Excel+media┘                                ├─> SCORM 1.2 ZIP
           headers={['Vị trí', 'Cột/cú pháp']}
           rows={[
             ['Cover quiz', 'Quiz Settings → coverImage'],
-            ['Ảnh/audio/video question', 'Image, Audio, Video'],
+            ['Ảnh question', 'Image → media/file.png'],
+            ['Video question', 'Video → URL YouTube/Vimeo'],
+            ['Audio question', 'Audio → URL HTTPS trực tiếp'],
             ['Ảnh đáp án', 'Answer N Image'],
             ['Matching trái/phải', 'Answer N Left Image / Right Image'],
-            ['Trong nội dung ô', '[image=media/file.png], [audio=...], [video=...]'],
           ]}
         />
         <GuideCode>{`Image: media/q01_question.jpg
 Answer 1 Image: media/q01_answer_a.png
-Answer 1: *Đáp án đúng [audio=media/q01_correct.mp3]
-Correct Feedback: Chính xác! [image=media/star.png]`}</GuideCode>
+Video: https://www.youtube.com/watch?v=VIDEO_ID
+Audio: https://cdn.example.com/audio/bai-hoc.mp3`}</GuideCode>
 
         <h3>5.3. Định dạng hỗ trợ và S3</h3>
         <ul>
           <li>Ảnh: jpg, jpeg, png, gif, bmp, webp.</li>
-          <li>Audio: mp3, wav, m4a, ogg.</li>
-          <li>Video: mp4, webm, mov; nên có Image làm poster.</li>
-          <li>Khi export JSON, media được upload S3/FPT nếu cấu hình hợp lệ.</li>
+          <li>Audio: URL HTTPS trực tiếp; không lưu file audio trong thư mục media.</li>
+          <li>Video: URL YouTube/Vimeo; không lưu file video trong thư mục media.</li>
+          <li>Ảnh và cover được upload S3/FPT khi xuất bản nếu cấu hình hợp lệ.</li>
         </ul>
         <p>
           JSON cuối dùng `coverImageUrl`, `imageUrl`, `leftImageUrl`, `rightImageUrl`, `videoUrl`.
@@ -313,7 +361,11 @@ Correct Feedback: Chính xác! [image=media/star.png]`}</GuideCode>
           <li>Media được upload S3/FPT nếu cấu hình S3 hợp lệ.</li>
           <li>JSON được ghi vào thư mục JSON-EXPORT.</li>
         </ol>
-        <GuideCode>{`~/Downloads/SNLT-CHECKQUIZ/JSON-EXPORT/{quiz_title}_teky.json`}</GuideCode>
+        <GuideCode>{`SCORM-PROJECT/JSON-EXPORT/{quiz_title}_teky.json`}</GuideCode>
+        <p>
+          <code>JSON-EXPORT</code> nằm cùng cấp với <code>ImportTemplate</code> và được hệ thống
+          tự tạo khi export lần đầu.
+        </p>
         <p>File cuối được bọc dạng mảng `[quiz]`:</p>
         <GuideCode>{`[
   {

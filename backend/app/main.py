@@ -50,6 +50,7 @@ app.add_middleware(
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+JSON_EXPORT_DIR = IMPORT_TEMPLATE_DIR.parent / "JSON-EXPORT"
 SAMPLE_ZIP = PROJECT_ROOT / "samples" / "DGSA2025-HP05-B01.zip"
 SAMPLE_DIR = PROJECT_ROOT / "samples" / "DGSA_Level5_Bai1"
 EXCEL_SAMPLE = IMPORT_TEMPLATE_DIR / "Sample_import_template.xls"
@@ -437,7 +438,7 @@ def export_session(session_id: str, payload: ExportPayload | None = None):
 def export_cms_json_local(session_id: str, request: Request):
     """
     Export all questions from SCORM quiz as Teky-school JSON (same schema as scorm-cvt)
-    and save directly to ~/Downloads/SNLT-CHECKQUIZ/<quiz_title>/ on the local machine.
+    and save directly to JSON-EXPORT/ beside ImportTemplate/ in the project.
     Output is wrapped in an array: [quiz] — matching scorm-cvt file format.
     """
     import json as _json
@@ -476,7 +477,7 @@ def export_cms_json_local(session_id: str, request: Request):
         safe_title = (quiz_view.get("title") or "quiz-export").strip()
         safe_title = "".join(c if c.isalnum() or c in " _-" else "_" for c in safe_title)[:80]
 
-        target_dir = Path.home() / "Downloads" / "SNLT-CHECKQUIZ" / "JSON-EXPORT"
+        target_dir = JSON_EXPORT_DIR
         target_dir.mkdir(parents=True, exist_ok=True)
 
         filename = f"{safe_title}_teky.json"

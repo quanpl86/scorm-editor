@@ -4,10 +4,15 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import JSON_EXPORT_DIR, app
 from app.quiz_builder import IMPORT_TEMPLATE_DIR
 
 client = TestClient(app)
+
+
+def test_json_export_directory_is_beside_import_template():
+    assert JSON_EXPORT_DIR == IMPORT_TEMPLATE_DIR.parent / "JSON-EXPORT"
+    assert JSON_EXPORT_DIR.parent == IMPORT_TEMPLATE_DIR.parent
 
 
 def test_list_excel_templates():
