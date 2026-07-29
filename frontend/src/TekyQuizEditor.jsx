@@ -64,7 +64,7 @@ export default function TekyQuizEditor({
       {/* HEADER TABS */}
       <div className="teky-editor-header">
         <div className="teky-editor-title">
-          <button className="teky-back-btn">←</button>
+          <button className="teky-back-btn" onClick={() => window.location.reload()} title="Về trang chủ">←</button>
           <div className="teky-title-info">
             <h2>Create Lesson Quiz</h2>
             <span>▱ {targetLesson.toUpperCase()} · {visibleQuestions.length} questions · {visibleQuestions.reduce((sum, q) => sum + Number(q.points || 0), 0)} pts</span>
