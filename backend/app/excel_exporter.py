@@ -71,6 +71,9 @@ def export_session_to_excel_zip(session: ScormSession) -> bytes:
     def process_media(original_path: str, proposed_name: str) -> str:
         if not original_path:
             return ""
+        if original_path.startswith("http://") or original_path.startswith("https://"):
+            return original_path
+            
         try:
             full_path = session.resolve_asset_path(original_path)
             ext = full_path.suffix
