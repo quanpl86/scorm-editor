@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest identifier="m2hfKvOm9gZgJ" xmlns="http://www.imsproject.org/xsd/imscp_rootv1p1p2" xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_rootv1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:lom="http://www.imsglobal.org/xsd/imsmd_rootv1p2p1" xsi:schemaLocation="http://www.imsproject.org/xsd/imscp_rootv1p1p2 imscp_rootv1p1p2.xsd http://www.imsglobal.org/xsd/imsmd_rootv1p2p1 imsmd_rootv1p2p1.xsd http://www.adlnet.org/xsd/adlcp_rootv1p2 adlcp_rootv1p2.xsd">
+	<metadata>
+		<schema>ADL SCORM</schema>
+		<schemaversion>1.2</schemaversion>
+		<lom:lom>
+			<lom:general>
+				<lom:title>
+					<lom:langstring>DGSA_Level5_Bài 1_Thế giới 3D diệu kỳ - Huyền Diệu</lom:langstring>
+				</lom:title>
+			</lom:general>
+			<lom:educational>
+				<lom:typicallearningtime>
+				<lom:datetime>01:00:00</lom:datetime>
+				</lom:typicallearningtime>
+			</lom:educational>
+		</lom:lom>
+	</metadata>
+	<organizations default="m2hfKvOm9gZgJ_organization">
+		<organization identifier="m2hfKvOm9gZgJ_organization">
+
+			<title>DGSA_Level5_Bài 1_Thế giới 3D diệu kỳ - Huyền Diệu</title>
+			<item identifier="CDDDE379-8B74-4D3E-9FB8-15B920831035" identifierref="resource">
+				<title>Untitled Quiz</title>
+			</item>
+		</organization>
+	</organizations>
+	<resources>
+		<resource identifier="resource" type="webcontent" adlcp:scormtype="sco" href="res/index.html">
+			<file href="res/data/apple-touch-icon.png"/>
+<file href="res/data/audios/snd-13a4c747c877ddc2e35ac870c594ea567b865163.mp3"/>
+<file href="res/data/audios/snd-28e0e6f01a97d3503a7a91a036063ecb9fe165bd.mp3"/>
+<file href="res/data/audios/snd-f60f23d8d2b409a963c8279fc47556b77e02b505.mp3"/>
+<file href="res/data/browsersupport.js"/>
+<file href="res/data/favicon.ico"/>
+<file href="res/data/fonts/fnt0.woff"/>
+<file href="res/data/fonts/fnt1.woff"/>
+<file href="res/data/fonts/fnt2.woff"/>
+<file href="res/data/fonts/fnt3.woff"/>
+<file href="res/data/fonts/fnt4.woff"/>
+<file href="res/data/fonts/fnt5.woff"/>
+<file href="res/data/fonts/fnt6.woff"/>
+<file href="res/data/goodbye.html"/>
+<file href="res/data/html5-unsupported.html"/>
+<file href="res/data/html5.png"/>
+<file href="res/data/images/2708-13ed-b490-e640.png"/>
+<file href="res/data/images/3a55-ec7a-6c10-7ce4.png"/>
+<file href="res/data/images/be6a-ee7c-4199-b7a7.png"/>
+<file href="res/data/images/d9a4-187b-c018-1370.png"/>
+<file href="res/data/images/da65-b07e-363b-962c.png"/>
+<file href="res/data/images/img-015756c99633abb983d92d37e316ed5de3f94f77.gif"/>
+<file href="res/data/images/img-05a925cc302370e455ef62871155a14e75a0911f.png"/>
+<file href="res/data/images/img-089a8a98158ce24613c66f8b79375d1dbd654400.jpg"/>
+<file href="res/data/images/img-0f1d339cf7045c491ae36c119f33f33eed0464f8.gif"/>
+<file href="res/data/images/img-1290aec0d63ab4ae34e5b9352902345c892f2f9a.png"/>
+<file href="res/data/images/img-21652dabaee6faba8478f5add3f796919205ed0c.png"/>
+<file href="res/data/images/img-232cbb7ac153a7a85b937cc2d2435dd72d126dee.PNG"/>
+<file href="res/data/images/img-297d5805081c01db16623a2a3bf8ce840c93cd6e.PNG"/>
+<file href="res/data/images/img-366a01b8384fcfc013baa9ebee4cd7a42f4e9ae3.PNG"/>
+<file href="res/data/images/img-3c038fd32c185cf43659cefc97ac27dd5d7b896d.PNG"/>
+<file href="res/data/images/img-48ee4be7c7be6e89ee10dd90aa884420a955bd6c.PNG"/>
+<file href="res/data/images/img-4acbc261f25964607f7b8cdb05a5c358eb0f44aa.PNG"/>
+<file href="res/data/images/img-4d3162b776deb165f03b9974495d8978197c5239.png"/>
+<file href="res/data/images/img-4e8dd24ddb06ea6540ac03927541a7876f7bea6f.PNG"/>
+<file href="res/data/images/img-4f3f8a543a991b3de935e9c6068a251ec99e9b1c.gif"/>
+<file href="res/data/images/img-50334e1441ee095636dd56132d8f9a9e2d220870.PNG"/>
+<file href="res/data/images/img-561bd31e9d99236f369a29d5f9667ccc6f9362e9.PNG"/>
+<file href="res/data/images/img-597d1daac5ea9328691cb2842c2b28a50972c291.PNG"/>
+<file href="res/data/images/img-66d594786ebbeb00a90cca5a07dcd40aa71a5c2a.jpg"/>
+<file href="res/data/images/img-69bb5e423b33aba4cc69053ae7e0deeec62e6ea6.PNG"/>
+<file href="res/data/images/img-6f30d80a85dd8a354a8b42ba3d6163191c5c9e04.png"/>
+<file href="res/data/images/img-7148400d0436e43aa70807ec30327e14c9fc78bf.gif"/>
+<file href="res/data/images/img-71ad76c9fd39cb5cea1e2a2822258d094a91fede.jpg"/>
+<file href="res/data/images/img-7744d7cd6d9a6a58fceec7ddffde451844af9f47.PNG"/>
+<file href="res/data/images/img-81157bd9b7d3d6f04d77ae2fcfa532a8f6bd1352.jpg"/>
+<file href="res/data/images/img-83039cb32f5a6417a60f9bfa1b3c35748ad3d1e6.PNG"/>
+<file href="res/data/images/img-870b416cf52d8c744165257cd656ba771718ad21.jpg"/>
+<file href="res/data/images/img-89261cc9366fb1f6d47e25d173ddfb89ed7c24b8.PNG"/>
+<file href="res/data/images/img-8b1e54526373e2654112d471a45a17c70aeec95f.gif"/>
+<file href="res/data/images/img-8df7ed0e3c82014b8cb1dec25f7fc043a6b88110.png"/>
+<file href="res/data/images/img-8f6a610f1e087f771ce5416111ea17592feb027c.png"/>
+<file href="res/data/images/img-914f88850006a2306fa97ace9d7d612475a139a1.gif"/>
+<file href="res/data/images/img-94c5179f4cad57810fc378aff4f63c2a218525e7.jpg"/>
+<file href="res/data/images/img-97b498226cb829f7767a9978cbdb6c0be4a1d62b.png"/>
+<file href="res/data/images/img-9c03b2b510761790d25e61af81142e40777482ef.png"/>
+<file href="res/data/images/img-9da049287b58ef502adf652e856afc7d161d580d.png"/>
+<file href="res/data/images/img-9eef888263dadbf878f64806c98e1c1d814e5c6d.PNG"/>
+<file href="res/data/images/img-a43346274461cf5e9bde4906ff826c48ceb37d52.PNG"/>
+<file href="res/data/images/img-a59d98561d6112e160d53c0af6bcf7332d38ff2b.gif"/>
+<file href="res/data/images/img-a7fc8c5e5209b02efe4a7fc170a252d7115105b5.png"/>
+<file href="res/data/images/img-a9852edd19802fb09efc509590fdc7ecbb527fb7.png"/>
+<file href="res/data/images/img-b09e987b5073c781b877be8fc4adb98b32c421df.jpg"/>
+<file href="res/data/images/img-badcb49eaef538809ee971d6516f255107f6f82b.gif"/>
+<file href="res/data/images/img-bd8383937cdea48bbf6d2c6a5a359717d4b04b1d.png"/>
+<file href="res/data/images/img-bf6ea7e11fa39b746761600d0ff6433ef5bcafe2.PNG"/>
+<file href="res/data/images/img-c17c4abc3a7b703be3320bda4dfbb939fc5c81d5.PNG"/>
+<file href="res/data/images/img-c3d9d161c369b078f480538ed946d4f4c035ca6d.PNG"/>
+<file href="res/data/images/img-c41b8749e16fb0768c30514aa206c54df79a002d.PNG"/>
+<file href="res/data/images/img-c459725d4cf982ace60e2bc339c15a627a15f6ab.PNG"/>
+<file href="res/data/images/img-c75d47b6cd2c576cb17de28ba709aa4aaadcb437.png"/>
+<file href="res/data/images/img-c9866d23e8173e4b0131da2eef5e2d6c4a3e1908.PNG"/>
+<file href="res/data/images/img-da19a9c4075e14acaf9742505f97ef4dea34e412.png"/>
+<file href="res/data/images/img-dbe5078dff80f3d5c914142732f799b8c11b0fea.jpg"/>
+<file href="res/data/images/img-e80c967f6e7fd91c476e1cb0e5ae435ad653c326.PNG"/>
+<file href="res/data/images/img-eaddd4288805a32158292bbf36019151ad08b146.PNG"/>
+<file href="res/data/images/img-ebf557536cd12c2a7fbfd204d2139e63a0cb605a.PNG"/>
+<file href="res/data/images/img-fa0d03554ebf54cc6bd6a80bf050107ac7d0c864.png"/>
+<file href="res/data/images/img-fafe9d2e6643ae7ea6141bbfc38b1d7c6e04595d.png"/>
+<file href="res/data/lms.js"/>
+<file href="res/data/player.js"/>
+<file href="res/index.html"/>
+
+		</resource>
+	</resources>
+</manifest>
