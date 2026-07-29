@@ -121,7 +121,7 @@ async def import_scorm(file: UploadFile = File(...)):
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(400, "Vui lòng upload file .zip SCORM")
 
-    temp_zip = SESSIONS_ROOT / f"upload_{file.filename}"
+    temp_zip = SESSIONS_ROOT / f"upload_{uuid.uuid4().hex[:8]}_{file.filename}"
     SESSIONS_ROOT.mkdir(parents=True, exist_ok=True)
     content = await file.read()
     temp_zip.write_bytes(content)
