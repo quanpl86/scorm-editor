@@ -769,6 +769,36 @@ def export_cms_json_local(session_id: str, request: Request):
     except Exception as exc:
         raise HTTPException(400, f"Lỗi export Teky JSON: {exc}") from exc
 
+@app.post("/api/session/{session_id}/export-project")
+def export_session_project(session_id: str):
+    """
+    Export the current session as a complete Project ZIP (Excel + Media).
+    This reverse-parses the current SCORM session JSON and builds a standard Teky LMS Excel file,
+    along with a media folder containing all referenced assets.
+    """
+    session = ScormSession.get(session_id)
+    if not session:
+        raise HTTPException(404, "Session không tồn tại")
+    
+    from .excel_exporter import export_session_to_excel_zip
+    try:
+        zip_bytes, safe_title = export_session_to_excel_zip(session)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, f"Lỗi tạo Excel Project: {str(e)}")
+
+    import io
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(
+        io.BytesIO(zip_bytes),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_title}_Project.zip"',
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
+    )
+
 @app.post("/api/session/{session_id}/export-cms-json")
 def export_cms_json(session_id: str, request: Request):
     """

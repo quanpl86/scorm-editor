@@ -140,6 +140,22 @@ export async function exportCmsJson(sessionId) {
   }
 }
 
+export async function exportProject(sessionId) {
+  const res = await fetch(`${API}/session/${sessionId}/export-project`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error((await res.json()).detail || 'Export Project thất bại')
+  
+  const contentDisposition = res.headers.get('Content-Disposition') || ''
+  const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/)
+  const filename = filenameMatch ? filenameMatch[1] : 'Project.zip'
+  
+  return {
+    blob: await res.blob(),
+    filename,
+  }
+}
+
 export async function exportMedia(sessionId) {
   const res = await fetch(`${API}/session/${sessionId}/export-media`, {
     method: 'POST',
