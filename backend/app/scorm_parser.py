@@ -628,14 +628,9 @@ def special_slide_to_view(
     question_text = strip_html(slide.get("D", {}).get("h", ""))
     subtitle_text = ""
     subtitle_format = None
-    if qtype == "IntroSlide" or qtype in ("WordBank", "FillInTheBlank"):
+    if qtype == "IntroSlide":
         rt = slide.get("C", {}).get("rt", {})
         raw_html = rt.get("h") or rt.get("a") or ""
-        if qtype in ("WordBank", "FillInTheBlank"):
-            for entry in rt.get("r", []):
-                blank_id = entry.get("id")
-                if blank_id:
-                    raw_html = re.sub(rf'<[^>]*id="{blank_id}"[^>]*>(?:.*?</[^>]+>)?', "___", raw_html)
         subtitle_text = strip_html(raw_html)
         if subtitle_text:
             subtitle_format = extract_text_format(rt.get("h", ""), rt.get("t"), "content")
@@ -754,14 +749,29 @@ def slide_to_view(slide: dict[str, Any], group_index: int, question_index: int, 
     time_enabled = bool(time_block.get("e", False))
     shuffle_answers = bool(slide.get("s", {}).get("sh", False))
 
+    subtitle_text = ""
+    subtitle_format = None
+    if qtype in ("WordBank", "FillInTheBlank"):
+        rt = slide.get("C", {}).get("rt", {})
+        h_html = rt.get("h") or ""
+        a_html = rt.get("a") or ""
+        raw_html = a_html if len(strip_html(a_html)) > len(strip_html(h_html)) else (h_html or a_html)
+        for entry in rt.get("r", []):
+            blank_id = entry.get("id")
+            if blank_id:
+                raw_html = re.sub(rf'<[^>]*id="{blank_id}"[^>]*>(?:.*?</[^>]+>)?', "___", raw_html)
+        subtitle_text = strip_html(raw_html)
+        if subtitle_text:
+            subtitle_format = extract_text_format(rt.get("h", ""), rt.get("t"), "content")
+
     view: dict[str, Any] = {
         "id": slide.get("i", ""),
         "type": qtype,
         "slideRole": "question",
         "resultKind": None,
         "resultIndex": -1,
-        "subtitleText": "",
-        "subtitleFormat": None,
+        "subtitleText": subtitle_text,
+        "subtitleFormat": subtitle_format,
         "groupIndex": group_index,
         "questionIndex": question_index,
         "groupTitle": group_title,
@@ -798,7 +808,10 @@ def slide_to_view(slide: dict[str, Any], group_index: int, question_index: int, 
         view["matchingPairs"] = extract_matching_pairs(slide)
     elif qtype in ("WordBank", "FillInTheBlank"):
         view["blankAnswers"] = extract_blank_answers(slide)
-        view["richHtml"] = slide.get("C", {}).get("rt", {}).get("h", "")
+        rt = slide.get("C", {}).get("rt", {})
+        h_html = rt.get("h") or ""
+        a_html = rt.get("a") or ""
+        view["richHtml"] = a_html if len(strip_html(a_html)) > len(strip_html(h_html)) else (h_html or a_html)
         if qtype == "WordBank":
             view["wordBankWords"] = list(slide.get("C", {}).get("ew", []) or [])
     elif qtype in ("TypeIn", "Numeric", "MultipleNumeric"):

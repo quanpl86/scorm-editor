@@ -300,7 +300,16 @@ def extract_object_html(obj: dict[str, Any], slide: dict[str, Any]) -> str:
         return slide.get("D", {}).get("h", "") or ""
     if obj.get("I") == "content" and slide.get("tp") in ("IntroSlide", "WordBank", "FillInTheBlank"):
         rt = slide.get("C", {}).get("rt", {})
-        raw_html = rt.get("h") or rt.get("a") or ""
+        h_html = rt.get("h") or ""
+        a_html = rt.get("a") or ""
+        
+        # Helper to get plain text length to compare
+        def text_len(html_str):
+            if not html_str: return 0
+            return len(re.sub(r"<[^>]*>", "", html_str).strip())
+            
+        raw_html = a_html if text_len(a_html) > text_len(h_html) else (h_html or a_html)
+
         if slide.get("tp") in ("WordBank", "FillInTheBlank"):
             for entry in rt.get("r", []):
                 blank_id = entry.get("id")
