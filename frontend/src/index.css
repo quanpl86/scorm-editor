@@ -2382,6 +2382,9 @@ button, input, textarea, select {
   padding: 14px 14px 12px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
+  resize: vertical;
+  overflow: auto;
+  min-height: 150px;
 }
 
 .question-slide-options h4 {
@@ -3192,15 +3195,18 @@ body.is-panel-resizing * {
   background: var(--surface);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   flex-shrink: 0;
 }
 
 .layer-panel {
   padding: 12px;
   border-bottom: 1px solid var(--border);
-  max-height: 45%;
-  overflow-y: auto;
+  flex-shrink: 0;
+  resize: vertical;
+  overflow: auto;
+  min-height: 100px;
 }
 
 .layer-panel h4 {
@@ -3262,9 +3268,11 @@ body.is-panel-resizing * {
 }
 
 .props-panel {
-  flex: 1;
+  flex-shrink: 0;
   padding: 12px;
-  overflow-y: auto;
+  resize: vertical;
+  overflow: auto;
+  min-height: 100px;
 }
 
 .props-panel.empty {
@@ -3484,6 +3492,7 @@ body.is-panel-resizing * {
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
 }
 

@@ -1897,9 +1897,28 @@ export default function LayoutCanvas({
       />
 
       <div className="layout-side" style={{ width: rightPanelResize.width }}>
-        <QuestionSlideOptionsPanel
+        <PropertiesPanel
+          obj={selected}
+          sessionId={sessionId}
+          imgRev={imgRev}
+          overlaps={overlaps.filter((w) => w.a === selectedIndex || w.b === selectedIndex)}
+          onChange={(r) => updateObjectRect(selectedIndex, r)}
           question={question}
-          onChange={handleQuestionOptionsChange}
+          onLayerAction={onLayerAction}
+          onPickImage={(file) => assignImageToObject(selectedIndex, file)}
+          onClearImage={() => {
+            if (selectedIndex == null) return
+            const next = objects.map((o) => (o.index === selectedIndex ? { ...o, image: null } : o))
+            const target = next.find((o) => o.index === selectedIndex)
+            const extra = target?.role === 'slidePicture' ? { slideAttachment: null } : {}
+            commitLayoutState(next, extra)
+          }}
+          onExportImage={(fileUrl, mediaCode, exportSuffix) => handleExportSingleMedia(selected, fileUrl, mediaCode, exportSuffix)}
+          onImageZoomChange={handleImageZoomChange}
+          onDeleteObject={() => handleDeleteObject(selectedIndex)}
+          activeEditKey={activeEditKey}
+          activeChoiceIdx={activeChoiceIdx}
+          activeChoiceSide={activeChoiceSide}
         />
 
         <div className="layer-panel">
@@ -1926,29 +1945,11 @@ export default function LayoutCanvas({
           />
         )}
 
-        <PropertiesPanel
-          obj={selected}
-          sessionId={sessionId}
-          imgRev={imgRev}
-          overlaps={overlaps.filter((w) => w.a === selectedIndex || w.b === selectedIndex)}
-          onChange={(r) => updateObjectRect(selectedIndex, r)}
+        <QuestionSlideOptionsPanel
           question={question}
-          onLayerAction={onLayerAction}
-          onPickImage={(file) => assignImageToObject(selectedIndex, file)}
-          onClearImage={() => {
-            if (selectedIndex == null) return
-            const next = objects.map((o) => (o.index === selectedIndex ? { ...o, image: null } : o))
-            const target = next.find((o) => o.index === selectedIndex)
-            const extra = target?.role === 'slidePicture' ? { slideAttachment: null } : {}
-            commitLayoutState(next, extra)
-          }}
-          onExportImage={(fileUrl, mediaCode, exportSuffix) => handleExportSingleMedia(selected, fileUrl, mediaCode, exportSuffix)}
-          onImageZoomChange={handleImageZoomChange}
-          onDeleteObject={() => handleDeleteObject(selectedIndex)}
-          activeEditKey={activeEditKey}
-          activeChoiceIdx={activeChoiceIdx}
-          activeChoiceSide={activeChoiceSide}
+          onChange={handleQuestionOptionsChange}
         />
+
       </div>
     </div>
   )
