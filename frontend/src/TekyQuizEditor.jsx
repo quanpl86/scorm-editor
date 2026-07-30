@@ -469,10 +469,12 @@ function TekyQuestionForm({ question, onChange, onDelete, index, sessionId, quiz
     { value: 'TypeIn', label: 'Trả lời ngắn', icon: '✎' },
     { value: 'Essay', label: 'Tự luận', icon: '📝', disabled: true },
     { value: 'FillInTheBlank', label: 'Điền vào chỗ trống', icon: '___' },
+    { value: 'Hotspot', label: 'Hotspot', icon: '🎯' },
     { value: 'Numeric', label: 'Đáp án số', icon: '12' },
-    { value: 'MultipleNumeric', label: 'Nhiều đáp án số', icon: '▦' },
+    { value: 'MultipleNumeric', label: 'Nhiều đáp án số', icon: '🔢' },
     { value: 'Matching', label: 'Ghép cặp', icon: '🔗' },
     { value: 'Sequence', label: 'question_type_ordering', icon: '↕' },
+    { value: 'MultipleNumeric', label: 'Nhiều đáp án số', icon: '▦' },
   ];
 
   const visualQuestionType = question.type === 'WordBank' ? 'FillInTheBlank' : question.type;
@@ -490,9 +492,10 @@ function TekyQuestionForm({ question, onChange, onDelete, index, sessionId, quiz
     FillInTheBlank: 'ĐÁP ÁN ĐÚNG CHẤP NHẬN',
     WordBank: 'ĐÁP ÁN ĐÚNG CHẤP NHẬN',
     Numeric: 'ĐÁP ÁN SỐ ĐÚNG',
-    MultipleNumeric: 'DANH SÁCH ĐÁP ÁN SỐ',
-    Matching: 'CẶP GHÉP NỐI',
-    Sequence: 'DANH SÁCH THỨ TỰ ĐÚNG',
+    MultipleNumeric: 'DANH SÁCH ĐÁP ÁN SỐ ĐÚNG',
+    Matching: 'DANH SÁCH CÁC CẶP ĐÁP ÁN',
+    Sequence: 'THỨ TỰ ĐÁP ÁN ĐÚNG',
+    Hotspot: 'DANH SÁCH LỰA CHỌN (TỪ KHU VỰC HOTSPOT)',
   }[question.type] || 'DANH SÁCH ĐÁP ÁN';
   const addButtonLabel = {
     Matching: '+ THÊM CẶP MỚI',
@@ -798,7 +801,7 @@ function TekyQuestionForm({ question, onChange, onDelete, index, sessionId, quiz
               </div>
             )}
 
-            {(question.type === 'MultipleChoice' || question.type === 'MultipleResponse') && (
+            {(question.type === 'MultipleChoice' || question.type === 'MultipleResponse' || question.type === 'Hotspot') && (
                <div className="teky-choices-grid">
                  {question.choices?.map((c, i) => (
                   <div key={i} className={`teky-answer-card ${c.isCorrect ? 'correct' : ''}`}>
@@ -1032,7 +1035,7 @@ function TekyQuestionForm({ question, onChange, onDelete, index, sessionId, quiz
               </div>
             )}
 
-            {(!['Matching', 'MultipleChoice', 'MultipleResponse', 'TrueFalse', 'TypeIn', 'Numeric', 'MultipleNumeric', 'Sequence', 'FillInTheBlank', 'WordBank'].includes(question.type)) && (
+            {(!['Matching', 'MultipleChoice', 'MultipleResponse', 'TrueFalse', 'TypeIn', 'Numeric', 'MultipleNumeric', 'Sequence', 'FillInTheBlank', 'WordBank', 'Hotspot'].includes(question.type)) && (
                <div className="teky-empty-answers">Chưa hỗ trợ hiển thị đáp án cho dạng này trong preview</div>
             )}
           </div>

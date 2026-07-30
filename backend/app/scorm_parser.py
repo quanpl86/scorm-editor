@@ -556,6 +556,7 @@ def extract_sequence_items(slide: dict[str, Any]) -> list[dict[str, Any]]:
 
 def extract_type_in_answers(slide: dict[str, Any]) -> list[str]:
     answers = []
+    # 1. Try C.chs (TypeIn usually uses this)
     for ch in slide.get("C", {}).get("chs", []):
         text = ch.get("t", "")
         if isinstance(text, dict):
@@ -564,6 +565,14 @@ def extract_type_in_answers(slide: dict[str, Any]) -> list[str]:
             text_str = str(text)
         if text_str.strip():
             answers.append(text_str.strip())
+            
+    # 2. Try C.na (Numeric usually uses this)
+    for na in slide.get("C", {}).get("na", []):
+        if na.get("co") == "equal" and "op" in na:
+            answers.append(str(na["op"]))
+        elif na.get("co") == "between" and "op" in na:
+            answers.append(str(na["op"])) # fallback for between, though Teky only supports exact matching
+            
     return answers
 
 
