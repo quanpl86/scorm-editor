@@ -395,6 +395,53 @@ def import_tsv_to_lesson(payload: TsvLessonPublishPayload):
     return view
 
 
+@app.post("/api/import/tsv-zip-to-lesson")
+async def import_tsv_zip_to_lesson(
+    file: UploadFile = File(...),
+    lessonCode: str = Form(...),
+    overwrite: bool = Form(False),
+    seedMediaFromTemplate: bool = Form(False),
+    openInEditor: bool = Form(True),
+    quizTitle: str | None = Form(None),
+    groupTitle: str = Form("Imported Questions"),
+):
+    import zipfile
+    import io
+
+    try:
+        content = await file.read()
+        with zipfile.ZipFile(io.BytesIO(content)) as zf:
+            settings_tsv = ""
+            questions_tsv = ""
+            
+            for info in zf.infolist():
+                if info.is_dir():
+                    continue
+                name = info.filename.lower()
+                if name.endswith("quiz_settings.tsv"):
+                    settings_tsv = zf.read(info.filename).decode("utf-8")
+                elif name.endswith("quiz_questions.tsv"):
+                    questions_tsv = zf.read(info.filename).decode("utf-8")
+                    
+            if not settings_tsv or not questions_tsv:
+                raise HTTPException(400, "File ZIP phải chứa quiz_settings.tsv và quiz_questions.tsv")
+                
+            payload = TsvLessonPublishPayload(
+                lessonCode=lessonCode,
+                settingsTsv=settings_tsv,
+                questionsTsv=questions_tsv,
+                overwrite=overwrite,
+                seedMediaFromTemplate=seedMediaFromTemplate,
+                openInEditor=openInEditor,
+                quizTitle=quizTitle,
+                groupTitle=groupTitle,
+            )
+            return import_tsv_to_lesson(payload)
+    except zipfile.BadZipFile:
+        raise HTTPException(400, "File không phải là định dạng ZIP hợp lệ")
+    except UnicodeDecodeError:
+        raise HTTPException(400, "File TSV phải được mã hóa bằng UTF-8")
+
 @app.post("/api/import/excel")
 async def import_excel(
     file: UploadFile = File(...),

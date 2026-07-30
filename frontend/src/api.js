@@ -64,6 +64,31 @@ export async function publishTsvToLesson({
       groupTitle,
     }),
   })
+  if (!res.ok) throw new Error((await res.json()).detail || 'Lưu TSV thất bại')
+  return res.json()
+}
+
+export async function importTsvZipToLesson(file, {
+  lessonCode,
+  overwrite = false,
+  seedMediaFromTemplate = false,
+  openInEditor = true,
+  quizTitle,
+  groupTitle = 'Imported Questions',
+} = {}) {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('lessonCode', lessonCode)
+  form.append('overwrite', overwrite)
+  form.append('seedMediaFromTemplate', seedMediaFromTemplate)
+  form.append('openInEditor', openInEditor)
+  if (quizTitle) form.append('quizTitle', quizTitle)
+  if (groupTitle) form.append('groupTitle', groupTitle)
+
+  const res = await fetch(`${API}/import/tsv-zip-to-lesson`, {
+    method: 'POST',
+    body: form,
+  })
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     const detail = body.detail

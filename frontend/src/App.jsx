@@ -12,6 +12,7 @@ import {
   importSample,
   importZip,
   publishTsvToLesson,
+  importTsvZipToLesson,
   saveSession,
   exportMediaLocal,
   uploadImage,
@@ -691,7 +692,8 @@ function ImportPage({ onImport, loading, loadingMessage, error, errorKind, impor
   /** paste = dán TSV settings; form = nhập tay */
   const [settingsInputMode, setSettingsInputMode] = useState('form')
   const [settingsForm, setSettingsForm] = useState(() => ({ ...DEFAULT_SETTINGS_FORM }))
-  const [useCombined, setUseCombined] = useState(false)
+  const [tsvSourceMode, setTsvSourceMode] = useState('separate') // 'separate' | 'combined' | 'zip'
+  const [tsvZipFile, setTsvZipFile] = useState(null)
   const [overwriteLesson, setOverwriteLesson] = useState(true)
   const [seedMedia, setSeedMedia] = useState(false)
   const [tsvLocalError, setTsvLocalError] = useState(null)
@@ -740,7 +742,26 @@ function ImportPage({ onImport, loading, loadingMessage, error, errorKind, impor
       return
     }
 
-    if (useCombined) {
+    if (tsvSourceMode === 'zip') {
+      if (!tsvZipFile) {
+        setTsvLocalError('Vui lòng chọn file TSV ZIP.')
+        return
+      }
+      await onImport(
+        () => importTsvZipToLesson(tsvZipFile, {
+          lessonCode: code,
+          overwrite: overwriteLesson,
+          seedMediaFromTemplate: seedMedia,
+          openInEditor: true,
+          quizTitle: quizTitle.trim() || undefined,
+          groupTitle: groupTitle.trim() || 'Imported Questions',
+        }),
+        { kind: 'tsv' },
+      )
+      return
+    }
+
+    if (tsvSourceMode === 'combined') {
       if (!combinedTsv.trim()) {
         setTsvLocalError('Dán combined TSV (có marker ### quiz_settings.tsv / ### quiz_questions.tsv).')
         return
@@ -905,8 +926,8 @@ function ImportPage({ onImport, loading, loadingMessage, error, errorKind, impor
                 <input
                   type="radio"
                   name="tsvMode"
-                  checked={!useCombined}
-                  onChange={() => setUseCombined(false)}
+                  checked={tsvSourceMode === 'separate'}
+                  onChange={() => setTsvSourceMode('separate')}
                   disabled={loading}
                 />
                 Settings + Questions riêng
@@ -915,15 +936,36 @@ function ImportPage({ onImport, loading, loadingMessage, error, errorKind, impor
                 <input
                   type="radio"
                   name="tsvMode"
-                  checked={useCombined}
-                  onChange={() => setUseCombined(true)}
+                  checked={tsvSourceMode === 'combined'}
+                  onChange={() => setTsvSourceMode('combined')}
                   disabled={loading}
                 />
                 Combined TSV (có marker)
               </label>
+              <label>
+                <input
+                  type="radio"
+                  name="tsvMode"
+                  checked={tsvSourceMode === 'zip'}
+                  onChange={() => setTsvSourceMode('zip')}
+                  disabled={loading}
+                />
+                Upload File ZIP
+              </label>
             </div>
 
-            {useCombined ? (
+            {tsvSourceMode === 'zip' ? (
+              <label className="import-field import-field-wide">
+                <span>File ZIP chứa quiz_settings.tsv & quiz_questions.tsv <em className="field-req">*</em></span>
+                <input
+                  type="file"
+                  accept=".zip"
+                  onChange={(e) => setTsvZipFile(e.target.files[0])}
+                  disabled={loading}
+                  style={{ padding: '8px 0' }}
+                />
+              </label>
+            ) : tsvSourceMode === 'combined' ? (
               <label className="import-field import-field-wide">
                 <span>Combined TSV</span>
                 <textarea
