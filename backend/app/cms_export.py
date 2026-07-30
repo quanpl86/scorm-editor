@@ -42,6 +42,7 @@ ISPRING_TO_TEKY: dict[str, str] = {
     "WordBank":           "fill_blank",
     "Matching":           "matching",
     "Sequence":           "ordering",
+    "Hotspot":            "multiple_select",
 }
 
 SKIP_TYPES = {"InfoSlide", "IntroSlide", "ResultSlide"}
@@ -280,6 +281,94 @@ def _convert_ordering(
     return ordering, correct
 
 
+
+def _convert_hotspot(
+    slide_view: dict[str, Any],
+    session_id: str,
+    base_url: str,
+    s3_uploader: Callable[[str], str | None] = None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    from pathlib import Path
+    try:
+        from PIL import Image
+    except ImportError:
+        Image = None
+
+    base_dir = Path(__file__).parent.parent
+    package_root = base_dir / "data" / "sessions" / session_id / "package"
+    
+    choices = slide_view.get("choices", [])
+    if not choices:
+        return [], []
+        
+    bg_image_raw = choices[0].get("image")
+    if not bg_image_raw:
+        return [], []
+        
+    bg_filename = str(bg_image_raw).split("/")[-1].split("?")[0]
+    bg_stem = Path(bg_filename).stem
+    bg_path = None
+    for folder in ("res/data/images", "data/images", "images"):
+        d = package_root / folder
+        if not d.is_dir():
+            continue
+        for cand in d.iterdir():
+            if cand.is_file() and cand.stem == bg_stem:
+                bg_path = cand
+                break
+        if bg_path:
+            break
+            
+    img = None
+    if bg_path and Image:
+        try:
+            img = Image.open(bg_path)
+        except Exception:
+            img = None
+            
+    result = []
+    correct = []
+    for idx, ch in enumerate(choices):
+        opt = {
+            "id": ch.get("id", f"hotspot-{idx}"),
+            "text": ch.get("text", f"Vùng {idx+1}")
+        }
+        
+        rect = ch.get("rect", {})
+        if img and rect and "w" in rect and "h" in rect:
+            x = int(rect.get("x", 0) * img.width / 10000)
+            y = int(rect.get("y", 0) * img.height / 10000)
+            w = int(rect.get("w", 0) * img.width / 10000)
+            h = int(rect.get("h", 0) * img.height / 10000)
+            
+            try:
+                crop = img.crop((x, y, x + w, y + h))
+                crop_name = f"crop_{idx}_{bg_filename}"
+                crop_path = package_root / "res/data/images" / crop_name
+                crop_path.parent.mkdir(parents=True, exist_ok=True)
+                if crop.mode == "RGBA" and crop_path.suffix.lower() in (".jpg", ".jpeg"):
+                    crop = crop.convert("RGB")
+                crop.save(crop_path)
+                
+                if s3_uploader:
+                    # Give it to s3_uploader with the bare filename since it looks up in package_root
+                    s3_url = s3_uploader(crop_name)
+                    if s3_url:
+                        opt["imageUrl"] = s3_url
+                    else:
+                        opt["imageUrl"] = f"images/{crop_name}"
+                else:
+                    opt["imageUrl"] = f"images/{crop_name}"
+            except Exception:
+                pass
+                
+        result.append(opt)
+        if ch.get("isCorrect"):
+            correct.append(opt["id"])
+            
+    return result, correct
+
+
 def _slide_to_teky(
     slide_view: dict[str, Any],
     session_id: str,
@@ -339,6 +428,10 @@ def _slide_to_teky(
     if teky_type in {"multiple_choice", "multiple_select", "true_false"}:
         if ispring_type == "TrueFalse":
             opts, correct = _convert_true_false(slide_view.get("choices", []))
+        elif ispring_type == "Hotspot":
+            opts, correct = _convert_hotspot(slide_view, session_id, base_url, s3_uploader)
+            if len(correct) <= 1:
+                q["type"] = "multiple_choice"
         else:
             opts, correct = _convert_mc_options(slide_view.get("choices", []), session_id, base_url, s3_uploader)
         q["options"] = opts

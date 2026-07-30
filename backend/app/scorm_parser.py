@@ -522,6 +522,24 @@ def extract_matching_pairs(slide: dict[str, Any]) -> list[dict[str, Any]]:
     return pairs
 
 
+
+def extract_hotspot_choices(slide: dict[str, Any]) -> list[dict[str, Any]]:
+    c = slide.get("C", {})
+    bg_image = image_path_from_storage(c.get("i", ""))
+    areas = c.get("a", [])
+    choices = []
+    for idx, area in enumerate(areas):
+        choices.append({
+            "id": f"hotspot-{idx}",
+            "text": area.get("l", f"Vùng {idx+1}"),
+            "image": bg_image,
+            "isCorrect": bool(area.get("c", False)),
+            "rect": area.get("r", {}),
+            "type": area.get("t", "freeform")
+        })
+    return choices
+
+
 def extract_sequence_items(slide: dict[str, Any]) -> list[dict[str, Any]]:
     items = []
     for ch in slide.get("C", {}).get("chs", []):
@@ -806,6 +824,8 @@ def slide_to_view(slide: dict[str, Any], group_index: int, question_index: int, 
         view["sequenceItems"] = extract_sequence_items(slide)
     elif qtype == "Matching":
         view["matchingPairs"] = extract_matching_pairs(slide)
+    elif qtype == "Hotspot":
+        view["choices"] = extract_hotspot_choices(slide)
     elif qtype in ("WordBank", "FillInTheBlank"):
         view["blankAnswers"] = extract_blank_answers(slide)
         rt = slide.get("C", {}).get("rt", {})
