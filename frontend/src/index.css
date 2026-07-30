@@ -342,7 +342,7 @@ button, input, textarea, select {
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: 12px;
-}
+  text-align: center;}
 
 .import-tab {
   display: inline-flex;
@@ -474,7 +474,7 @@ button, input, textarea, select {
 .dropzone {
   border: 2px dashed var(--border);
   border-radius: 12px;
-  padding: 48px 24px;
+  text-align: center;  padding: 48px 24px;
   cursor: pointer;
   transition: border-color 0.2s, background 0.2s;
   margin-bottom: 20px;
@@ -632,7 +632,7 @@ button, input, textarea, select {
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: 12px;
-}
+  text-align: center;}
 
 .settings-block-header {
   display: flex;
@@ -4114,7 +4114,7 @@ body.is-panel-resizing * {
   .guide-modal {
     height: 96vh;
     border-radius: 12px;
-  }
+  text-align: center;  }
 
   .guide-toc {
     display: none;

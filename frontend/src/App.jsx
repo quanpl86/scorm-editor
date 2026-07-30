@@ -679,9 +679,11 @@ function buildSettingsTsvFromForm(form) {
 function ImportPage({ onImport, loading, loadingMessage, error, errorKind, importReport }) {
   const scormInputRef = useRef(null)
   const excelInputRef = useRef(null)
+  const tsvZipInputRef = useRef(null)
   const [importTab, setImportTab] = useState('tsv')
   const [scormDrag, setScormDrag] = useState(false)
   const [excelDrag, setExcelDrag] = useState(false)
+  const [tsvZipDrag, setTsvZipDrag] = useState(false)
   const [quizTitle, setQuizTitle] = useState('')
   const [groupTitle, setGroupTitle] = useState('Imported Questions')
   const [templates, setTemplates] = useState([])
@@ -956,16 +958,40 @@ function ImportPage({ onImport, loading, loadingMessage, error, errorKind, impor
             </div>
 
             {tsvSourceMode === 'zip' ? (
-              <label className="import-field import-field-wide">
+              <div className="import-field import-field-wide">
                 <span>File ZIP chứa quiz_settings.tsv & quiz_questions.tsv <em className="field-req">*</em></span>
-                <input
-                  type="file"
-                  accept=".zip"
-                  onChange={(e) => setTsvZipFile(e.target.files[0])}
-                  disabled={loading}
-                  style={{ padding: '8px 0' }}
-                />
-              </label>
+                <div
+                  className={`dropzone ${tsvZipDrag ? 'dragover' : ''} ${loading ? 'is-loading' : ''}`}
+                  onClick={() => !loading && tsvZipInputRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); if (!loading) setTsvZipDrag(true) }}
+                  onDragLeave={() => setTsvZipDrag(false)}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    setTsvZipDrag(false)
+                    if (!loading && e.dataTransfer.files[0]) {
+                      setTsvZipFile(e.dataTransfer.files[0])
+                    }
+                  }}
+                  style={{ marginTop: '8px' }}
+                >
+                  <div className="dropzone-icon">📁</div>
+                  <div className="dropzone-text">
+                    {tsvZipFile ? tsvZipFile.name : 'Kéo thả file .zip hoặc bấm để chọn'}
+                  </div>
+                  <input
+                    ref={tsvZipInputRef}
+                    type="file"
+                    accept=".zip"
+                    hidden
+                    disabled={loading}
+                    onChange={(e) => {
+                      if (e.target.files[0]) {
+                        setTsvZipFile(e.target.files[0])
+                      }
+                    }}
+                  />
+                </div>
+              </div>
             ) : tsvSourceMode === 'combined' ? (
               <label className="import-field import-field-wide">
                 <span>Combined TSV</span>
