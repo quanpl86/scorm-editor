@@ -144,6 +144,56 @@ button, input, textarea, select {
   50% { opacity: 0.5; }
 }
 
+.header-menu-container {
+  position: relative;
+  display: none; /* hidden on desktop by default */
+}
+
+.hamburger-btn {
+  font-size: 1.1rem;
+  padding: 8px 10px;
+}
+
+.header-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 1000;
+  min-width: 200px;
+}
+
+.mobile-menu-item {
+  width: 100%;
+  text-align: left;
+  justify-content: flex-start;
+}
+
+.header-actions-desktop-only {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+@media (max-width: 1300px) {
+  .header-actions-desktop-only {
+    display: none !important;
+  }
+  .header-menu-container {
+    display: block;
+  }
+  .header {
+    padding: 12px 16px;
+  }
+}
+
 .sideview-sync-hint {
   font-size: 0.75rem;
   color: var(--accent);

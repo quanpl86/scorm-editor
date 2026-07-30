@@ -1517,8 +1517,22 @@ export default function LayoutCanvas({
     const targetName = `${safeTitle}_${stt}_${mediaCode || 'IMG'}-${pos}`
 
     try {
-      const result = await exportSingleMediaLocal(sessionId, fileUrl, targetName)
-      alert(`Đã xuất file ra: ${result.path}`)
+      let ext = fileUrl.split('.').pop() || 'jpg'
+      if (ext.length > 5 || ext.includes('/')) ext = 'jpg'
+      const finalName = `${targetName}.${ext}`
+      
+      const url = assetUrl(sessionId, fileUrl)
+      const res = await fetch(url)
+      const blob = await res.blob()
+      
+      const objectUrl = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = objectUrl
+      a.download = finalName
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(objectUrl)
+      document.body.removeChild(a)
     } catch (err) {
       alert(err.message)
     }

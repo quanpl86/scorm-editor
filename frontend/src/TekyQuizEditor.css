@@ -56,6 +56,27 @@
   background: #f08200;
 }
 
+.teky-btn-secondary {
+  background: white;
+  color: #555;
+  border: 1px solid #ddd;
+  border-radius: 20px;
+  padding: 10px 24px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.teky-btn-secondary:hover {
+  background: #f5f5f5;
+}
+
+.teky-editor-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
 .teky-editor-tabs {
   display: flex;
   gap: 32px;
@@ -143,6 +164,9 @@
   color: #999;
   letter-spacing: 0.5px;
   margin-bottom: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .teky-type-btn {
@@ -160,6 +184,9 @@
   color: #555;
   cursor: pointer;
   text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: all 0.2s ease;
 }
 
 .teky-type-btn:hover {
@@ -186,7 +213,10 @@
 }
 
 .teky-field-group input[type="text"],
+.teky-field-group input[type="url"],
 .teky-field-group input[type="number"],
+.teky-choice-media-inputs input[type="text"],
+.teky-numeric-editor input[type="number"],
 .teky-field-group textarea,
 .teky-field-group select {
   width: 100%;
@@ -645,6 +675,11 @@
   flex-shrink: 0;
   border-right: 1px solid #eee;
   padding-right: 24px;
+  transition: width 0.3s ease;
+}
+
+.teky-sidebar-toggle-container {
+  display: none; /* Hidden on desktop */
 }
 
 .teky-q-content {
@@ -1036,7 +1071,10 @@
 }
 
 .teky-field-group input[type="text"],
+.teky-field-group input[type="url"],
 .teky-field-group input[type="number"],
+.teky-choice-media-inputs input[type="text"],
+.teky-numeric-editor input[type="number"],
 .teky-field-group textarea,
 .teky-field-group select {
   border-color: #d6e0eb;
@@ -1204,5 +1242,106 @@
 
   .teky-flex-row {
     display: grid;
+  }
+}
+
+@media (max-width: 1300px) {
+  .teky-editor-header {
+    padding: 10px 16px;
+  }
+  .teky-title-info h2 {
+    font-size: 16px;
+  }
+  .teky-title-info span {
+    font-size: 11px;
+  }
+  .teky-btn-primary {
+    padding: 8px 16px;
+    font-size: 13px;
+    min-width: unset;
+  }
+  .teky-btn-secondary {
+    padding: 8px 16px;
+    font-size: 13px;
+  }
+  .teky-editor-tabs {
+    gap: 16px;
+    padding: 0 16px;
+  }
+  .teky-editor-tabs button {
+    padding: 10px 0;
+  }
+  .teky-editor-body {
+    padding: 16px;
+  }
+  .teky-details-stack {
+    gap: 16px;
+  }
+  .teky-details-card, .teky-settings-card {
+    padding: 16px;
+  }
+  .teky-q-header {
+    padding: 12px 16px;
+  }
+  .teky-q-body, .teky-q-body-flex {
+    padding: 16px;
+  }
+  .teky-q-body-flex {
+    gap: 20px;
+  }
+  .teky-q-sidebar {
+    padding: 16px;
+    width: 200px;
+    transition: width 0.3s ease, padding 0.3s ease;
+  }
+  .teky-q-sidebar.collapsed {
+    width: 64px;
+    padding: 16px 0;
+  }
+  .teky-q-sidebar.collapsed .teky-sidebar-label,
+  .teky-q-sidebar.collapsed .teky-type-label {
+    display: none;
+  }
+  .teky-q-sidebar.collapsed .teky-type-btn {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    margin: 0 auto 10px;
+    justify-content: center;
+    align-items: center;
+    border-radius: 50%;
+  }
+  .teky-q-sidebar.collapsed .teky-type-btn .icon {
+    margin: 0;
+    font-size: 16px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+  }
+  .teky-sidebar-toggle-container {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 16px;
+  }
+  .teky-q-sidebar.collapsed .teky-sidebar-toggle-container {
+    justify-content: center;
+  }
+  .teky-sidebar-toggle-btn {
+    background: #f0f4f8;
+    border: 1px solid #dce5ef;
+    border-radius: 8px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: #666;
+    font-size: 12px;
+  }
+  .teky-sidebar-toggle-btn:hover {
+    background: #e4eaf1;
   }
 }

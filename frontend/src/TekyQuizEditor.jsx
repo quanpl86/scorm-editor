@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { HiOutlineArrowUpTray, HiOutlineTrash } from 'react-icons/hi2';
+import { HiOutlineArrowUpTray, HiOutlineTrash, HiOutlineArrowDownTray } from 'react-icons/hi2';
 import './TekyQuizEditor.css';
 import { API, assetUrl, exportProject, uploadNewImage } from './api';
 
@@ -34,6 +34,60 @@ function UploadButton({ sessionId, onUploadComplete, label = '' }) {
           }
         }}
       />
+    </div>
+  );
+}
+
+function DownloadButton({ sessionId, filename, quizTitle, questionIndex, exportSuffix, mediaCode = 'IMG' }) {
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    if (!filename) return;
+    setDownloading(true);
+    try {
+      let downloadName = filename.split('/').pop() || 'download.jpg';
+      
+      if (quizTitle != null && questionIndex != null && exportSuffix) {
+        const safeTitle = String(quizTitle).trim().replace(/[^a-zA-Z0-9 _-]/g, '_').substring(0, 50);
+        const stt = questionIndex;
+        const targetName = `${safeTitle}_${stt}_${mediaCode}-${exportSuffix}`;
+        let ext = filename.split('.').pop() || 'jpg';
+        if (ext.length > 5 || ext.includes('/')) ext = 'jpg';
+        downloadName = `${targetName}.${ext}`;
+      }
+
+      const url = assetUrl(sessionId, filename);
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = downloadName;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(objectUrl);
+      document.body.removeChild(a);
+    } catch (err) {
+      alert("Download failed: " + err.message);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  if (!filename) return null;
+
+  return (
+    <div className="teky-upload-control">
+      <button
+        type="button"
+        className="teky-upload-icon-btn"
+        disabled={downloading}
+        aria-label="Tải xuống"
+        title="Tải ảnh về máy"
+        onClick={handleDownload}
+      >
+        {downloading ? <span className="teky-upload-progress">...</span> : <HiOutlineArrowDownTray />}
+      </button>
     </div>
   );
 }
@@ -165,7 +219,8 @@ export default function TekyQuizEditor({
                       });
                     }}
                     index={idx + 1}
-                    sessionId={sessionId}
+                    sessionId={quiz.sessionId}
+                    quizTitle={quiz.title}
                   />
                 ))}
               </div>
@@ -395,7 +450,8 @@ function TekyQuizSettings({ quiz, onChange }) {
   );
 }
 
-function TekyQuestionForm({ question, onChange, onDelete, index, sessionId }) {
+function TekyQuestionForm({ question, onChange, onDelete, index, sessionId, quizTitle }) {
+  const [sidebarExpanded, setSidebarExpanded] = React.useState(false);
   const typeOptions = [
     { value: 'MultipleChoice', label: 'Trắc nghiệm (Chọn 1)', icon: '◉' },
     { value: 'MultipleResponse', label: 'Trắc nghiệm (Chọn nhiều)', icon: '☑' },
@@ -482,10 +538,19 @@ function TekyQuestionForm({ question, onChange, onDelete, index, sessionId }) {
       </div>
 
       <div className="teky-q-body-flex">
-        <div className="teky-q-sidebar">
+        <div className={`teky-q-sidebar ${sidebarExpanded ? 'expanded' : 'collapsed'}`}>
+          <div className="teky-sidebar-toggle-container">
+            <button
+              className="teky-sidebar-toggle-btn"
+              onClick={() => setSidebarExpanded(!sidebarExpanded)}
+              title={sidebarExpanded ? 'Thu gọn' : 'Mở rộng'}
+            >
+              {sidebarExpanded ? '◀' : '▶'}
+            </button>
+          </div>
           <div className="teky-sidebar-section">
             <span className="teky-sidebar-label">ĐỀ MỤC CHÍNH</span>
-            <button className="teky-type-btn"><span className="icon">📂</span> Đề mục / Phân đoạn</button>
+            <button className="teky-type-btn"><span className="icon">📂</span> <span className="teky-type-label">Đề mục / Phân đoạn</span></button>
           </div>
           <div className="teky-sidebar-section" style={{ marginTop: '24px' }}>
             <span className="teky-sidebar-label">LOẠI CÂU HỎI</span>
@@ -497,7 +562,7 @@ function TekyQuestionForm({ question, onChange, onDelete, index, sessionId }) {
                 title={t.disabled ? 'Dạng tự luận chưa có trong JSON Teky LMS chuẩn hiện tại' : ''}
                 onClick={() => !t.disabled && changeQuestionType(t.value)}
               >
-                <span className="icon">{t.icon}</span> {t.label}
+                <span className="icon">{t.icon}</span> <span className="teky-type-label">{t.label}</span>
               </button>
             ))}
           </div>
@@ -536,6 +601,7 @@ function TekyQuestionForm({ question, onChange, onDelete, index, sessionId }) {
                   onChange({ slideImages: newImages });
                 }}
               />
+              <DownloadButton sessionId={sessionId} filename={question.slideImages?.[0]} quizTitle={quizTitle} questionIndex={index} exportSuffix="ND" />
             </div>
             {question.slideImages?.[0] && (
               <div className="teky-choice-img-preview" style={{ marginTop: '12px' }}>
@@ -657,6 +723,7 @@ function TekyQuestionForm({ question, onChange, onDelete, index, sessionId }) {
                             onChange({ matchingPairs: newPairs });
                           }}
                         />
+                        <DownloadButton sessionId={sessionId} filename={c.leftImage || c.image} quizTitle={quizTitle} questionIndex={index} exportSuffix={`VT${i + 1}`} />
                       </div>
                       {(c.leftImage || c.image) && (
                         <div className="teky-match-img-preview">
@@ -692,6 +759,7 @@ function TekyQuestionForm({ question, onChange, onDelete, index, sessionId }) {
                             onChange({ matchingPairs: newPairs });
                           }}
                         />
+                        <DownloadButton sessionId={sessionId} filename={c.rightImage} quizTitle={quizTitle} questionIndex={index} exportSuffix={`VP${i + 1}`} />
                       </div>
                       {c.rightImage && (
                         <div className="teky-match-img-preview">
@@ -770,6 +838,7 @@ function TekyQuestionForm({ question, onChange, onDelete, index, sessionId }) {
                           newChoices[i] = { ...newChoices[i], image: filename };
                           onChange({ choices: newChoices });
                         }} />
+                        <DownloadButton sessionId={sessionId} filename={c.image} />
                       </div>
                       {c.image && (
                         <div className="teky-choice-img-preview">
@@ -935,6 +1004,7 @@ function TekyQuestionForm({ question, onChange, onDelete, index, sessionId }) {
                           newChoices[i] = { ...newChoices[i], image: filename };
                           onChange({ choices: newChoices });
                         }} />
+                        <DownloadButton sessionId={sessionId} filename={c.image} />
                       </div>
                       {c.image && (
                         <div className="teky-choice-img-preview">

@@ -14,6 +14,7 @@ import {
   publishTsvToLesson,
   importTsvZipToLesson,
   saveSession,
+  exportMedia,
   exportMediaLocal,
   uploadImage,
 } from './api'
@@ -2136,7 +2137,18 @@ export default function App() {
   const [toast, setToast] = useState(null)
   const [canvasEditing, setCanvasEditing] = useState(false)
   const [guideOpen, setGuideOpen] = useState(false)
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
   const sidebarResize = useResizableWidth('scorm-editor.sidebar-width', 320, { min: 240, max: 480 })
+
+  useEffect(() => {
+    const handleDocClick = (e) => {
+      if (!e.target.closest('.header-menu-container')) {
+        setHeaderMenuOpen(false)
+      }
+    }
+    document.addEventListener('click', handleDocClick)
+    return () => document.removeEventListener('click', handleDocClick)
+  }, [])
 
   const applySavedState = useCallback((savedView) => {
     setQuiz((prev) => {
@@ -2395,8 +2407,15 @@ export default function App() {
     setSaving(true)
     try {
       await persistQuiz()
-      const result = await exportMediaLocal(quiz.sessionId)
-      showToast(`Đã xuất toàn bộ ảnh/video ra thư mục: ${result.path}`)
+      const blob = await exportMedia(quiz.sessionId)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `media-export-${quiz.sessionId}.zip`
+      document.body.appendChild(a)
+      a.click()
+      URL.revokeObjectURL(url)
+      showToast('Đã tải xuống file Media ZIP')
     } catch (err) {
       showToast(err.message, 'error')
     } finally {
@@ -2498,16 +2517,19 @@ export default function App() {
       <header className="header">
         <h1 onClick={() => window.location.reload()} style={{ cursor: 'pointer' }} title="Về trang chủ"><span>SCORM</span> Editor</h1>
         <div className="header-actions">
-          <select
-            className="quiz-mode-selector"
-            value={quizMode}
-            onChange={(e) => setQuizMode(e.target.value)}
-            style={{ marginRight: '16px', padding: '6px 12px', borderRadius: '4px', border: '1px solid #ccc' }}
-          >
-            <option value="teky">🌟 Mode: Teky LMS</option>
-            <option value="ispring">📦 Mode: iSpring SCORM</option>
-          </select>
-          <GuideButton onClick={() => setGuideOpen(true)} />
+          <div className="header-actions-desktop-only">
+            <select
+              className="quiz-mode-selector"
+              value={quizMode}
+              onChange={(e) => setQuizMode(e.target.value)}
+              style={{ marginRight: '16px', padding: '6px 12px', borderRadius: '4px', border: '1px solid #ccc' }}
+            >
+              <option value="teky">🌟 Mode: Teky LMS</option>
+              <option value="ispring">📦 Mode: iSpring SCORM</option>
+            </select>
+            <GuideButton onClick={() => setGuideOpen(true)} />
+          </div>
+          
           <div className="history-actions">
             <button
               type="button"
@@ -2529,39 +2551,98 @@ export default function App() {
             </button>
           </div>
           {autoSaving && <span className="auto-sync-badge">Đang đồng bộ...</span>}
-          <button
-            className="btn"
-            onClick={() => {
-              resetHistory(null)
-              setSelectedId(null)
-              setImportReport(null)
-              setWorkspaceMode('edit')
-            }}
-          >
-            Import mới
-          </button>
+          
+          <div className="header-actions-desktop-only">
+            <button
+              className="btn"
+              onClick={() => {
+                resetHistory(null)
+                setSelectedId(null)
+                setImportReport(null)
+                setWorkspaceMode('edit')
+              }}
+            >
+              Import mới
+            </button>
+          </div>
+          
           <button className="btn" disabled={saving} onClick={handleOpenPreview}>
             Xem & Làm bài
           </button>
-          {quizMode !== 'teky' && (
-            <button className="btn btn-primary" disabled={saving} onClick={handleSave}>
-              {saving ? 'Đang lưu...' : 'Lưu'}
+          
+          <div className="header-actions-desktop-only">
+            {quizMode !== 'teky' && (
+              <button className="btn btn-primary" disabled={saving} onClick={handleSave}>
+                {saving ? 'Đang lưu...' : 'Lưu'}
+              </button>
+            )}
+            <button className="btn btn-primary" disabled={saving} onClick={handleExport}>
+              Export SCORM
             </button>
-          )}
-          <button className="btn btn-primary" disabled={saving} onClick={handleExport}>
-            Export SCORM
-          </button>
-          <button className="btn btn-primary" disabled={saving} onClick={handleExportMedia}>
-            Export Media
-          </button>
+            <button className="btn btn-primary" disabled={saving} onClick={handleExportMedia}>
+              Export Media
+            </button>
+          </div>
+
           <button
             className="btn btn-cms-export"
             disabled={saving}
             onClick={handleExportCmsJson}
             title="Xuất toàn bộ câu hỏi sang JSON để import vào LMS CMS"
           >
-            📋 Export CMS JSON
+            📋 Xuất bản CMS json
           </button>
+
+          <div className="header-menu-container">
+            <button
+              className="btn btn-icon hamburger-btn"
+              onClick={() => setHeaderMenuOpen(!headerMenuOpen)}
+              title="Menu mở rộng"
+            >
+              ☰
+            </button>
+            {headerMenuOpen && (
+              <div className="header-dropdown">
+                <select
+                  className="quiz-mode-selector mobile-menu-item"
+                  value={quizMode}
+                  onChange={(e) => {
+                    setQuizMode(e.target.value)
+                    setHeaderMenuOpen(false)
+                  }}
+                >
+                  <option value="teky">🌟 Mode: Teky LMS</option>
+                  <option value="ispring">📦 Mode: iSpring SCORM</option>
+                </select>
+                <button className="btn mobile-menu-item" onClick={() => { setGuideOpen(true); setHeaderMenuOpen(false) }}>
+                  📖 Guide
+                </button>
+                <button
+                  className="btn mobile-menu-item"
+                  onClick={() => {
+                    resetHistory(null)
+                    setSelectedId(null)
+                    setImportReport(null)
+                    setWorkspaceMode('edit')
+                    setHeaderMenuOpen(false)
+                  }}
+                >
+                  Import mới
+                </button>
+                {quizMode !== 'teky' && (
+                  <button className="btn btn-primary mobile-menu-item" disabled={saving} onClick={() => { handleSave(); setHeaderMenuOpen(false) }}>
+                    {saving ? 'Đang lưu...' : 'Lưu'}
+                  </button>
+                )}
+                <button className="btn btn-primary mobile-menu-item" disabled={saving} onClick={() => { handleExport(); setHeaderMenuOpen(false) }}>
+                  Export SCORM
+                </button>
+                <button className="btn btn-primary mobile-menu-item" disabled={saving} onClick={() => { handleExportMedia(); setHeaderMenuOpen(false) }}>
+                  Export Media
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
