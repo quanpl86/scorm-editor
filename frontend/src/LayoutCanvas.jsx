@@ -406,7 +406,7 @@ function PropertiesPanel({
   const isVideoObj = obj.role === 'slideVideo' || obj.role === 'video' || obj.video
   const isAudioObj = obj.role === 'slideAudio' || obj.role === 'audio' || obj.audio
   const isHotspotImg = question.type === 'Hotspot' && obj.role === 'content'
-  const isImageObj = obj.role === 'slidePicture' || obj.role === 'image' || isHotspotImg || (!isVideoObj && !isAudioObj && obj.image)
+  const isImageObj = obj.role === 'slidePicture' || obj.role === 'image' || obj.role === 'choice' || obj.role === 'shape' || obj.role === 'caption' || isHotspotImg || (!isVideoObj && !isAudioObj && obj.image)
 
   const choiceMedias = []
   if (obj.role === 'content') {
