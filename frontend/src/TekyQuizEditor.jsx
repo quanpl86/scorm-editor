@@ -452,6 +452,16 @@ function TekyQuizSettings({ quiz, onChange }) {
 
 function TekyQuestionForm({ question, onChange, onDelete, index, sessionId, quizTitle }) {
   const [sidebarExpanded, setSidebarExpanded] = React.useState(false);
+
+  React.useEffect(() => {
+    if (['WordBank', 'FillInTheBlank'].includes(question.type) && question.subtitleText) {
+      onChange({
+        questionText: `${question.questionText || ''}\n\n${question.subtitleText}`.trim(),
+        subtitleText: ''
+      });
+    }
+  }, [question.type, question.subtitleText]);
+
   const typeOptions = [
     { value: 'MultipleChoice', label: 'Trắc nghiệm (Chọn 1)', icon: '◉' },
     { value: 'MultipleResponse', label: 'Trắc nghiệm (Chọn nhiều)', icon: '☑' },

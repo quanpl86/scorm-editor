@@ -630,7 +630,13 @@ def special_slide_to_view(
     subtitle_format = None
     if qtype == "IntroSlide" or qtype in ("WordBank", "FillInTheBlank"):
         rt = slide.get("C", {}).get("rt", {})
-        subtitle_text = strip_html(rt.get("h") or rt.get("a") or "")
+        raw_html = rt.get("h") or rt.get("a") or ""
+        if qtype in ("WordBank", "FillInTheBlank"):
+            for entry in rt.get("r", []):
+                blank_id = entry.get("id")
+                if blank_id:
+                    raw_html = re.sub(rf'<[^>]*id="{blank_id}"[^>]*>(?:.*?</[^>]+>)?', "___", raw_html)
+        subtitle_text = strip_html(raw_html)
         if subtitle_text:
             subtitle_format = extract_text_format(rt.get("h", ""), rt.get("t"), "content")
 

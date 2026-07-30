@@ -296,6 +296,9 @@ def _slide_to_teky(
         return None  # Unknown type — skip
 
     question_text = _clean(slide_view.get("questionText", ""))
+    subtitle_text = _clean(slide_view.get("subtitleText", ""))
+    if subtitle_text and slide_view.get("type") in ("WordBank", "FillInTheBlank"):
+        question_text = f"{question_text}\n\n{subtitle_text}".strip()
 
     # Question-level image (first in slideImages)
     slide_images = slide_view.get("slideImages") or []

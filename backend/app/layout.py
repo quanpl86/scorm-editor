@@ -298,9 +298,15 @@ def extract_object_audio(obj: dict[str, Any], slide: dict[str, Any]) -> str | No
 def extract_object_html(obj: dict[str, Any], slide: dict[str, Any]) -> str:
     if obj.get("I") == "direction":
         return slide.get("D", {}).get("h", "") or ""
-    if obj.get("I") == "content" and slide.get("tp") == "IntroSlide":
+    if obj.get("I") == "content" and slide.get("tp") in ("IntroSlide", "WordBank", "FillInTheBlank"):
         rt = slide.get("C", {}).get("rt", {})
-        return rt.get("h") or rt.get("a") or ""
+        raw_html = rt.get("h") or rt.get("a") or ""
+        if slide.get("tp") in ("WordBank", "FillInTheBlank"):
+            for entry in rt.get("r", []):
+                blank_id = entry.get("id")
+                if blank_id:
+                    raw_html = re.sub(rf'<[^>]*id="{blank_id}"[^>]*>(?:.*?</[^>]+>)?', "___", raw_html)
+        return raw_html
     if "rt" in obj:
         return obj["rt"].get("h") or obj["rt"].get("a") or ""
     return ""
