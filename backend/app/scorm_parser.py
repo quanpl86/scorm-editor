@@ -187,7 +187,8 @@ def resolve_asset_path(session_id: str, filename: str) -> Path:
 def strip_html(text: str | None) -> str:
     if not text:
         return ""
-    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", html.unescape(text))).strip()
+    stripped = re.sub(r"<[^>]+>", "", text)
+    return re.sub(r"\s+", " ", html.unescape(stripped)).strip()
 
 
 def wrap_html(text: str, template: str | None = None, role: str = "content") -> str:

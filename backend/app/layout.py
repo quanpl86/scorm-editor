@@ -21,7 +21,8 @@ from .typography import (
 def strip_html(text: str | None) -> str:
     if not text:
         return ""
-    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", html.unescape(text))).strip()
+    stripped = re.sub(r"<[^>]+>", "", text)
+    return re.sub(r"\s+", " ", html.unescape(stripped)).strip()
 
 
 def image_path_from_storage(storage_uri: str) -> str | None:
