@@ -268,7 +268,7 @@ export function packageResUrl(sessionId, path) {
 export async function importCmsJson(file) {
   const formData = new FormData()
   formData.append('file', file)
-  const res = await fetch(`${API}/api/import/json`, {
+  const res = await fetch(`${API}/import/json`, {
     method: 'POST',
     body: formData
   })
