@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -117,8 +117,26 @@ def health():
     return {"status": "ok"}
 
 
+def cleanup_old_sessions():
+    import time
+    try:
+        now = time.time()
+        if not SESSIONS_ROOT.exists(): return
+        for item in SESSIONS_ROOT.iterdir():
+            try:
+                if now - item.stat().st_mtime > 24 * 3600:
+                    if item.is_dir():
+                        shutil.rmtree(item, ignore_errors=True)
+                    elif item.is_file():
+                        item.unlink(missing_ok=True)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
 @app.post("/api/import")
-async def import_scorm(file: UploadFile = File(...)):
+def import_scorm(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    background_tasks.add_task(cleanup_old_sessions)
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(400, "Vui lòng upload file .zip SCORM")
 
@@ -398,6 +416,7 @@ def import_tsv_to_lesson(payload: TsvLessonPublishPayload):
 
 @app.post("/api/import/tsv-zip-to-lesson")
 def import_tsv_zip_to_lesson(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     lessonCode: str = Form(...),
     overwrite: bool = Form(False),
@@ -409,6 +428,8 @@ def import_tsv_zip_to_lesson(
     import zipfile
     import tempfile
     import os
+
+    background_tasks.add_task(cleanup_old_sessions)
 
     fd, temp_path = tempfile.mkstemp(suffix=".zip")
     os.close(fd)
@@ -454,6 +475,7 @@ def import_tsv_zip_to_lesson(
 
 @app.post("/api/import/excel")
 def import_excel(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     quiz_title: str | None = Form(None),
     group_title: str = Form("Imported Questions"),
@@ -462,6 +484,7 @@ def import_excel(
         raise HTTPException(400, "Thiếu tên file")
 
     name = file.filename.lower()
+    background_tasks.add_task(cleanup_old_sessions)
     temp_root = SESSIONS_ROOT / f"excel_upload_{file.filename}"
     temp_root.mkdir(parents=True, exist_ok=True)
     temp_file = temp_root / Path(file.filename).name
