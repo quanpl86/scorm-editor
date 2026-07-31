@@ -2178,7 +2178,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const sid = sessionStorage.getItem('activeSessionId')
+    const sid = localStorage.getItem('activeSessionId')
     if (sid && !quiz) {
       setLoading(true)
       setLoadingMessage({ kind: 'scorm', text: 'Đang khôi phục phiên làm việc...' })
@@ -2197,7 +2197,7 @@ export default function App() {
         })
         .catch((e) => {
           console.warn('Cannot restore session', e)
-          sessionStorage.removeItem('activeSessionId')
+          localStorage.removeItem('activeSessionId')
         })
         .finally(() => setLoading(false))
     }
@@ -2292,7 +2292,7 @@ export default function App() {
         return
       }
       if (data?.sessionId) {
-        sessionStorage.setItem('activeSessionId', data.sessionId)
+        localStorage.setItem('activeSessionId', data.sessionId)
       }
       resetHistory(data)
       const firstImported = data.importReport?.find((r) => r.status === 'imported' && r.slideId)
@@ -2516,7 +2516,7 @@ export default function App() {
     return (
       <div className="app">
         <header className="header">
-          <h1 onClick={() => { sessionStorage.removeItem('activeSessionId'); window.location.reload(); }} style={{ cursor: 'pointer' }} title="Về trang chủ"><span>SCORM</span> Editor</h1>
+          <h1 onClick={() => { localStorage.removeItem('activeSessionId'); window.location.reload(); }} style={{ cursor: 'pointer' }} title="Về trang chủ"><span>SCORM</span> Editor</h1>
           <div className="header-actions">
             <select
               className="quiz-mode-selector"
@@ -2571,7 +2571,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1 onClick={() => { sessionStorage.removeItem('activeSessionId'); window.location.reload(); }} style={{ cursor: 'pointer' }} title="Về trang chủ"><span>SCORM</span> Editor</h1>
+        <h1 onClick={() => { localStorage.removeItem('activeSessionId'); window.location.reload(); }} style={{ cursor: 'pointer' }} title="Về trang chủ"><span>SCORM</span> Editor</h1>
         <div className="header-actions">
           <div className="header-actions-desktop-only">
             <select
