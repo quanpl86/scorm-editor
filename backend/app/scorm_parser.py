@@ -20,6 +20,14 @@ from xml.etree import ElementTree as ET
 
 from .fonts import extract_font_manifest
 from .layout import apply_question_layout_edit, extract_layout, image_path_from_html
+from .session_manager import (
+    SESSION_STORAGE_LIMIT_BYTES,
+    delete_session_dir,
+    ensure_storage_capacity,
+    session_lock,
+    storage_write_lock,
+    touch_session,
+)
 from .typography import (
     apply_html_to_node,
     apply_text_to_node,
@@ -29,7 +37,12 @@ from .typography import (
     strip_plain,
 )
 
-SESSIONS_ROOT = Path(__file__).resolve().parent.parent / "data" / "sessions"
+SESSIONS_ROOT = Path(
+    os.getenv(
+        "SESSIONS_ROOT",
+        str(Path(__file__).resolve().parent.parent / "data" / "sessions"),
+    )
+).expanduser().resolve()
 
 IMAGE_FOLDERS = ("res/data/images", "data/images", "images")
 AUDIO_FOLDERS = ("res/data/audios", "data/audios", "audios")
@@ -150,7 +163,7 @@ def ensure_media_registry(quiz_json: dict[str, Any], package_root: Path) -> None
 def atomic_write_text(path: Path, content: str) -> None:
     """Write file atomically so concurrent readers never see partial content."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
     try:
         tmp.write_text(content, encoding="utf-8")
         os.replace(tmp, path)
@@ -207,6 +220,24 @@ def wrap_html(text: str, template: str | None = None, role: str = "content") -> 
     return build_styled_html(text, "title" if role == "title" else "content")
 
 
+def safe_extract_zip(
+    archive: zipfile.ZipFile,
+    dest: Path,
+    *,
+    max_uncompressed_bytes: int = SESSION_STORAGE_LIMIT_BYTES,
+) -> None:
+    total = 0
+    destination = dest.resolve()
+    for info in archive.infolist():
+        total += max(0, info.file_size)
+        if total > max_uncompressed_bytes:
+            raise ValueError("Gói ZIP sau giải nén vượt giới hạn lưu trữ session")
+        target = (dest / info.filename).resolve()
+        if target != destination and destination not in target.parents:
+            raise ValueError(f"ZIP chứa đường dẫn không an toàn: {info.filename}")
+    archive.extractall(dest)
+
+
 def extract_scorm_package(source: Path, dest: Path) -> Path:
     """Extract SCORM zip (handles nested zip wrapper) into dest."""
     dest.mkdir(parents=True, exist_ok=True)
@@ -225,9 +256,9 @@ def extract_scorm_package(source: Path, dest: Path) -> Path:
             if len(names) == 1 and names[0].lower().endswith(".zip"):
                 inner_bytes = zf.read(names[0])
                 with zipfile.ZipFile(io.BytesIO(inner_bytes), "r") as inner:
-                    inner.extractall(dest)
+                    safe_extract_zip(inner, dest)
             else:
-                zf.extractall(dest)
+                safe_extract_zip(zf, dest)
         package_root = dest
 
     manifest = package_root / "imsmanifest.xml"
@@ -239,6 +270,23 @@ def extract_scorm_package(source: Path, dest: Path) -> Path:
             raise ValueError("Không tìm thấy imsmanifest.xml trong gói SCORM")
 
     return package_root
+
+
+def source_uncompressed_size(source: Path) -> int:
+    """Estimate persistent bytes before admitting a new session."""
+    if source.is_dir():
+        return sum(
+            item.stat().st_size
+            for item in source.rglob("*")
+            if item.is_file()
+        )
+    with zipfile.ZipFile(source, "r") as archive:
+        infos = archive.infolist()
+        if len(infos) == 1 and infos[0].filename.lower().endswith(".zip"):
+            inner_bytes = archive.read(infos[0])
+            with zipfile.ZipFile(io.BytesIO(inner_bytes), "r") as inner:
+                return sum(max(0, info.file_size) for info in inner.infolist())
+        return sum(max(0, info.file_size) for info in infos)
 
 
 def find_index_html(package_root: Path) -> Path:
@@ -1265,10 +1313,18 @@ class ScormSession:
 
     @classmethod
     def create_from_source(cls, source: Path) -> "ScormSession":
-        session_id = str(uuid.uuid4())
-        session_dir = SESSIONS_ROOT / session_id
-        package_root = extract_scorm_package(source, session_dir / "package")
-        return cls(session_id, package_root)
+        with storage_write_lock():
+            reserve_bytes = source_uncompressed_size(source)
+            ensure_storage_capacity(SESSIONS_ROOT, reserve_bytes=reserve_bytes)
+            session_id = str(uuid.uuid4())
+            session_dir = SESSIONS_ROOT / session_id
+            try:
+                package_root = extract_scorm_package(source, session_dir / "package")
+                ensure_storage_capacity(SESSIONS_ROOT, protected_ids={session_id})
+                return cls(session_id, package_root)
+            except Exception:
+                delete_session_dir(SESSIONS_ROOT, session_id)
+                raise
 
     def get_fonts(self) -> dict[str, Any]:
         return extract_font_manifest(self.quiz_json, self.package_root)
@@ -1578,7 +1634,9 @@ def _load_saved_quiz_json(session: ScormSession, package_root: Path) -> None:
 
 
 def get_session(session_id: str) -> ScormSession:
-    package_root = get_package_root(session_id)
-    session = ScormSession(session_id, package_root)
-    _load_saved_quiz_json(session, package_root)
-    return session
+    with session_lock(session_id):
+        package_root = get_package_root(session_id)
+        session = ScormSession(session_id, package_root)
+        _load_saved_quiz_json(session, package_root)
+        touch_session(SESSIONS_ROOT, session_id)
+        return session

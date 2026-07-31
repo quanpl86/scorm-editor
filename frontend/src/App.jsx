@@ -16,6 +16,7 @@ import {
   importTsvZipToLesson,
   saveSession,
   loadSession,
+  heartbeatSession,
   exportMedia,
   exportMediaLocal,
   uploadImage,
@@ -2256,6 +2257,26 @@ export default function App() {
     }
   }, [])
 
+  useEffect(() => {
+    const sessionId = quiz?.sessionId
+    if (!sessionId) return undefined
+
+    let stopped = false
+    const heartbeat = async () => {
+      try {
+        await heartbeatSession(sessionId)
+      } catch (err) {
+        if (!stopped) console.warn('Session heartbeat failed', err)
+      }
+    }
+    heartbeat()
+    const timer = window.setInterval(heartbeat, 5 * 60 * 1000)
+    return () => {
+      stopped = true
+      window.clearInterval(timer)
+    }
+  }, [quiz?.sessionId])
+
   const applySavedState = useCallback((savedView) => {
     setQuiz((prev) => {
       if (!savedView) {
@@ -2548,7 +2569,7 @@ export default function App() {
       
       showToast(`✅ Đã xuất JSON thành công! Phiên làm việc đã kết thúc. Để sửa lại, vui lòng Import lại file JSON này.`, 'success')
       
-      // Xoá session hoàn toàn ở frontend (Backend sẽ dọn rác tự động)
+      // Backend đã xoá session ngay sau khi gửi JSON thành công.
       localStorage.removeItem('activeSessionId')
       setTimeout(() => {
         setQuiz(null)

@@ -74,6 +74,22 @@ pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
+### 3.3. Session storage trên Render/production
+
+Mount Render Persistent Disk vào thư mục được cấu hình bởi `SESSIONS_ROOT`
+(ví dụ `/var/data/scorm-sessions`) và đặt:
+
+```bash
+SESSIONS_ROOT=/var/data/scorm-sessions
+SESSION_STORAGE_LIMIT_BYTES=1073741824
+SESSION_STORAGE_TARGET_RATIO=0.85
+SESSION_IDLE_TTL_SECONDS=7200
+SESSION_CLEANUP_INTERVAL_SECONDS=600
+```
+
+Trình duyệt gửi heartbeat mỗi 5 phút. Session không còn heartbeat sẽ được xóa
+sau khoảng 2 giờ; session được xóa ngay sau khi export CMS JSON thành công.
+
 ## 4. Quy ước đặt tên khi Export Ảnh (Image Export Naming Conventions)
 Hệ thống hỗ trợ 8 dạng câu hỏi/slide chính. Khi người dùng thực hiện xuất ảnh (Export) trên ứng dụng, thuật toán sẽ tự động phân loại và gán hậu tố tên file dựa trên dạng câu hỏi và vị trí của hình ảnh để tránh trùng lặp:
 

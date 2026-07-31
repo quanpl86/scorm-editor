@@ -271,30 +271,42 @@ def extract_object_image(obj: dict[str, Any], slide: dict[str, Any]) -> str | No
 def extract_object_video(obj: dict[str, Any], slide: dict[str, Any]) -> str | None:
     if obj.get("tp") == "slideVideo":
         vid = slide.get("at", {}).get("v", {}).get("i", "")
+        if str(vid).startswith(("http://", "https://")):
+            return str(vid)
         match = re.search(r"storage://videos/([^\"]+)", vid)
         if match:
             return match.group(1)
-            
+
+    direct = obj.get("i") or obj.get("video") or ""
+    if str(direct).startswith(("http://", "https://")):
+        return str(direct)
+
     raw = json.dumps(obj, ensure_ascii=False)
     match = re.search(r"storage://videos/([^\"]+)", raw)
     if match:
         return match.group(1)
-        
+
     return None
 
 
 def extract_object_audio(obj: dict[str, Any], slide: dict[str, Any]) -> str | None:
     if obj.get("tp") == "slideAudio":
         aud = slide.get("at", {}).get("a", {}).get("i", "")
+        if str(aud).startswith(("http://", "https://")):
+            return str(aud)
         match = re.search(r"storage://sounds/([^\"]+)", aud)
         if match:
             return match.group(1)
-            
+
+    direct = obj.get("i") or obj.get("audio") or ""
+    if str(direct).startswith(("http://", "https://")):
+        return str(direct)
+
     raw = json.dumps(obj, ensure_ascii=False)
     match = re.search(r"storage://sounds/([^\"]+)", raw)
     if match:
         return match.group(1)
-        
+
     return None
 
 
@@ -1242,10 +1254,12 @@ def _resolve_import_media_overlap(slide: dict[str, Any]) -> None:
 
     content_r = content.setdefault("r", {})
 
+    tall_content = False
     if picture and has_image:
         tall_content = float(content_r.get("h", 0)) > 220
         if qtype in ("Matching", "Sequence"):
             cursor_y = _place_center_picture(picture, top_y=cursor_y, max_h=96) + IMPORT_GAP
+            tall_content = False
         elif tall_content:
             _place_corner_picture(picture, top_y=dir_r["y"] + dir_r["h"] + IMPORT_GAP)
             content_r["w"] = round(float(picture["r"]["x"]) - IMPORT_MARGIN - IMPORT_GAP, 2)
@@ -1253,14 +1267,16 @@ def _resolve_import_media_overlap(slide: dict[str, Any]) -> None:
         else:
             cursor_y = _place_center_picture(picture, top_y=cursor_y) + IMPORT_GAP
 
+    content_r["x"] = IMPORT_MARGIN
+    if not tall_content:
+        content_r["w"] = CANVAS_W - 2 * IMPORT_MARGIN
+
     if _rect_bottom(dir_r) + IMPORT_GAP > float(content_r.get("y", 0)) - 1:
         content_r["y"] = round(cursor_y, 2)
 
     if picture and has_image and _rects_overlap_error(content_r, picture["r"]):
         content_r["y"] = round(_rect_bottom(picture["r"]) + IMPORT_GAP, 2)
 
-    content_r["x"] = IMPORT_MARGIN
-    content_r["w"] = CANVAS_W - 2 * IMPORT_MARGIN
     max_content_h = CANVAS_H - float(content_r["y"]) - IMPORT_MARGIN
     if float(content_r.get("h", 0)) > max_content_h:
         content_r["h"] = round(max(48, max_content_h), 2)

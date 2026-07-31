@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import shutil
 import ssl
 import urllib.error
 import urllib.request
 import uuid
 import zipfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
@@ -31,6 +33,18 @@ from .scorm_parser import (
     get_session,
     quiz_to_view,
     resolve_asset_path,
+    safe_extract_zip,
+    source_uncompressed_size,
+)
+from .session_manager import (
+    SESSION_CLEANUP_INTERVAL_SECONDS,
+    SessionStorageFullError,
+    cleanup_sessions,
+    delete_session_dir,
+    ensure_storage_capacity,
+    session_lock,
+    storage_write_lock,
+    touch_session,
 )
 from .tsv_snlt_publish import (
     TsvPublishError,
@@ -38,7 +52,41 @@ from .tsv_snlt_publish import (
     split_combined_tsv,
 )
 
-app = FastAPI(title="SCORM Editor", version="1.0.0")
+_cleanup_task: asyncio.Task | None = None
+
+
+def cleanup_old_sessions():
+    try:
+        return cleanup_sessions(SESSIONS_ROOT)
+    except Exception:
+        return {"removed": 0, "freedBytes": 0, "remainingBytes": 0}
+
+
+async def _periodic_session_cleanup() -> None:
+    while True:
+        await asyncio.sleep(SESSION_CLEANUP_INTERVAL_SECONDS)
+        await asyncio.to_thread(cleanup_old_sessions)
+
+
+@asynccontextmanager
+async def app_lifespan(_: FastAPI):
+    global _cleanup_task
+    SESSIONS_ROOT.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(cleanup_old_sessions)
+    _cleanup_task = asyncio.create_task(_periodic_session_cleanup())
+    try:
+        yield
+    finally:
+        if _cleanup_task:
+            _cleanup_task.cancel()
+            try:
+                await _cleanup_task
+            except asyncio.CancelledError:
+                pass
+            _cleanup_task = None
+
+
+app = FastAPI(title="SCORM Editor", version="1.0.0", lifespan=app_lifespan)
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 
@@ -112,55 +160,63 @@ class TsvLessonPublishPayload(BaseModel):
     groupTitle: str = "Imported Questions"
 
 
+CMS_EDITOR_CONFIG_FIELDS = (
+    "id",
+    "title",
+    "description",
+    "subject",
+    "targetLesson",
+    "difficultyLevel",
+    "tags",
+    "createdBy",
+    "createdByName",
+    "isPublic",
+    "duration",
+    "settings",
+    "createdAt",
+    "updatedAt",
+)
+
+
+def merge_cms_config_into_editor_state(
+    quiz_obj: dict[str, Any],
+    editor_state: dict[str, Any],
+) -> dict[str, Any]:
+    """Keep the CMS-facing configuration when a JSON export is reopened."""
+    import copy
+
+    merged = copy.deepcopy(editor_state)
+    teky = merged.setdefault("_teky", {})
+    for field in CMS_EDITOR_CONFIG_FIELDS:
+        if field in quiz_obj:
+            teky[field] = copy.deepcopy(quiz_obj[field])
+    if quiz_obj.get("coverImageUrl"):
+        teky["coverImage"] = quiz_obj["coverImageUrl"]
+        teky["coverImageUrl"] = quiz_obj["coverImageUrl"]
+    if quiz_obj.get("title"):
+        merged.setdefault("d", {})["T"] = quiz_obj["title"]
+    return merged
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
 
 
-def cleanup_old_sessions():
-    import time
+def _ensure_capacity_or_507(*, reserve_bytes: int = 0, protected_ids: set[str] | None = None) -> None:
     try:
-        now = time.time()
-        if not SESSIONS_ROOT.exists(): return
-        # 1. Xóa các session cũ hơn 4 giờ
-        for item in SESSIONS_ROOT.iterdir():
-            try:
-                if now - item.stat().st_mtime > 4 * 3600:
-                    if item.is_dir():
-                        shutil.rmtree(item, ignore_errors=True)
-                    elif item.is_file():
-                        item.unlink(missing_ok=True)
-            except Exception:
-                pass
-                
-        # 2. Kiểm tra dung lượng ổ đĩa, nếu > 70% thì xóa bớt phân nửa session cũ nhất
-        usage = shutil.disk_usage(SESSIONS_ROOT)
-        if usage.used / usage.total > 0.70:
-            items = []
-            for item in SESSIONS_ROOT.iterdir():
-                try:
-                    items.append((item.stat().st_mtime, item))
-                except Exception:
-                    pass
-            
-            # Sắp xếp từ cũ nhất đến mới nhất
-            items.sort(key=lambda x: x[0])
-            
-            # Xóa một nửa số session cũ nhất để giải phóng
-            for _, item in items[:len(items)//2 + 1]:
-                try:
-                    if item.is_dir():
-                        shutil.rmtree(item, ignore_errors=True)
-                    elif item.is_file():
-                        item.unlink(missing_ok=True)
-                except Exception:
-                    pass
-    except Exception:
-        pass
+        ensure_storage_capacity(
+            SESSIONS_ROOT,
+            reserve_bytes=reserve_bytes,
+            protected_ids=protected_ids,
+        )
+    except SessionStorageFullError as exc:
+        raise HTTPException(507, str(exc)) from exc
+
 
 @app.post("/api/import/json")
 def import_cms_json(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
-    background_tasks.add_task(cleanup_old_sessions)
+    _ensure_capacity_or_507(reserve_bytes=int(file.size or 0))
     if not file.filename.endswith(".json"):
         raise HTTPException(400, "Vui lòng chọn file .json CMS")
     
@@ -183,21 +239,32 @@ def import_cms_json(background_tasks: BackgroundTasks, file: UploadFile = File(.
         if "d" not in editor_state or "sl" not in editor_state.get("d", {}):
             raise HTTPException(400, "File JSON này thuộc phiên bản Beta (lưu trữ dưới dạng View) không tương thích để phục hồi. Vui lòng sử dụng bản Export mới nhất.")
 
+        editor_state = merge_cms_config_into_editor_state(quiz_obj, editor_state)
+
         # Create a new stateless session
-        session_id = str(uuid.uuid4())
-        session_dir = SESSIONS_ROOT / session_id
-        session_dir.mkdir(parents=True, exist_ok=True)
-        package_dir = session_dir / "package"
-        package_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Save the stateless editor state as quiz_data.json
-        with open(package_dir / "quiz_data.json", "w", encoding="utf-8") as f:
-            json.dump(editor_state, f, ensure_ascii=False)
-            
-        session = get_session(session_id)
+        with storage_write_lock():
+            _ensure_capacity_or_507(reserve_bytes=len(content))
+            session_id = str(uuid.uuid4())
+            session_dir = SESSIONS_ROOT / session_id
+            session_dir.mkdir(parents=True, exist_ok=True)
+            package_dir = session_dir / "package"
+            package_dir.mkdir(parents=True, exist_ok=True)
+
+            # Save the stateless editor state as quiz_data.json
+            with open(package_dir / "quiz_data.json", "w", encoding="utf-8") as f:
+                json.dump(editor_state, f, ensure_ascii=False)
+
+            session = get_session(session_id)
+            try:
+                _ensure_capacity_or_507(protected_ids={session_id})
+            except HTTPException:
+                delete_session_dir(SESSIONS_ROOT, session_id)
+                raise
         view = session.get_view()
         view["importSummary"] = {"imported": len(view.get("questions", [])), "total": len(view.get("questions", []))}
         return view
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -205,22 +272,25 @@ def import_cms_json(background_tasks: BackgroundTasks, file: UploadFile = File(.
 
 @app.post("/api/import")
 def import_scorm(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
-    background_tasks.add_task(cleanup_old_sessions)
+    _ensure_capacity_or_507(reserve_bytes=int(file.size or 0))
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(400, "Vui lòng upload file .zip SCORM")
 
-    temp_zip = SESSIONS_ROOT / f"upload_{uuid.uuid4().hex[:8]}_{file.filename}"
-    SESSIONS_ROOT.mkdir(parents=True, exist_ok=True)
-    with temp_zip.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    try:
-        session = ScormSession.create_from_source(temp_zip)
-        return session.get_view()
-    except Exception as exc:
-        raise HTTPException(400, f"Không thể đọc gói SCORM: {exc}") from exc
-    finally:
-        if temp_zip.exists():
-            temp_zip.unlink()
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="scorm-upload-") as temp_dir:
+        temp_zip = Path(temp_dir) / Path(file.filename).name
+        with temp_zip.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        try:
+            session = ScormSession.create_from_source(temp_zip)
+            return session.get_view()
+        except SessionStorageFullError as exc:
+            raise HTTPException(507, str(exc)) from exc
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(400, f"Không thể đọc gói SCORM: {exc}") from exc
 
 
 def _find_excel_file(root: Path) -> Path | None:
@@ -263,7 +333,7 @@ def build_cms_export_filename(
     return f"[{code}] {lesson}.json"
 
 
-def _create_quiz_from_excel(
+def _create_quiz_from_excel_unlocked(
     excel_path: Path,
     *,
     excel_dir: Path,
@@ -271,6 +341,7 @@ def _create_quiz_from_excel(
     group_title: str = "Imported Questions",
     lesson_code: str | None = None,
 ) -> dict:
+    _ensure_capacity_or_507()
     if not MASTER_SCORM.exists():
         raise HTTPException(
             500,
@@ -317,6 +388,12 @@ def _create_quiz_from_excel(
     session.quiz_json = quiz_json
     ensure_media_registry(session.quiz_json, session.package_root)
     session.persist()
+    touch_session(SESSIONS_ROOT, session.session_id)
+    try:
+        _ensure_capacity_or_507(protected_ids={session.session_id})
+    except HTTPException:
+        delete_session_dir(SESSIONS_ROOT, session.session_id)
+        raise
     view = session.get_view()
     view["importReport"] = report
     imported = sum(1 for r in report if r.get("status") == "imported")
@@ -344,6 +421,31 @@ def _create_quiz_from_excel(
         "quizTitle": quiz_title or teky_quiz.get("title") or view.get("title"),
     }
     return view
+
+
+def _create_quiz_from_excel(
+    excel_path: Path,
+    *,
+    excel_dir: Path,
+    quiz_title: str | None = None,
+    group_title: str = "Imported Questions",
+    lesson_code: str | None = None,
+) -> dict:
+    # Reserve conservatively for the master package plus all nearby import media.
+    # The lock only covers persistent writes; users can still edit/read independent
+    # sessions concurrently after admission.
+    reserve = source_uncompressed_size(MASTER_SCORM)
+    if excel_dir.is_dir():
+        reserve += source_uncompressed_size(excel_dir)
+    with storage_write_lock():
+        _ensure_capacity_or_507(reserve_bytes=reserve)
+        return _create_quiz_from_excel_unlocked(
+            excel_path,
+            excel_dir=excel_dir,
+            quiz_title=quiz_title,
+            group_title=group_title,
+            lesson_code=lesson_code,
+        )
 
 
 @app.get("/api/import/excel/templates")
@@ -498,7 +600,7 @@ def import_tsv_zip_to_lesson(
     import tempfile
     import os
 
-    background_tasks.add_task(cleanup_old_sessions)
+    _ensure_capacity_or_507(reserve_bytes=int(file.size or 0))
 
     fd, temp_path = tempfile.mkstemp(suffix=".zip")
     os.close(fd)
@@ -553,23 +655,23 @@ def import_excel(
         raise HTTPException(400, "Thiếu tên file")
 
     name = file.filename.lower()
-    background_tasks.add_task(cleanup_old_sessions)
-    temp_root = SESSIONS_ROOT / f"excel_upload_{file.filename}"
-    temp_root.mkdir(parents=True, exist_ok=True)
-    temp_file = temp_root / Path(file.filename).name
+    _ensure_capacity_or_507(reserve_bytes=int(file.size or 0))
+    import tempfile
 
-    with temp_file.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    with tempfile.TemporaryDirectory(prefix="excel-upload-") as temp_dir:
+        temp_root = Path(temp_dir)
+        temp_file = temp_root / Path(file.filename).name
+        with temp_file.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
 
-    if temp_file.stat().st_size == 0:
-        raise HTTPException(400, "File rỗng")
+        if temp_file.stat().st_size == 0:
+            raise HTTPException(400, "File rỗng")
 
-    try:
         if name.endswith(".zip"):
             extract_dir = temp_root / "extracted"
             extract_dir.mkdir(parents=True, exist_ok=True)
             with zipfile.ZipFile(temp_file, "r") as zf:
-                zf.extractall(extract_dir)
+                safe_extract_zip(zf, extract_dir)
             excel_path = _find_excel_file(extract_dir)
             if not excel_path:
                 raise HTTPException(400, "Zip không chứa file .xls hoặc .xlsx")
@@ -580,21 +682,19 @@ def import_excel(
         else:
             raise HTTPException(400, "Chỉ hỗ trợ .xls, .xlsx hoặc .zip (Excel + thư mục media)")
 
-        return _create_quiz_from_excel(
-            excel_path,
-            excel_dir=excel_dir,
-            quiz_title=quiz_title,
-            group_title=group_title or "Imported Questions",
-        )
-    except HTTPException:
-        raise
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(400, f"Không thể import Excel: {exc}") from exc
-    finally:
-        if temp_root.exists():
-            shutil.rmtree(temp_root, ignore_errors=True)
+        try:
+            return _create_quiz_from_excel(
+                excel_path,
+                excel_dir=excel_dir,
+                quiz_title=quiz_title,
+                group_title=group_title or "Imported Questions",
+            )
+        except HTTPException:
+            raise
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(400, f"Không thể import Excel: {exc}") from exc
 
 
 @app.post("/api/import/excel/sample")
@@ -668,10 +768,16 @@ def import_excel_media_sample(
 @app.post("/api/import/sample")
 def import_sample(source: str = "zip"):
     try:
+        _ensure_capacity_or_507()
         src = SAMPLE_ZIP if source == "zip" else SAMPLE_DIR
         if not src.exists():
             raise HTTPException(404, f"File mẫu không tồn tại: {src}")
         session = ScormSession.create_from_source(src)
+        try:
+            _ensure_capacity_or_507(protected_ids={session.session_id})
+        except HTTPException:
+            delete_session_dir(SESSIONS_ROOT, session.session_id)
+            raise
         return session.get_view()
     except HTTPException:
         raise
@@ -690,8 +796,21 @@ def get_session_view(session_id: str):
 @app.put("/api/session/{session_id}")
 def save_session(session_id: str, payload: SavePayload):
     try:
-        session = get_session(session_id)
-        return session.save_view(payload.model_dump())
+        payload_data = payload.model_dump()
+        import json as _json
+
+        reserve = len(_json.dumps(payload_data, ensure_ascii=False).encode("utf-8"))
+        with storage_write_lock():
+            _ensure_capacity_or_507(
+                reserve_bytes=reserve,
+                protected_ids={session_id},
+            )
+            with session_lock(session_id):
+                session = get_session(session_id)
+                saved = session.save_view(payload_data)
+                touch_session(SESSIONS_ROOT, session_id)
+                _ensure_capacity_or_507(protected_ids={session_id})
+                return saved
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc)) from exc
     except Exception as exc:
@@ -711,10 +830,15 @@ def get_asset(session_id: str, filename: str):
 @app.post("/api/session/{session_id}/asset/{filename}")
 async def upload_asset(session_id: str, filename: str, s3: bool = False, file: UploadFile = File(...)):
     try:
-        session = get_session(session_id)
         content = await file.read()
-        saved = session.replace_image(filename, content)
-        session.persist()
+        with storage_write_lock():
+            _ensure_capacity_or_507(reserve_bytes=len(content), protected_ids={session_id})
+            with session_lock(session_id):
+                session = get_session(session_id)
+                saved = session.replace_image(filename, content)
+                session.persist()
+                touch_session(SESSIONS_ROOT, session_id)
+                _ensure_capacity_or_507(protected_ids={session_id})
 
         s3_warning = None
         if s3:
@@ -744,6 +868,16 @@ async def upload_asset(session_id: str, filename: str, s3: bool = False, file: U
         if s3_warning:
             result["warning"] = s3_warning
         return result
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.post("/api/session/{session_id}/heartbeat")
+def heartbeat_session(session_id: str):
+    try:
+        get_session(session_id)
+        touch_session(SESSIONS_ROOT, session_id)
+        return {"ok": True}
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc)) from exc
 
@@ -954,15 +1088,17 @@ def export_cms_json_local(session_id: str, request: Request):
     and save directly to JSON-EXPORT/ beside ImportTemplate/ in the project.
     """
     from pathlib import Path
-    
+    completed = False
     try:
-        cms_content, filename, quiz_obj, quiz_view, cover_url, export_warnings, lesson_code, target_lesson = _generate_cms_json(session_id, request)
+        with session_lock(session_id):
+            cms_content, filename, quiz_obj, quiz_view, cover_url, export_warnings, lesson_code, target_lesson = _generate_cms_json(session_id, request)
 
         target_dir = JSON_EXPORT_DIR
         target_dir.mkdir(parents=True, exist_ok=True)
 
         target_file = target_dir / filename
         target_file.write_text(cms_content, encoding="utf-8")
+        completed = True
 
         q_count = len(quiz_obj.get("questions", []))
         return {
@@ -980,6 +1116,9 @@ def export_cms_json_local(session_id: str, request: Request):
         raise
     except Exception as exc:
         raise HTTPException(400, f"Lỗi export Teky JSON: {exc}") from exc
+    finally:
+        if completed:
+            delete_session_dir(SESSIONS_ROOT, session_id)
 
 @app.post("/api/session/{session_id}/export-project")
 def export_session_project(session_id: str):
@@ -988,13 +1127,11 @@ def export_session_project(session_id: str):
     This reverse-parses the current SCORM session JSON and builds a standard Teky LMS Excel file,
     along with a media folder containing all referenced assets.
     """
-    session = get_session(session_id)
-    if not session:
-        raise HTTPException(404, "Session không tồn tại")
-    
     from .excel_exporter import export_session_to_excel_zip
     try:
-        temp_zip_path, safe_title = export_session_to_excel_zip(session)
+        with session_lock(session_id):
+            session = get_session(session_id)
+            temp_zip_path, safe_title = export_session_to_excel_zip(session)
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -1013,7 +1150,8 @@ def export_cms_json(session_id: str, request: Request):
     Export all questions from SCORM quiz as Teky-school JSON and download it.
     """
     try:
-        cms_content, filename, quiz_obj, quiz_view, cover_url, export_warnings, lesson_code, target_lesson = _generate_cms_json(session_id, request)
+        with session_lock(session_id):
+            cms_content, filename, quiz_obj, quiz_view, cover_url, export_warnings, lesson_code, target_lesson = _generate_cms_json(session_id, request)
         
         from urllib.parse import quote
         safe_filename = quote(filename.encode("utf-8"))
@@ -1026,6 +1164,7 @@ def export_cms_json(session_id: str, request: Request):
                 "X-Export-Filename": safe_filename,
                 "Access-Control-Expose-Headers": "X-Export-Filename"
             },
+            background=BackgroundTask(delete_session_dir, SESSIONS_ROOT, session_id),
         )
     except HTTPException:
         raise
@@ -1103,10 +1242,7 @@ def export_single_media_local(session_id: str, payload: SingleMediaExportPayload
 
 @app.delete("/api/session/{session_id}")
 def delete_session(session_id: str):
-    path = SESSIONS_ROOT / session_id
-    if path.exists():
-        shutil.rmtree(path)
-    return {"deleted": True}
+    return {"deleted": delete_session_dir(SESSIONS_ROOT, session_id)}
 
 
 @app.get("/api/session/{session_id}/preview/player")

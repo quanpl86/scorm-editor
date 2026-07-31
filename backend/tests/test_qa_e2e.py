@@ -11,7 +11,13 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.quiz_builder import IMPORT_TEMPLATE_DIR, MASTER_SCORM
-from app.scorm_parser import ScormSession, decode_quiz_data, find_index_html, strip_html
+from app.scorm_parser import (
+    SESSIONS_ROOT,
+    ScormSession,
+    decode_quiz_data,
+    find_index_html,
+    strip_html,
+)
 from tests.qa_helpers import (
     count_questions,
     import_excel_into_session,
@@ -209,11 +215,11 @@ def test_exported_zip_reopens_as_new_session(master_available):
         master_source=MASTER_SCORM,
         quiz_title="Reopen Test",
     )
-    zip_bytes = session.export_zip("Reopen Test")
+    exported_zip = session.export_zip("Reopen Test")
 
     with tempfile.TemporaryDirectory() as tmp:
         zip_path = Path(tmp) / "reopen.zip"
-        zip_path.write_bytes(zip_bytes)
+        zip_path.write_bytes(exported_zip.read_bytes())
         reopened = ScormSession.create_from_source(zip_path)
         view = reopened.get_view()
         assert view["questionCount"] >= 8
@@ -246,3 +252,18 @@ def test_reporting_settings_survive_save_export(master_available):
     reporting = quiz.get("d", {}).get("s", {}).get("r", {})
     assert reporting.get("ss", {}).get("e") is True
     assert reporting.get("ads", {}).get("em") == "qa@example.com"
+
+
+def test_cms_json_download_deletes_completed_session(master_available, monkeypatch):
+    monkeypatch.setattr("app.s3_service.upload_file_to_s3", lambda _path: None)
+    session = ScormSession.create_from_source(MASTER_SCORM)
+    session.persist()
+    session_dir = SESSIONS_ROOT / session.session_id
+    assert session_dir.is_dir()
+
+    response = client.post(f"/api/session/{session.session_id}/export-cms-json")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert isinstance(response.json(), list)
+    assert not session_dir.exists()

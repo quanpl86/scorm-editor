@@ -77,8 +77,9 @@ def view_to_save_payload(view: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def validate_scorm_zip(zip_bytes: bytes) -> dict[str, Any]:
+def validate_scorm_zip(zip_source: bytes | Path) -> dict[str, Any]:
     """Extract exported zip and verify LMS-ready SCORM 1.2 structure."""
+    zip_bytes = zip_source.read_bytes() if isinstance(zip_source, Path) else zip_source
     if len(zip_bytes) < 1024:
         raise AssertionError("Export zip quá nhỏ")
 

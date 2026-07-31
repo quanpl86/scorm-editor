@@ -138,6 +138,12 @@ export async function loadSession(sessionId) {
   return res.json()
 }
 
+export async function heartbeatSession(sessionId) {
+  const res = await fetch(`${API}/session/${sessionId}/heartbeat`, { method: 'POST' })
+  if (!res.ok) throw new Error((await res.json()).detail || 'Session không còn tồn tại')
+  return res.json()
+}
+
 export async function saveSession(sessionId, payload) {
   const res = await fetch(`${API}/session/${sessionId}`, {
     method: 'PUT',

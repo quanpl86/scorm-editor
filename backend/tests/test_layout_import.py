@@ -7,7 +7,12 @@ import re
 import pytest
 
 from app.excel_import import parse_excel_file
-from app.layout import extract_layout, extract_slide_attachment_image
+from app.layout import (
+    extract_layout,
+    extract_object_audio,
+    extract_object_video,
+    extract_slide_attachment_image,
+)
 from app.quiz_builder import IMPORT_TEMPLATE_DIR, MASTER_SCORM, build_quiz_from_excel
 from app.scorm_parser import ScormSession
 
@@ -55,6 +60,16 @@ def test_slide_attachment_accepts_remote_image_url(scheme):
     slide = {"at": {"i": {"i": image_url}}}
 
     assert extract_slide_attachment_image(slide) == image_url
+
+
+def test_slide_attachments_accept_remote_video_and_audio_urls():
+    video_url = "https://cdn.example.com/question.mp4"
+    audio_url = "https://cdn.example.com/question.mp3"
+    video_slide = {"at": {"v": {"i": video_url}}}
+    audio_slide = {"at": {"a": {"i": audio_url}}}
+
+    assert extract_object_video({"tp": "slideVideo"}, video_slide) == video_url
+    assert extract_object_audio({"tp": "slideAudio"}, audio_slide) == audio_url
 
 
 def test_imported_slides_have_no_layout_overlap_errors(sample_import):
