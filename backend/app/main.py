@@ -158,6 +158,48 @@ def cleanup_old_sessions():
     except Exception:
         pass
 
+@app.post("/api/import/json")
+def import_cms_json(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    background_tasks.add_task(cleanup_old_sessions)
+    if not file.filename.endswith(".json"):
+        raise HTTPException(400, "Vui lòng chọn file .json CMS")
+    
+    import json
+    content = file.file.read()
+    try:
+        data = json.loads(content)
+        # Handle both single object or array
+        if isinstance(data, list) and len(data) > 0:
+            quiz_obj = data[0]
+        elif isinstance(data, dict):
+            quiz_obj = data
+        else:
+            raise HTTPException(400, "Cấu trúc JSON không hợp lệ.")
+            
+        editor_state = quiz_obj.get("_scormEditorState")
+        if not editor_state:
+            raise HTTPException(400, "File JSON không chứa dữ liệu gốc của SCORM Editor (thiếu _scormEditorState). Vui lòng dùng tính năng Import TSV/Excel nếu đây là file từ nguồn khác.")
+        
+        # Create a new stateless session
+        session_id = str(uuid.uuid4())
+        session_dir = SESSIONS_ROOT / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save the stateless editor state as session.json
+        with open(session_dir / "session.json", "w", encoding="utf-8") as f:
+            json.dump(editor_state, f, ensure_ascii=False)
+            
+        return {
+            "sessionId": session_id,
+            "questionCount": len(editor_state.get("questions", [])),
+            "introSlide": editor_state.get("introSlide") is not None,
+            "importSummary": {"imported": len(editor_state.get("questions", [])), "total": len(editor_state.get("questions", []))}
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(400, f"Lỗi đọc file JSON: {str(e)}")
+
 @app.post("/api/import")
 def import_scorm(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     background_tasks.add_task(cleanup_old_sessions)
@@ -798,6 +840,27 @@ def _generate_cms_json(session_id: str, request: Request):
                     break
 
         quiz_obj = quiz_to_cms_json(quiz_view, session_id, base_url=base, s3_uploader=handle_s3_upload)
+
+        import copy
+        stateless_view = copy.deepcopy(quiz_view)
+        
+        def _replace_s3_urls(obj):
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if isinstance(v, str) and v in upload_cache and upload_cache[v]:
+                        obj[k] = upload_cache[v]
+                    else:
+                        _replace_s3_urls(v)
+            elif isinstance(obj, list):
+                for i in range(len(obj)):
+                    v = obj[i]
+                    if isinstance(v, str) and v in upload_cache and upload_cache[v]:
+                        obj[i] = upload_cache[v]
+                    else:
+                        _replace_s3_urls(v)
+        
+        _replace_s3_urls(stateless_view)
+        quiz_obj["_scormEditorState"] = stateless_view
 
         cover_url = quiz_obj.get("coverImageUrl") or ""
         export_warnings: list[str] = []

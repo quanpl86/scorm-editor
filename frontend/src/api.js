@@ -265,3 +265,16 @@ export function previewPlayerUrl(sessionId, options = {}) {
 export function packageResUrl(sessionId, path) {
   return `${API}/session/${sessionId}/res/${path}`
 }
+export async function importCmsJson(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await fetch(`${API_URL}/api/import/json`, {
+    method: 'POST',
+    body: formData
+  })
+  if (!res.ok) {
+    const data = await res.json()
+    throw new Error(data.detail || 'Failed to import CMS JSON')
+  }
+  return res.json()
+}

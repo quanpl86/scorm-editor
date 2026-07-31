@@ -3,6 +3,7 @@ import {
   assetUrl,
   exportCmsJson,
   exportSession,
+  importCmsJson,
   importExcel,
   excelTemplateDownloadUrl,
   fetchExcelTemplates,
@@ -588,6 +589,7 @@ const IMPORT_TABS = [
   { id: 'tsv', label: 'TSV → Excel', short: 'TSV', icon: '📋' },
   { id: 'excel', label: 'Tạo quiz từ Excel', short: 'Excel', icon: '📊' },
   { id: 'scorm', label: 'Chỉnh sửa SCORM Zip', short: 'SCORM', icon: '📦' },
+  { id: 'json', label: 'Tải lại CMS JSON', short: 'JSON', icon: '📝' },
 ]
 
 const QUIZ_SETTINGS_META = {
@@ -728,6 +730,11 @@ function ImportPage({ onImport, loading, loadingMessage, error, errorKind, impor
   const handleScormFile = async (file) => {
     if (!file?.name?.toLowerCase().endsWith('.zip')) return
     await onImport(() => importZip(file), { kind: 'scorm' })
+  }
+
+  const handleCmsJsonFile = async (file) => {
+    if (!file?.name?.toLowerCase().endsWith('.json')) return
+    await onImport(() => importCmsJson(file), { kind: 'scorm' })
   }
 
   const handleExcelFile = async (file) => {
@@ -1493,6 +1500,52 @@ function ImportPage({ onImport, loading, loadingMessage, error, errorKind, impor
               >
                 Load mẫu thư mục
               </button>
+            </div>
+          </section>
+        )}
+
+        {/* —— Tab: CMS JSON —— */}
+        {importTab === 'json' && (
+          <section
+            className="import-tab-panel"
+            role="tabpanel"
+            id="import-panel-json"
+            aria-labelledby="import-tab-json"
+          >
+            <p className="import-section-hint import-section-hint-left">
+              Import lại file CMS JSON đã xuất bản (hỗ trợ khôi phục tiến trình làm việc dang dở).
+            </p>
+
+            <div
+              className={`dropzone ${scormDrag ? 'dragover' : ''} ${loading ? 'is-loading' : ''}`}
+              onClick={() => !loading && scormInputRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); if (!loading) setScormDrag(true) }}
+              onDragLeave={() => setScormDrag(false)}
+              onDrop={(e) => {
+                e.preventDefault()
+                setScormDrag(false)
+                if (!loading) handleCmsJsonFile(e.dataTransfer.files[0])
+              }}
+            >
+              {loading && loadingMessage?.kind === 'scorm' && (
+                <div className="dropzone-loading">
+                  <div className="spinner" />
+                  <span>{loadingMessage.text}</span>
+                </div>
+              )}
+              <div className="dropzone-icon">📝</div>
+              <div className="dropzone-text">
+                {loading ? 'Đang đọc JSON...' : 'Kéo thả file .json hoặc bấm để chọn'}
+              </div>
+              <div className="dropzone-hint">Chỉ hỗ trợ file JSON xuất từ Teky Editor</div>
+              <input
+                ref={scormInputRef}
+                type="file"
+                accept=".json"
+                hidden
+                disabled={loading}
+                onChange={(e) => handleCmsJsonFile(e.target.files[0])}
+              />
             </div>
           </section>
         )}
@@ -2493,7 +2546,13 @@ export default function App() {
       a.click()
       URL.revokeObjectURL(url)
       
-      showToast(`✅ Đã tải xuống file ${filename || 'JSON'} thành công`)
+      showToast(`✅ Đã xuất JSON thành công! Phiên làm việc đã kết thúc. Để sửa lại, vui lòng Import lại file JSON này.`, 'success')
+      
+      // Xoá session hoàn toàn ở frontend (Backend sẽ dọn rác tự động)
+      localStorage.removeItem('activeSessionId')
+      setTimeout(() => {
+        setQuiz(null)
+      }, 3000)
     } catch (err) {
       showToast(err.message, 'error')
     } finally {
