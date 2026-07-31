@@ -34,22 +34,9 @@ def export_session_to_excel_zip(session: ScormSession) -> tuple[Path, str]:
 
     wb = openpyxl.Workbook()
     
-    # 1. Settings Sheet
-    ws_settings = wb.active
-    ws_settings.title = "Quiz Settings"
-    ws_settings.append(["Field", "Value", "Description"])
-    
-    settings_data = [
-        ("Quiz Title", view.get("title") or "", "Tên bài kiểm tra"),
-        ("Lesson Code", view.get("lessonCode") or "", "Mã bài học"),
-        ("Subject", view.get("subject") or "", "Môn học"),
-        ("Difficulty Level", view.get("difficultyLevel") or "", "Độ khó"),
-    ]
-    for row in settings_data:
-        ws_settings.append(row)
-        
-    # 2. Questions Sheet
-    ws_questions = wb.create_sheet("Questions")
+    # 1. Questions Sheet
+    ws_questions = wb.active
+    ws_questions.title = "Questions"
     
     headers = [
         "STT", "Question Type", "Question Text", "Image", "Video", "Audio",
@@ -196,8 +183,20 @@ def export_session_to_excel_zip(session: ScormSession) -> tuple[Path, str]:
                 
                 ans_img = process_media(choice.get("image"), f"{prefix}_IMG-DA{idx+1}")
                 row_data.extend([text, ans_img, "", ""])
-                
         ws_questions.append(row_data)
+
+    # 3. Settings Sheet (second sheet)
+    ws_settings = wb.create_sheet("Quiz Settings")
+    ws_settings.append(["Field", "Value", "Description"])
+    
+    settings_data = [
+        ("Quiz Title", view.get("title") or "", "Tên bài kiểm tra"),
+        ("Lesson Code", view.get("lessonCode") or "", "Mã bài học"),
+        ("Subject", view.get("subject") or "", "Môn học"),
+        ("Difficulty Level", view.get("difficultyLevel") or "", "Độ khó"),
+    ]
+    for row in settings_data:
+        ws_settings.append(row)
 
     # Save workbook to memory and add to zip
     excel_buffer = io.BytesIO()

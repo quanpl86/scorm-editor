@@ -850,15 +850,29 @@ def _generate_cms_json(session_id: str, request: Request):
         def _replace_s3_urls(obj):
             if isinstance(obj, dict):
                 for k, v in obj.items():
-                    if isinstance(v, str) and v in upload_cache and upload_cache[v]:
-                        obj[k] = upload_cache[v]
+                    if isinstance(v, str):
+                        new_v = v
+                        for filename, s3_url in upload_cache.items():
+                            if s3_url and filename in new_v:
+                                new_v = new_v.replace(f"storage://images/{filename}", s3_url)
+                                new_v = new_v.replace(f"storage://sounds/{filename}", s3_url)
+                                new_v = new_v.replace(f"storage://videos/{filename}", s3_url)
+                                new_v = new_v.replace(filename, s3_url)
+                        obj[k] = new_v
                     else:
                         _replace_s3_urls(v)
             elif isinstance(obj, list):
                 for i in range(len(obj)):
                     v = obj[i]
-                    if isinstance(v, str) and v in upload_cache and upload_cache[v]:
-                        obj[i] = upload_cache[v]
+                    if isinstance(v, str):
+                        new_v = v
+                        for filename, s3_url in upload_cache.items():
+                            if s3_url and filename in new_v:
+                                new_v = new_v.replace(f"storage://images/{filename}", s3_url)
+                                new_v = new_v.replace(f"storage://sounds/{filename}", s3_url)
+                                new_v = new_v.replace(f"storage://videos/{filename}", s3_url)
+                                new_v = new_v.replace(filename, s3_url)
+                        obj[i] = new_v
                     else:
                         _replace_s3_urls(v)
         
