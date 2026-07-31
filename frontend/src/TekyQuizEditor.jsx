@@ -474,7 +474,6 @@ function TekyQuestionForm({ question, onChange, onDelete, index, sessionId, quiz
     { value: 'MultipleNumeric', label: 'Nhiều đáp án số', icon: '🔢' },
     { value: 'Matching', label: 'Ghép cặp', icon: '🔗' },
     { value: 'Sequence', label: 'question_type_ordering', icon: '↕' },
-    { value: 'MultipleNumeric', label: 'Nhiều đáp án số', icon: '▦' },
   ];
 
   const visualQuestionType = question.type === 'WordBank' ? 'FillInTheBlank' : question.type;

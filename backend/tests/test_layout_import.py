@@ -7,7 +7,7 @@ import re
 import pytest
 
 from app.excel_import import parse_excel_file
-from app.layout import extract_layout
+from app.layout import extract_layout, extract_slide_attachment_image
 from app.quiz_builder import IMPORT_TEMPLATE_DIR, MASTER_SCORM, build_quiz_from_excel
 from app.scorm_parser import ScormSession
 
@@ -47,6 +47,14 @@ def test_extract_layout_defaults_missing_background():
     assert layout["background"] is None
     assert layout["backgroundMode"] == "fill"
     assert layout["backgroundFit"] == "cover"
+
+
+@pytest.mark.parametrize("scheme", ["http", "https"])
+def test_slide_attachment_accepts_remote_image_url(scheme):
+    image_url = f"{scheme}://cdn.example.com/question-image.png"
+    slide = {"at": {"i": {"i": image_url}}}
+
+    assert extract_slide_attachment_image(slide) == image_url
 
 
 def test_imported_slides_have_no_layout_overlap_errors(sample_import):

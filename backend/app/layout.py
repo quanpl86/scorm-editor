@@ -28,6 +28,8 @@ def strip_html(text: str | None) -> str:
 def image_path_from_storage(storage_uri: str) -> str | None:
     if not storage_uri:
         return None
+    if storage_uri.startswith("http://") or storage_uri.startswith("https://"):
+        return storage_uri
     match = re.search(r"storage://images/(.+)", storage_uri)
     return match.group(1) if match else None
 
