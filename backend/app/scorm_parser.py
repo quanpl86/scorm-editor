@@ -80,7 +80,7 @@ def ensure_image_registry(quiz_json: dict[str, Any], package_root: Path) -> None
     raw = json.dumps(quiz_json, ensure_ascii=False)
     for match in re.finditer(r"storage://images/([^\"'\s>]+)", raw):
         filename = match.group(1)
-        storage_key = f"storage://images/{filename}"
+        storage_key = (filename if filename.startswith('http') else f'storage://images/{filename}')
         if storage_key in registry:
             continue
         image_path = None
@@ -276,6 +276,8 @@ def replace_quiz_data(index_html: str, quiz_json: dict[str, Any]) -> str:
 def image_path_from_storage(storage_uri: str) -> str | None:
     if not storage_uri:
         return None
+    if storage_uri.startswith("http://") or storage_uri.startswith("https://"):
+        return storage_uri
     match = re.search(r"storage://images/(.+)", storage_uri)
     return match.group(1) if match else None
 
@@ -283,6 +285,8 @@ def image_path_from_storage(storage_uri: str) -> str | None:
 def sound_path_from_storage(storage_uri: str) -> str | None:
     if not storage_uri:
         return None
+    if storage_uri.startswith("http://") or storage_uri.startswith("https://"):
+        return storage_uri
     match = re.search(r"storage://sounds/(.+)", storage_uri)
     return match.group(1) if match else None
 
@@ -290,6 +294,8 @@ def sound_path_from_storage(storage_uri: str) -> str | None:
 def video_path_from_storage(storage_uri: str) -> str | None:
     if not storage_uri:
         return None
+    if storage_uri.startswith("http://") or storage_uri.startswith("https://"):
+        return storage_uri
     match = re.search(r"storage://videos/(.+)", storage_uri)
     return match.group(1) if match else None
 
@@ -430,7 +436,7 @@ def apply_choices(slide: dict[str, Any], choices: list[dict[str, Any]]) -> None:
             ch["t"] = choice["text"]
         if choice.get("image"):
             ch.setdefault("ia", {})
-            ch["ia"]["i"] = f"storage://images/{choice['image']}"
+            ch["ia"]["i"] = (choice['image'] if choice['image'].startswith('http') else f"storage://images/{choice['image']}")
         else:
             ch.pop("ia", None)
 
@@ -490,7 +496,7 @@ def apply_matching_pairs(slide: dict[str, Any], pairs: list[dict[str, Any]]) -> 
             m_pair["p"]["t"] = left_text
 
         if left_image:
-            m_pair["p"].setdefault("ia", {})["i"] = f"storage://images/{left_image}"
+            m_pair["p"].setdefault("ia", {})["i"] = (left_image if left_image.startswith('http') else f'storage://images/{left_image}')
         else:
             m_pair["p"].pop("ia", None)
 
@@ -501,7 +507,7 @@ def apply_matching_pairs(slide: dict[str, Any], pairs: list[dict[str, Any]]) -> 
             m_pair["r"]["t"] = right_text
 
         if right_image:
-            m_pair["r"].setdefault("ia", {})["i"] = f"storage://images/{right_image}"
+            m_pair["r"].setdefault("ia", {})["i"] = (right_image if right_image.startswith('http') else f'storage://images/{right_image}')
         else:
             m_pair["r"].pop("ia", None)
 
@@ -1349,14 +1355,14 @@ class ScormSession:
 
     def asset_path(self, relative: str) -> Path:
         # Check if this asset is mapped to a different file in iSpring's rs (resources) dict
-        mapped = self.quiz_json.get("rs", {}).get("i", {}).get(f"storage://images/{relative}")
+        mapped = self.quiz_json.get("rs", {}).get("i", {}).get((relative if relative.startswith('http') else f'storage://images/{relative}'))
         if not mapped and "{" in relative:
             clean_rel = relative.split("{")[0]
-            mapped = self.quiz_json.get("rs", {}).get("i", {}).get(f"storage://images/{clean_rel}")
+            mapped = self.quiz_json.get("rs", {}).get("i", {}).get((clean_rel if clean_rel.startswith('http') else f'storage://images/{clean_rel}'))
 
         if not mapped:
             clean_rel = relative.split("{")[0]
-            prefix = f"storage://images/{clean_rel}"
+            prefix = (clean_rel if clean_rel.startswith('http') else f'storage://images/{clean_rel}')
             for k, v in self.quiz_json.get("rs", {}).get("i", {}).items():
                 if k.startswith(prefix):
                     mapped = v

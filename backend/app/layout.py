@@ -37,6 +37,7 @@ def image_path_from_html(html_str: str | None) -> str | None:
     if not html_str:
         return None
     for pattern in (
+        r'src=["\'](https?://[^"\']+)["\']',
         r"storage://images/([^\"'\s>]+)",
         r"(?:src|href)=[\"'][^\"']*?/images/([^\"'\s>?#]+)",
         r"(?:src|href)=[\"'][^\"']*?images%2F([^\"'\s>?#&]+)",
@@ -906,7 +907,7 @@ def make_ispring_image(name: str, rect: dict[str, float], image_filename: str | 
         "z": False,
     }
     if image_filename:
-        obj["i"] = f"storage://images/{image_filename}"
+        obj["i"] = (image_filename if image_filename.startswith('http') else f'storage://images/{image_filename}')
     return obj
 
 
@@ -914,7 +915,7 @@ def set_slide_attachment(slide: dict[str, Any], image_filename: str | None, *, z
     if not image_filename:
         slide.pop("at", None)
         return
-    slide["at"] = {"i": {"i": f"storage://images/{image_filename}", "z": bool(zoom)}}
+    slide["at"] = {"i": {"i": (image_filename if image_filename.startswith('http') else f'storage://images/{image_filename}'), "z": bool(zoom)}}
 
 
 def set_slide_attachment_zoom(slide: dict[str, Any], zoom: bool) -> None:
@@ -946,7 +947,7 @@ def set_object_image(
         if obj.get("tp") == "slidePicture":
             slide.pop("at", None)
         return
-    storage = f"storage://images/{image_filename}"
+    storage = (image_filename if image_filename.startswith('http') else f'storage://images/{image_filename}')
     if obj.get("tp") == "image":
         obj["i"] = storage
         obj["z"] = bool(zoom) if zoom is not None else False
