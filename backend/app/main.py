@@ -180,21 +180,25 @@ def import_cms_json(background_tasks: BackgroundTasks, file: UploadFile = File(.
         if not editor_state:
             raise HTTPException(400, "File JSON không chứa dữ liệu gốc của SCORM Editor (thiếu _scormEditorState). Vui lòng dùng tính năng Import TSV/Excel nếu đây là file từ nguồn khác.")
         
+        if "d" not in editor_state or "sl" not in editor_state.get("d", {}):
+            raise HTTPException(400, "File JSON này thuộc phiên bản Beta (lưu trữ dưới dạng View) không tương thích để phục hồi. Vui lòng sử dụng bản Export mới nhất.")
+
         # Create a new stateless session
         session_id = str(uuid.uuid4())
         session_dir = SESSIONS_ROOT / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
-        (session_dir / "package").mkdir(parents=True, exist_ok=True)
+        package_dir = session_dir / "package"
+        package_dir.mkdir(parents=True, exist_ok=True)
         
-        # Save the stateless editor state as session.json
-        with open(session_dir / "session.json", "w", encoding="utf-8") as f:
+        # Save the stateless editor state as quiz_data.json
+        with open(package_dir / "quiz_data.json", "w", encoding="utf-8") as f:
             json.dump(editor_state, f, ensure_ascii=False)
             
         return {
             "sessionId": session_id,
-            "questionCount": len(editor_state.get("questions", [])),
-            "introSlide": editor_state.get("introSlide") is not None,
-            "importSummary": {"imported": len(editor_state.get("questions", [])), "total": len(editor_state.get("questions", []))}
+            "questionCount": len(quiz_obj.get("questions", [])),
+            "introSlide": False,
+            "importSummary": {"imported": len(quiz_obj.get("questions", [])), "total": len(quiz_obj.get("questions", []))}
         }
     except Exception as e:
         import traceback
@@ -843,7 +847,7 @@ def _generate_cms_json(session_id: str, request: Request):
         quiz_obj = quiz_to_cms_json(quiz_view, session_id, base_url=base, s3_uploader=handle_s3_upload)
 
         import copy
-        stateless_view = copy.deepcopy(quiz_view)
+        stateless_json = copy.deepcopy(session.quiz_json)
         
         def _replace_s3_urls(obj):
             if isinstance(obj, dict):
@@ -860,8 +864,8 @@ def _generate_cms_json(session_id: str, request: Request):
                     else:
                         _replace_s3_urls(v)
         
-        _replace_s3_urls(stateless_view)
-        quiz_obj["_scormEditorState"] = stateless_view
+        _replace_s3_urls(stateless_json)
+        quiz_obj["_scormEditorState"] = stateless_json
 
         cover_url = quiz_obj.get("coverImageUrl") or ""
         export_warnings: list[str] = []
