@@ -368,6 +368,8 @@ def _resolve_and_copy_image(
 ) -> str | None:
     if not ref:
         return None
+    if _is_remote_url(ref):
+        return ref
     media_src = resolve_media_path(ref, excel_dir, fallback_media_dirs)
     if not media_src or not media_src.exists():
         warnings.append(_media_warning("ảnh", ref))
@@ -385,6 +387,8 @@ def _resolve_and_copy_audio(
 ) -> str | None:
     if not ref:
         return None
+    if _is_remote_url(ref):
+        return ref
     media_src = resolve_media_path(ref, excel_dir, fallback_media_dirs)
     if not media_src or not media_src.exists():
         warnings.append(_media_warning("audio", ref))
@@ -402,6 +406,8 @@ def _resolve_and_copy_video(
 ) -> str | None:
     if not ref:
         return None
+    if _is_remote_url(ref):
+        return ref
     media_src = resolve_media_path(ref, excel_dir, fallback_media_dirs)
     if not media_src or not media_src.exists():
         warnings.append(_media_warning("video", ref))

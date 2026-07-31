@@ -108,7 +108,7 @@ def export_session_to_excel_zip(session: ScormSession) -> tuple[Path, str]:
         prefix = f"{safe_title}_{stt}"
         
         q_type = TYPE_MAP.get(q.get("type"), q.get("type"))
-        q_text = q.get("text", "")
+        q_text = q.get("questionText", "")
         
         q_image = ""
         q_video = ""
