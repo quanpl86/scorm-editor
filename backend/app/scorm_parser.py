@@ -208,6 +208,26 @@ def strip_html(text: str | None) -> str:
     return re.sub(r"\s+", " ", html.unescape(stripped)).strip()
 
 
+def collapse_repeated_question_text(text: str | None) -> str:
+    """Collapse an accidentally repeated whole question while preserving normal prose."""
+    normalized = re.sub(r"\s+", " ", str(text or "")).strip()
+    tokens = normalized.split()
+    # Short repetitions such as "đúng đúng" may be intentional answer content.
+    for repeat_count in range(min(8, len(tokens)), 1, -1):
+        if len(tokens) % repeat_count:
+            continue
+        unit_length = len(tokens) // repeat_count
+        if unit_length < 5:
+            continue
+        unit = tokens[:unit_length]
+        if all(
+            tokens[index * unit_length:(index + 1) * unit_length] == unit
+            for index in range(1, repeat_count)
+        ):
+            return " ".join(unit)
+    return normalized
+
+
 def wrap_html(text: str, template: str | None = None, role: str = "content") -> str:
     if not text:
         return ""
@@ -828,6 +848,8 @@ def apply_special_slide_edit(slide: dict[str, Any], edit: dict[str, Any]) -> Non
 def slide_to_view(slide: dict[str, Any], group_index: int, question_index: int, group_title: str) -> dict[str, Any]:
     qtype = slide.get("tp", "Unknown")
     question_text = strip_html(slide.get("D", {}).get("h", ""))
+    if qtype in ("TypeIn", "FillInTheBlank", "WordBank"):
+        question_text = collapse_repeated_question_text(question_text)
     points = slide.get("s", {}).get("e", {}).get("pt", 1)
     time_block = slide.get("s", {}).get("t", {}) or {}
     time_limit = time_block.get("v", 0)
@@ -845,7 +867,9 @@ def slide_to_view(slide: dict[str, Any], group_index: int, question_index: int, 
             blank_id = entry.get("id")
             if blank_id:
                 raw_html = re.sub(rf'<[^>]*id="{blank_id}"[^>]*>(?:.*?</[^>]+>)?', "___", raw_html)
-        subtitle_text = strip_html(raw_html)
+        subtitle_text = collapse_repeated_question_text(strip_html(raw_html))
+        if subtitle_text.casefold() == question_text.casefold():
+            subtitle_text = ""
         if subtitle_text:
             subtitle_format = extract_text_format(rt.get("h", ""), rt.get("t"), "content")
 

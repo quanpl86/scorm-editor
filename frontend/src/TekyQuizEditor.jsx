@@ -455,8 +455,16 @@ function TekyQuestionForm({ question, onChange, onDelete, index, sessionId, quiz
 
   React.useEffect(() => {
     if (['WordBank', 'FillInTheBlank'].includes(question.type) && question.subtitleText) {
+      const primary = String(question.questionText || '').replace(/\s+/g, ' ').trim();
+      const secondary = String(question.subtitleText || '').replace(/\s+/g, ' ').trim();
+      let questionText = primary;
+      if (!primary) {
+        questionText = secondary;
+      } else if (!primary.toLocaleLowerCase().includes(secondary.toLocaleLowerCase())) {
+        questionText = `${primary}\n\n${secondary}`;
+      }
       onChange({
-        questionText: `${question.questionText || ''}\n\n${question.subtitleText}`.trim(),
+        questionText,
         subtitleText: ''
       });
     }

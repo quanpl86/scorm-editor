@@ -243,3 +243,50 @@ def test_fill_blank_edit_keeps_synonyms_and_uses_underscore_marker():
     assert slide["C"]["rt"]["r"][0]["data"]["v"] == ["Edge", "Microsoft Edge"]
     assert 'id="qmFillInTheBlank0"' in slide["C"]["rt"]["h"]
     assert "___" not in slide["C"]["rt"]["h"]
+
+
+def test_fill_in_blank_view_collapses_legacy_duplicate_question_and_content():
+    sentence = (
+        "Trong cú pháp UDim2.new(xScale, xOffset, yScale, yOffset), "
+        "tham số đứng ngay sau xScale là ___."
+    )
+    blank_id = "qmFillInTheBlank26"
+    slide = {
+        "i": "fib-duplicate",
+        "tp": "FillInTheBlank",
+        "D": {"h": f"<p>{sentence}\n\n{sentence}</p>"},
+        "C": {
+            "rt": {
+                "h": (
+                    "<p>Trong cú pháp UDim2.new(xScale, xOffset, yScale, yOffset), "
+                    f'tham số đứng ngay sau xScale là <span id="{blank_id}"></span>.'
+                    f"\n\n{sentence}</p>"
+                ),
+                "a": f"<p>{sentence}</p>",
+                "r": [{"id": blank_id, "data": {"v": ["xOffset"]}}],
+            }
+        },
+        "a": {"o": []},
+        "s": {"e": {"pt": 1}},
+    }
+
+    view = slide_to_view(slide, 0, 0, "Test")
+
+    assert view["questionText"] == sentence
+    assert view["subtitleText"] == ""
+
+
+def test_type_in_view_collapses_legacy_duplicate_question():
+    sentence = "SDK là viết tắt của cụm từ nào?"
+    slide = {
+        "i": "typein-duplicate",
+        "tp": "TypeIn",
+        "D": {"h": f"<p>{sentence} {sentence}</p>"},
+        "C": {"chs": [{"t": {"h": "<p>Software Development Kit</p>"}}]},
+        "a": {"o": []},
+        "s": {"e": {"pt": 1}},
+    }
+
+    view = slide_to_view(slide, 0, 0, "Test")
+
+    assert view["questionText"] == sentence
