@@ -849,7 +849,7 @@ def _generate_cms_json(session_id: str, request: Request):
 
         # Upload ALL images referenced in stateless_json that aren't in upload_cache yet
         import re as _re
-        _raw = json.dumps(stateless_json, ensure_ascii=False)
+        _raw = _json.dumps(stateless_json, ensure_ascii=False)
         for _m in _re.finditer(r'storage://images/([^"\'\\>\s]+)', _raw):
             _fname = _m.group(1)
             # Strip iSpring JSON metadata suffix e.g. "file.png{...}"
