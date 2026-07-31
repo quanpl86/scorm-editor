@@ -619,7 +619,7 @@ def extract_blank_answers(slide: dict[str, Any]) -> list[dict[str, Any]]:
 
 def extract_slide_images(slide: dict[str, Any]) -> list[str]:
     meta = slide.get("_metadata", {})
-    if "slideImages" in meta:
+    if meta.get("slideImages"):
         return meta["slideImages"]
 
     from .layout import extract_slide_attachment_image, extract_object_image
