@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.background import BackgroundTask
 
 from .cms_export import quiz_to_cms_json
 from .excel_import import parse_excel_file, parse_quiz_settings
@@ -123,8 +124,8 @@ async def import_scorm(file: UploadFile = File(...)):
 
     temp_zip = SESSIONS_ROOT / f"upload_{uuid.uuid4().hex[:8]}_{file.filename}"
     SESSIONS_ROOT.mkdir(parents=True, exist_ok=True)
-    content = await file.read()
-    temp_zip.write_bytes(content)
+    with temp_zip.open("wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
     try:
         session = ScormSession.create_from_source(temp_zip)
         return session.get_view()
@@ -396,7 +397,7 @@ def import_tsv_to_lesson(payload: TsvLessonPublishPayload):
 
 
 @app.post("/api/import/tsv-zip-to-lesson")
-async def import_tsv_zip_to_lesson(
+def import_tsv_zip_to_lesson(
     file: UploadFile = File(...),
     lessonCode: str = Form(...),
     overwrite: bool = Form(False),
@@ -406,11 +407,17 @@ async def import_tsv_zip_to_lesson(
     groupTitle: str = Form("Imported Questions"),
 ):
     import zipfile
-    import io
+    import tempfile
+    import os
+
+    fd, temp_path = tempfile.mkstemp(suffix=".zip")
+    os.close(fd)
+    
+    with open(temp_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
 
     try:
-        content = await file.read()
-        with zipfile.ZipFile(io.BytesIO(content)) as zf:
+        with zipfile.ZipFile(temp_path) as zf:
             settings_tsv = ""
             questions_tsv = ""
             
@@ -441,9 +448,12 @@ async def import_tsv_zip_to_lesson(
         raise HTTPException(400, "File không phải là định dạng ZIP hợp lệ")
     except UnicodeDecodeError:
         raise HTTPException(400, "File TSV phải được mã hóa bằng UTF-8")
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
 
 @app.post("/api/import/excel")
-async def import_excel(
+def import_excel(
     file: UploadFile = File(...),
     quiz_title: str | None = Form(None),
     group_title: str = Form("Imported Questions"),
@@ -452,28 +462,28 @@ async def import_excel(
         raise HTTPException(400, "Thiếu tên file")
 
     name = file.filename.lower()
-    content = await file.read()
-    if not content:
-        raise HTTPException(400, "File rỗng")
-
     temp_root = SESSIONS_ROOT / f"excel_upload_{file.filename}"
     temp_root.mkdir(parents=True, exist_ok=True)
+    temp_file = temp_root / Path(file.filename).name
+
+    with temp_file.open("wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    if temp_file.stat().st_size == 0:
+        raise HTTPException(400, "File rỗng")
 
     try:
         if name.endswith(".zip"):
-            zip_path = temp_root / file.filename
-            zip_path.write_bytes(content)
             extract_dir = temp_root / "extracted"
             extract_dir.mkdir(parents=True, exist_ok=True)
-            with zipfile.ZipFile(zip_path, "r") as zf:
+            with zipfile.ZipFile(temp_file, "r") as zf:
                 zf.extractall(extract_dir)
             excel_path = _find_excel_file(extract_dir)
             if not excel_path:
                 raise HTTPException(400, "Zip không chứa file .xls hoặc .xlsx")
             excel_dir = excel_path.parent
         elif any(name.endswith(ext) for ext in EXCEL_SUFFIXES):
-            excel_path = temp_root / Path(file.filename).name
-            excel_path.write_bytes(content)
+            excel_path = temp_file
             excel_dir = excel_path.parent
         else:
             raise HTTPException(400, "Chỉ hỗ trợ .xls, .xlsx hoặc .zip (Excel + thư mục media)")
@@ -651,13 +661,14 @@ def export_session(session_id: str, payload: ExportPayload | None = None):
     try:
         session = get_session(session_id)
         title = payload.title if payload else None
-        zip_bytes = session.export_zip(title)
+        temp_zip_path = session.export_zip(title)
         safe_name = (title or session.quiz_json.get("d", {}).get("T", "scorm-export")).strip()
         safe_name = "".join(c if c.isalnum() or c in " _-" else "_" for c in safe_name)[:80]
-        return Response(
-            content=zip_bytes,
+        return FileResponse(
+            path=temp_zip_path,
+            filename=f"{safe_name}.zip",
             media_type="application/zip",
-            headers={"Content-Disposition": f'attachment; filename="{safe_name}.zip"'},
+            background=BackgroundTask(temp_zip_path.unlink, missing_ok=True)
         )
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc)) from exc
@@ -829,21 +840,17 @@ def export_session_project(session_id: str):
     
     from .excel_exporter import export_session_to_excel_zip
     try:
-        zip_bytes, safe_title = export_session_to_excel_zip(session)
+        temp_zip_path, safe_title = export_session_to_excel_zip(session)
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(500, f"Lỗi tạo Excel Project: {str(e)}")
 
-    import io
-    from fastapi.responses import StreamingResponse
-    return StreamingResponse(
-        io.BytesIO(zip_bytes),
+    return FileResponse(
+        path=temp_zip_path,
+        filename=f"{safe_title}_Project.zip",
         media_type="application/zip",
-        headers={
-            "Content-Disposition": f'attachment; filename="{safe_title}_Project.zip"',
-            "Access-Control-Expose-Headers": "Content-Disposition",
-        },
+        background=BackgroundTask(temp_zip_path.unlink, missing_ok=True)
     )
 
 @app.post("/api/session/{session_id}/export-cms-json")
@@ -878,13 +885,14 @@ def export_cms_json(session_id: str, request: Request):
 def export_session_media(session_id: str):
     try:
         session = get_session(session_id)
-        zip_bytes = session.export_media_zip()
+        temp_zip_path = session.export_media_zip()
         safe_name = (session.quiz_json.get("d", {}).get("T", "media-export")).strip()
         safe_name = "".join(c if c.isalnum() or c in " _-" else "_" for c in safe_name)[:80]
-        return Response(
-            content=zip_bytes,
+        return FileResponse(
+            path=temp_zip_path,
+            filename=f"{safe_name}_media.zip",
             media_type="application/zip",
-            headers={"Content-Disposition": f'attachment; filename="{safe_name}_media.zip"'},
+            background=BackgroundTask(temp_zip_path.unlink, missing_ok=True)
         )
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc)) from exc

@@ -1209,7 +1209,7 @@ def update_manifest_title(manifest_path: Path, title: str) -> None:
     manifest_path.write_text(content, encoding="utf-8")
 
 
-def export_scorm_zip(package_root: Path, quiz_json: dict[str, Any], title: str | None = None) -> bytes:
+def export_scorm_zip(package_root: Path, quiz_json: dict[str, Any], title: str | None = None) -> Path:
     index_path = find_index_html(package_root)
     index_html = index_path.read_text(encoding="utf-8")
     index_path.write_text(replace_quiz_data(index_html, quiz_json), encoding="utf-8")
@@ -1223,13 +1223,17 @@ def export_scorm_zip(package_root: Path, quiz_json: dict[str, Any], title: str |
             content = re.sub(r"<title>.*?</title>", f"<title>{title}</title>", content, count=1)
             index_path.write_text(content, encoding="utf-8")
 
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+    import tempfile
+    fd, temp_path = tempfile.mkstemp(suffix=".zip")
+    import os
+    os.close(fd)
+    
+    with zipfile.ZipFile(temp_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for file_path in package_root.rglob("*"):
             if file_path.is_file() and file_path.name != ".DS_Store":
                 arcname = file_path.relative_to(package_root).as_posix()
                 zf.write(file_path, arcname)
-    return buffer.getvalue()
+    return Path(temp_path)
 
 
 class ScormSession:
@@ -1368,18 +1372,22 @@ class ScormSession:
         path.write_bytes(content)
         return path.name
 
-    def export_zip(self, title: str | None = None) -> bytes:
+    def export_zip(self, title: str | None = None) -> Path:
         self.persist()
         export_title = title or self.quiz_json.get("d", {}).get("T")
         return export_scorm_zip(self.package_root, self.quiz_json, export_title)
 
-    def export_media_zip(self) -> bytes:
+    def export_media_zip(self) -> Path:
         view = self.get_view()
         safe_title = (view.get("title") or "Quiz").strip()
         safe_title = "".join(c if c.isalnum() or c in " _-" else "_" for c in safe_title)
 
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        import tempfile
+        import os
+        fd, temp_path = tempfile.mkstemp(suffix=".zip")
+        os.close(fd)
+
+        with zipfile.ZipFile(temp_path, "w", zipfile.ZIP_DEFLATED) as zf:
             added_names = set()
             processed_source_files = set()
 
@@ -1451,7 +1459,7 @@ class ScormSession:
                         add_file(img, f"{prefix}_IMG-{pos}")
                         nd_img_idx += 1
 
-        return buffer.getvalue()
+        return Path(temp_path)
 
     def export_media_local(self) -> str:
         import shutil

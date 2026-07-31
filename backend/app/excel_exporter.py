@@ -22,12 +22,16 @@ def _media_kind_for_ext(ext: str) -> str:
         return "video"
     return "unknown"
 
-def export_session_to_excel_zip(session: ScormSession) -> bytes:
+def export_session_to_excel_zip(session: ScormSession) -> tuple[Path, str]:
     view = session.get_view()
     safe_title = (view.get("title") or "Quiz").strip()
     safe_title = "".join(c if c.isalnum() or c in " _-" else "_" for c in safe_title)
 
-    buffer = io.BytesIO()
+    import tempfile
+    import os
+    fd, temp_path = tempfile.mkstemp(suffix=".zip")
+    os.close(fd)
+
     wb = openpyxl.Workbook()
     
     # 1. Settings Sheet
@@ -64,7 +68,7 @@ def export_session_to_excel_zip(session: ScormSession) -> bytes:
         cell.alignment = Alignment(horizontal="center", vertical="center")
         
     # Prepare ZIP and Media tracking
-    zf = zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED)
+    zf = zipfile.ZipFile(temp_path, "w", zipfile.ZIP_DEFLATED)
     
     added_names = set()
     
@@ -203,4 +207,4 @@ def export_session_to_excel_zip(session: ScormSession) -> bytes:
     zf.writestr(f"{safe_title}.xlsx", excel_buffer.read())
     zf.close()
     
-    return buffer.getvalue(), safe_title
+    return Path(temp_path), safe_title
