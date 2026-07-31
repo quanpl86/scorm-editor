@@ -122,15 +122,39 @@ def cleanup_old_sessions():
     try:
         now = time.time()
         if not SESSIONS_ROOT.exists(): return
+        # 1. Xóa các session cũ hơn 4 giờ
         for item in SESSIONS_ROOT.iterdir():
             try:
-                if now - item.stat().st_mtime > 24 * 3600:
+                if now - item.stat().st_mtime > 4 * 3600:
                     if item.is_dir():
                         shutil.rmtree(item, ignore_errors=True)
                     elif item.is_file():
                         item.unlink(missing_ok=True)
             except Exception:
                 pass
+                
+        # 2. Kiểm tra dung lượng ổ đĩa, nếu > 70% thì xóa bớt phân nửa session cũ nhất
+        usage = shutil.disk_usage(SESSIONS_ROOT)
+        if usage.used / usage.total > 0.70:
+            items = []
+            for item in SESSIONS_ROOT.iterdir():
+                try:
+                    items.append((item.stat().st_mtime, item))
+                except Exception:
+                    pass
+            
+            # Sắp xếp từ cũ nhất đến mới nhất
+            items.sort(key=lambda x: x[0])
+            
+            # Xóa một nửa số session cũ nhất để giải phóng
+            for _, item in items[:len(items)//2 + 1]:
+                try:
+                    if item.is_dir():
+                        shutil.rmtree(item, ignore_errors=True)
+                    elif item.is_file():
+                        item.unlink(missing_ok=True)
+                except Exception:
+                    pass
     except Exception:
         pass
 
