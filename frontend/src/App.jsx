@@ -722,7 +722,7 @@ function ImportPage({ onImport, loading, loadingMessage, error, errorKind, impor
   // Jump to tab matching active import error/report kind
   useEffect(() => {
     const kind = loadingMessage?.kind
-    if (kind === 'tsv' || kind === 'excel' || kind === 'scorm') {
+    if (kind === 'tsv' || kind === 'excel' || kind === 'scorm' || kind === 'json') {
       setImportTab(kind)
     }
   }, [loadingMessage?.kind])
@@ -734,7 +734,7 @@ function ImportPage({ onImport, loading, loadingMessage, error, errorKind, impor
 
   const handleCmsJsonFile = async (file) => {
     if (!file?.name?.toLowerCase().endsWith('.json')) return
-    await onImport(() => importCmsJson(file), { kind: 'scorm' })
+    await onImport(() => importCmsJson(file), { kind: 'json' })
   }
 
   const handleExcelFile = async (file) => {
