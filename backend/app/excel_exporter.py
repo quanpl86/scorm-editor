@@ -5,7 +5,7 @@ from typing import Any
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 
-from .scorm_parser import ScormSession
+from .scorm_parser import ScormSession, resolve_asset_path
 
 def clean_filename(path: str) -> str:
     if not path:
@@ -81,14 +81,14 @@ def export_session_to_excel_zip(session: ScormSession) -> tuple[Path, str]:
             filename = original_path.split("/")[-1].split("?")[0].split("#")[0]
             try:
                 # Check if we have a local copy of this uploaded image
-                session.resolve_asset_path(filename)
+                resolve_asset_path(session.session_id, filename)
                 search_path = filename
             except FileNotFoundError:
                 # Not available locally (e.g. true external URL), keep it as URL
                 return original_path
             
         try:
-            full_path = session.resolve_asset_path(search_path)
+            full_path = resolve_asset_path(session.session_id, search_path)
             ext = full_path.suffix
             final_name = f"{proposed_name}{ext}"
             
