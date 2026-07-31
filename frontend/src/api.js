@@ -132,6 +132,12 @@ export async function importExcelMediaSample({ quizTitle, groupTitle } = {}) {
   return res.json()
 }
 
+export async function loadSession(sessionId) {
+  const res = await fetch(`${API}/session/${sessionId}`)
+  if (!res.ok) throw new Error((await res.json()).detail || 'Không tải được session')
+  return res.json()
+}
+
 export async function saveSession(sessionId, payload) {
   const res = await fetch(`${API}/session/${sessionId}`, {
     method: 'PUT',

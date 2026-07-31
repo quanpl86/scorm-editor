@@ -14,6 +14,7 @@ import {
   publishTsvToLesson,
   importTsvZipToLesson,
   saveSession,
+  loadSession,
   exportMedia,
   exportMediaLocal,
   uploadImage,
@@ -2176,6 +2177,32 @@ export default function App() {
     return () => document.removeEventListener('click', handleDocClick)
   }, [])
 
+  useEffect(() => {
+    const sid = sessionStorage.getItem('activeSessionId')
+    if (sid && !quiz) {
+      setLoading(true)
+      setLoadingMessage({ kind: 'scorm', text: 'Đang khôi phục phiên làm việc...' })
+      loadSession(sid)
+        .then((data) => {
+          resetHistory(data)
+          if (data.tekyQuiz?.importSummary) {
+            setImportReport({ summary: data.tekyQuiz.importSummary })
+          } else if (data.importSummary) {
+            setImportReport({ summary: data.importSummary })
+          }
+          if (data.questions?.length > 0) {
+            const first = data.questions.find((q) => !q.deleted)
+            if (first) setSelectedId(first.id)
+          }
+        })
+        .catch((e) => {
+          console.warn('Cannot restore session', e)
+          sessionStorage.removeItem('activeSessionId')
+        })
+        .finally(() => setLoading(false))
+    }
+  }, [])
+
   const applySavedState = useCallback((savedView) => {
     setQuiz((prev) => {
       if (!savedView) {
@@ -2263,6 +2290,9 @@ export default function App() {
       if (!data?.sessionId && data?.package) {
         showToast(data.message || `Đã tạo ${data.package.relativeExcel}`)
         return
+      }
+      if (data?.sessionId) {
+        sessionStorage.setItem('activeSessionId', data.sessionId)
       }
       resetHistory(data)
       const firstImported = data.importReport?.find((r) => r.status === 'imported' && r.slideId)
@@ -2486,7 +2516,7 @@ export default function App() {
     return (
       <div className="app">
         <header className="header">
-          <h1 onClick={() => window.location.reload()} style={{ cursor: 'pointer' }} title="Về trang chủ"><span>SCORM</span> Editor</h1>
+          <h1 onClick={() => { sessionStorage.removeItem('activeSessionId'); window.location.reload(); }} style={{ cursor: 'pointer' }} title="Về trang chủ"><span>SCORM</span> Editor</h1>
           <div className="header-actions">
             <select
               className="quiz-mode-selector"
@@ -2541,7 +2571,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1 onClick={() => window.location.reload()} style={{ cursor: 'pointer' }} title="Về trang chủ"><span>SCORM</span> Editor</h1>
+        <h1 onClick={() => { sessionStorage.removeItem('activeSessionId'); window.location.reload(); }} style={{ cursor: 'pointer' }} title="Về trang chủ"><span>SCORM</span> Editor</h1>
         <div className="header-actions">
           <div className="header-actions-desktop-only">
             <select
