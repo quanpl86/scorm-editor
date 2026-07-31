@@ -194,12 +194,10 @@ def import_cms_json(background_tasks: BackgroundTasks, file: UploadFile = File(.
         with open(package_dir / "quiz_data.json", "w", encoding="utf-8") as f:
             json.dump(editor_state, f, ensure_ascii=False)
             
-        return {
-            "sessionId": session_id,
-            "questionCount": len(quiz_obj.get("questions", [])),
-            "introSlide": False,
-            "importSummary": {"imported": len(quiz_obj.get("questions", [])), "total": len(quiz_obj.get("questions", []))}
-        }
+        session = get_session(session_id)
+        view = session.get_view()
+        view["importSummary"] = {"imported": len(view.get("questions", [])), "total": len(view.get("questions", []))}
+        return view
     except Exception as e:
         import traceback
         traceback.print_exc()
