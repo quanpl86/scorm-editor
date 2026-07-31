@@ -22,6 +22,7 @@ from starlette.background import BackgroundTask
 from .cms_export import quiz_to_cms_json
 from .excel_import import parse_excel_file, parse_quiz_settings
 from .fonts import resolve_font_path
+from .json_migration import cms_questions_to_excel_rows, cms_quiz_config
 from .preview import build_preview_html, is_report_proxy_target_allowed, preview_res_root
 from .quiz_builder import IMPORT_TEMPLATE_DIR, MASTER_SCORM, build_quiz_from_excel
 from .scorm_parser import (
@@ -38,6 +39,7 @@ from .scorm_parser import (
 )
 from .session_manager import (
     SESSION_CLEANUP_INTERVAL_SECONDS,
+    SESSION_MAX_UPLOAD_BYTES,
     SessionStorageFullError,
     cleanup_sessions,
     delete_session_dir,
@@ -198,6 +200,73 @@ def merge_cms_config_into_editor_state(
     return merged
 
 
+def replace_editor_media_with_s3(
+    value: Any,
+    upload_cache: dict[str, str | None],
+) -> Any:
+    """Replace local editor media references once without corrupting S3 URLs."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            value[key] = replace_editor_media_with_s3(item, upload_cache)
+        return value
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            value[index] = replace_editor_media_with_s3(item, upload_cache)
+        return value
+    if not isinstance(value, str):
+        return value
+
+    replaced = value
+    for filename, s3_url in upload_cache.items():
+        if not s3_url or filename not in replaced or s3_url in replaced:
+            continue
+        for prefix in ("storage://images/", "storage://sounds/", "storage://videos/"):
+            replaced = replaced.replace(f"{prefix}{filename}", s3_url)
+        # Layout HTML from older exports can contain a bare media filename.
+        if s3_url not in replaced:
+            replaced = replaced.replace(filename, s3_url)
+    return replaced
+
+
+def create_session_from_legacy_cms(quiz_obj: dict[str, Any]) -> dict[str, Any]:
+    """Rebuild supported CMS questions when old JSON has no raw editor state."""
+    rows = cms_questions_to_excel_rows(quiz_obj)
+    if not rows:
+        raise HTTPException(
+            400,
+            "JSON không có _scormEditorState và không có question CMS thuộc loại được hỗ trợ.",
+        )
+    session = ScormSession.create_from_source(MASTER_SCORM)
+    try:
+        quiz_json, report = build_quiz_from_excel(
+            session.quiz_json,
+            rows,
+            package_root=session.package_root,
+            excel_dir=Path("."),
+            group_title=quiz_obj.get("targetLesson") or "Imported Questions",
+            quiz_title=quiz_obj.get("title") or "Imported Quiz",
+            teky_quiz=cms_quiz_config(quiz_obj),
+        )
+        session.quiz_json = quiz_json
+        ensure_media_registry(session.quiz_json, session.package_root)
+        session.persist()
+        touch_session(SESSIONS_ROOT, session.session_id, event="create")
+        _ensure_capacity_or_507(protected_ids={session.session_id})
+    except Exception:
+        delete_session_dir(SESSIONS_ROOT, session.session_id)
+        raise
+    view = session.get_view()
+    imported = sum(1 for item in report if item.get("status") == "imported")
+    view["importReport"] = report
+    view["importSummary"] = {
+        "imported": imported,
+        "total": len(rows),
+        "legacyMigration": True,
+        "warning": "Đã phục hồi từ CMS questions; layout iSpring gốc không có trong file cũ.",
+    }
+    return view
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
@@ -214,14 +283,25 @@ def _ensure_capacity_or_507(*, reserve_bytes: int = 0, protected_ids: set[str] |
         raise HTTPException(507, str(exc)) from exc
 
 
+def _validate_upload_size(file: UploadFile, *, actual_bytes: int | None = None) -> None:
+    size = actual_bytes if actual_bytes is not None else int(file.size or 0)
+    if size > SESSION_MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            413,
+            f"File upload vượt giới hạn {SESSION_MAX_UPLOAD_BYTES / 1024**2:.0f} MB",
+        )
+
+
 @app.post("/api/import/json")
 def import_cms_json(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    _validate_upload_size(file)
     _ensure_capacity_or_507(reserve_bytes=int(file.size or 0))
     if not file.filename.endswith(".json"):
         raise HTTPException(400, "Vui lòng chọn file .json CMS")
     
     import json
     content = file.file.read()
+    _validate_upload_size(file, actual_bytes=len(content))
     try:
         data = json.loads(content)
         # Handle both single object or array
@@ -234,7 +314,7 @@ def import_cms_json(background_tasks: BackgroundTasks, file: UploadFile = File(.
             
         editor_state = quiz_obj.get("_scormEditorState")
         if not editor_state:
-            raise HTTPException(400, "File JSON không chứa dữ liệu gốc của SCORM Editor (thiếu _scormEditorState). Vui lòng dùng tính năng Import TSV/Excel nếu đây là file từ nguồn khác.")
+            return create_session_from_legacy_cms(quiz_obj)
         
         if "d" not in editor_state or "sl" not in editor_state.get("d", {}):
             raise HTTPException(400, "File JSON này thuộc phiên bản Beta (lưu trữ dưới dạng View) không tương thích để phục hồi. Vui lòng sử dụng bản Export mới nhất.")
@@ -272,6 +352,7 @@ def import_cms_json(background_tasks: BackgroundTasks, file: UploadFile = File(.
 
 @app.post("/api/import")
 def import_scorm(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    _validate_upload_size(file)
     _ensure_capacity_or_507(reserve_bytes=int(file.size or 0))
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(400, "Vui lòng upload file .zip SCORM")
@@ -507,8 +588,11 @@ def download_lesson_template_zip(lesson_code: str):
     )
 
 
-@app.post("/api/import/tsv-to-lesson")
-def import_tsv_to_lesson(payload: TsvLessonPublishPayload):
+def _import_tsv_to_lesson_impl(
+    payload: TsvLessonPublishPayload,
+    *,
+    template_media: Path | None = None,
+):
     """
     Dán TSV (settings + questions) → tạo
     ImportTemplate/{lessonCode}/{lessonCode}.xlsx + media/
@@ -535,6 +619,7 @@ def import_tsv_to_lesson(payload: TsvLessonPublishPayload):
             questions_tsv,
             overwrite=payload.overwrite,
             seed_media_from_template=payload.seedMediaFromTemplate,
+            template_media=template_media,
         )
     except TsvPublishError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -585,6 +670,11 @@ def import_tsv_to_lesson(payload: TsvLessonPublishPayload):
     return view
 
 
+@app.post("/api/import/tsv-to-lesson")
+def import_tsv_to_lesson(payload: TsvLessonPublishPayload):
+    return _import_tsv_to_lesson_impl(payload)
+
+
 @app.post("/api/import/tsv-zip-to-lesson")
 def import_tsv_zip_to_lesson(
     background_tasks: BackgroundTasks,
@@ -598,51 +688,53 @@ def import_tsv_zip_to_lesson(
 ):
     import zipfile
     import tempfile
-    import os
-
+    _validate_upload_size(file)
     _ensure_capacity_or_507(reserve_bytes=int(file.size or 0))
 
-    fd, temp_path = tempfile.mkstemp(suffix=".zip")
-    os.close(fd)
-    
-    with open(temp_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    with tempfile.TemporaryDirectory(prefix="tsv-upload-") as temp_dir:
+        root = Path(temp_dir)
+        zip_path = root / "lesson.zip"
+        with zip_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        extracted = root / "extracted"
+        extracted.mkdir()
+        try:
+            with zipfile.ZipFile(zip_path) as archive:
+                safe_extract_zip(archive, extracted)
+        except zipfile.BadZipFile:
+            raise HTTPException(400, "File không phải là định dạng ZIP hợp lệ")
 
-    try:
-        with zipfile.ZipFile(temp_path) as zf:
-            settings_tsv = ""
-            questions_tsv = ""
-            
-            for info in zf.infolist():
-                if info.is_dir():
-                    continue
-                name = info.filename.lower()
-                if name.endswith("quiz_settings.tsv"):
-                    settings_tsv = zf.read(info.filename).decode("utf-8")
-                elif name.endswith("quiz_questions.tsv"):
-                    questions_tsv = zf.read(info.filename).decode("utf-8")
-                    
-            if not settings_tsv or not questions_tsv:
-                raise HTTPException(400, "File ZIP phải chứa quiz_settings.tsv và quiz_questions.tsv")
-                
-            payload = TsvLessonPublishPayload(
-                lessonCode=lessonCode,
-                settingsTsv=settings_tsv,
-                questionsTsv=questions_tsv,
-                overwrite=overwrite,
-                seedMediaFromTemplate=seedMediaFromTemplate,
-                openInEditor=openInEditor,
-                quizTitle=quizTitle,
-                groupTitle=groupTitle,
-            )
-            return import_tsv_to_lesson(payload)
-    except zipfile.BadZipFile:
-        raise HTTPException(400, "File không phải là định dạng ZIP hợp lệ")
-    except UnicodeDecodeError:
-        raise HTTPException(400, "File TSV phải được mã hóa bằng UTF-8")
-    finally:
-        if os.path.exists(temp_path):
-            os.unlink(temp_path)
+        settings_path = next(
+            (path for path in extracted.rglob("*") if path.is_file() and path.name.lower() == "quiz_settings.tsv"),
+            None,
+        )
+        questions_path = next(
+            (path for path in extracted.rglob("*") if path.is_file() and path.name.lower() == "quiz_questions.tsv"),
+            None,
+        )
+        if not settings_path or not questions_path:
+            raise HTTPException(400, "File ZIP phải chứa quiz_settings.tsv và quiz_questions.tsv")
+        try:
+            settings_tsv = settings_path.read_text(encoding="utf-8")
+            questions_tsv = questions_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            raise HTTPException(400, "File TSV phải được mã hóa bằng UTF-8")
+
+        media_dir = next(
+            (path for path in extracted.rglob("*") if path.is_dir() and path.name.lower() == "media"),
+            None,
+        )
+        payload = TsvLessonPublishPayload(
+            lessonCode=lessonCode,
+            settingsTsv=settings_tsv,
+            questionsTsv=questions_tsv,
+            overwrite=overwrite,
+            seedMediaFromTemplate=seedMediaFromTemplate,
+            openInEditor=openInEditor,
+            quizTitle=quizTitle,
+            groupTitle=groupTitle,
+        )
+        return _import_tsv_to_lesson_impl(payload, template_media=media_dir)
 
 @app.post("/api/import/excel")
 def import_excel(
@@ -651,6 +743,7 @@ def import_excel(
     quiz_title: str | None = Form(None),
     group_title: str = Form("Imported Questions"),
 ):
+    _validate_upload_size(file)
     if not file.filename:
         raise HTTPException(400, "Thiếu tên file")
 
@@ -808,9 +901,11 @@ def save_session(session_id: str, payload: SavePayload):
             with session_lock(session_id):
                 session = get_session(session_id)
                 saved = session.save_view(payload_data)
-                touch_session(SESSIONS_ROOT, session_id)
+                touch_session(SESSIONS_ROOT, session_id, event="save")
                 _ensure_capacity_or_507(protected_ids={session_id})
                 return saved
+    except HTTPException:
+        raise
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc)) from exc
     except Exception as exc:
@@ -830,14 +925,16 @@ def get_asset(session_id: str, filename: str):
 @app.post("/api/session/{session_id}/asset/{filename}")
 async def upload_asset(session_id: str, filename: str, s3: bool = False, file: UploadFile = File(...)):
     try:
+        _validate_upload_size(file)
         content = await file.read()
+        _validate_upload_size(file, actual_bytes=len(content))
         with storage_write_lock():
             _ensure_capacity_or_507(reserve_bytes=len(content), protected_ids={session_id})
             with session_lock(session_id):
                 session = get_session(session_id)
                 saved = session.replace_image(filename, content)
                 session.persist()
-                touch_session(SESSIONS_ROOT, session_id)
+                touch_session(SESSIONS_ROOT, session_id, event="save")
                 _ensure_capacity_or_507(protected_ids={session_id})
 
         s3_warning = None
@@ -876,7 +973,7 @@ async def upload_asset(session_id: str, filename: str, s3: bool = False, file: U
 def heartbeat_session(session_id: str):
     try:
         get_session(session_id)
-        touch_session(SESSIONS_ROOT, session_id)
+        touch_session(SESSIONS_ROOT, session_id, event="heartbeat")
         return {"ok": True}
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc)) from exc
@@ -1008,36 +1105,8 @@ def _generate_cms_json(session_id: str, request: Request):
                 except Exception:
                     pass
 
-        def _replace_s3_urls(obj):
-            if isinstance(obj, dict):
-                for k, v in obj.items():
-                    if isinstance(v, str):
-                        new_v = v
-                        for filename, s3_url in upload_cache.items():
-                            if s3_url and filename in new_v:
-                                new_v = new_v.replace(f"storage://images/{filename}", s3_url)
-                                new_v = new_v.replace(f"storage://sounds/{filename}", s3_url)
-                                new_v = new_v.replace(f"storage://videos/{filename}", s3_url)
-                                new_v = new_v.replace(filename, s3_url)
-                        obj[k] = new_v
-                    else:
-                        _replace_s3_urls(v)
-            elif isinstance(obj, list):
-                for i in range(len(obj)):
-                    v = obj[i]
-                    if isinstance(v, str):
-                        new_v = v
-                        for filename, s3_url in upload_cache.items():
-                            if s3_url and filename in new_v:
-                                new_v = new_v.replace(f"storage://images/{filename}", s3_url)
-                                new_v = new_v.replace(f"storage://sounds/{filename}", s3_url)
-                                new_v = new_v.replace(f"storage://videos/{filename}", s3_url)
-                                new_v = new_v.replace(filename, s3_url)
-                        obj[i] = new_v
-                    else:
-                        _replace_s3_urls(v)
-        
-        _replace_s3_urls(stateless_json)
+        replace_editor_media_with_s3(stateless_json, upload_cache)
+        quiz_obj["_editorSchemaVersion"] = 2
         quiz_obj["_scormEditorState"] = stateless_json
 
         cover_url = quiz_obj.get("coverImageUrl") or ""

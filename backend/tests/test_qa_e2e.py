@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import io
 import tempfile
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -267,3 +269,84 @@ def test_cms_json_download_deletes_completed_session(master_available, monkeypat
     assert response.headers["content-type"].startswith("application/json")
     assert isinstance(response.json(), list)
     assert not session_dir.exists()
+
+
+def test_legacy_cms_json_without_editor_state_is_migrated(master_available):
+    legacy = {
+        "title": "Legacy CMS",
+        "description": "Recovered without raw state",
+        "difficultyLevel": "hard",
+        "duration": 600,
+        "questions": [
+            {
+                "id": "legacy-mc",
+                "type": "multiple_choice",
+                "question": "Chọn đáp án",
+                "imageUrl": "https://cdn.example.com/question.png",
+                "options": [
+                    {"id": "a", "text": "A", "imageUrl": "https://cdn.example.com/a.png"},
+                    {"id": "b", "text": "B"},
+                ],
+                "correctAnswer": ["a"],
+                "points": 1,
+            },
+            {
+                "id": "legacy-short",
+                "type": "short_answer",
+                "question": "Nhập SDK",
+                "correctAnswer": ["Software Development Kit"],
+                "useRegex": False,
+            },
+        ],
+    }
+
+    response = client.post(
+        "/api/import/json",
+        files={"file": ("legacy.json", json.dumps([legacy]), "application/json")},
+    )
+
+    assert response.status_code == 200
+    view = response.json()
+    assert view["questionCount"] == 2
+    assert view["tekyQuiz"]["description"] == legacy["description"]
+    assert view["tekyQuiz"]["difficultyLevel"] == "hard"
+    assert view["questions"][0]["slideImages"][0] == legacy["questions"][0]["imageUrl"]
+    assert view["importSummary"]["legacyMigration"] is True
+
+
+def test_tsv_zip_passes_embedded_media_to_publisher(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_publish(_code, _settings, _questions, **kwargs):
+        media = kwargs.get("template_media")
+        captured["media"] = media
+        assert media and (media / "custom.png").read_bytes() == b"custom-image"
+        return {
+            "lessonCode": "SNLT-ZIP-MEDIA",
+            "lessonDir": str(tmp_path),
+            "excelPath": str(tmp_path / "lesson.xlsx"),
+            "mediaDir": str(tmp_path / "media"),
+            "questionCount": 1,
+            "warnings": [],
+        }
+
+    monkeypatch.setattr("app.main.publish_lesson_package", fake_publish)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("lesson/quiz_settings.tsv", "Field\tValue\ntitle\tZIP Media\n")
+        archive.writestr(
+            "lesson/quiz_questions.tsv",
+            "Question Type\tQuestion Text\tAnswer 1\tAnswer 2\tImage\n"
+            "MC\tQuestion?\t*Yes\tNo\tmedia/custom.png\n",
+        )
+        archive.writestr("lesson/media/custom.png", b"custom-image")
+
+    response = client.post(
+        "/api/import/tsv-zip-to-lesson",
+        files={"file": ("lesson.zip", buffer.getvalue(), "application/zip")},
+        data={"lessonCode": "SNLT-ZIP-MEDIA", "openInEditor": "false"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["package"]["questionCount"] == 1
+    assert captured["media"].name == "media"

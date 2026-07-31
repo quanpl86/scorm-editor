@@ -116,6 +116,7 @@ class ExcelQuestion:
     points: float | None = None
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    extra_media: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _cell_str(value: Any) -> str:
@@ -355,10 +356,8 @@ def _validate_question(q: ExcelQuestion) -> None:
 def parse_excel_file(path: Path, *, sheet_index: int = 0) -> list[ExcelQuestion]:
     """Read first sheet; row 1 = headers, following rows = questions."""
     suffix = path.suffix.lower()
-    if suffix == ".xls":
-        df = pd.read_excel(path, sheet_name=sheet_index, header=0, engine="xlrd")
-    else:
-        df = pd.read_excel(path, sheet_name=sheet_index, header=0, engine="openpyxl")
+    engine = "xlrd" if suffix == ".xls" else "openpyxl"
+    df = pd.read_excel(path, sheet_name=sheet_index, header=0, engine=engine)
 
     df.columns = [str(c).strip() for c in df.columns]
     col_map = {c.lower(): c for c in df.columns}
@@ -503,6 +502,39 @@ def parse_excel_file(path: Path, *, sheet_index: int = 0) -> list[ExcelQuestion]
         else:
             _validate_question(q)
         questions.append(q)
+
+    try:
+        media_df = pd.read_excel(path, sheet_name="Question Media", header=0, engine=engine)
+        media_df.columns = [str(column).strip() for column in media_df.columns]
+        by_index = {index + 1: question for index, question in enumerate(questions)}
+        for _, media_row in media_df.iterrows():
+            try:
+                question_index = int(float(_cell_str(media_row.get("Question Index"))))
+            except (TypeError, ValueError):
+                continue
+            question = by_index.get(question_index)
+            media_path = _cell_str(media_row.get("Path"))
+            if not question or not media_path:
+                continue
+            try:
+                position = int(float(_cell_str(media_row.get("Position")) or 1))
+            except ValueError:
+                position = 1
+            entry: dict[str, Any] = {
+                "role": _cell_str(media_row.get("Role")).lower() or "image",
+                "position": position,
+                "path": media_path,
+            }
+            for key in ("X", "Y", "W", "H"):
+                raw = _cell_str(media_row.get(key))
+                if raw:
+                    try:
+                        entry[key.lower()] = float(raw)
+                    except ValueError:
+                        pass
+            question.extra_media.append(entry)
+    except (ValueError, KeyError):
+        pass
 
     return questions
 

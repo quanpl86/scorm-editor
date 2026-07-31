@@ -618,6 +618,73 @@ def extract_hotspot_choices(slide: dict[str, Any]) -> list[dict[str, Any]]:
     return choices
 
 
+def extract_dnd_items(slide: dict[str, Any]) -> list[dict[str, Any]]:
+    """Normalize iSpring C.d drag-object → drop-target mappings."""
+    if slide.get("tp") != "DND":
+        return []
+    from .layout import extract_object_image, extract_object_text, resolve_object_rect
+
+    objects = {
+        str(obj.get("I")): obj
+        for obj in slide.get("a", {}).get("o", [])
+        if obj.get("I")
+    }
+    mappings: dict[str, str] = {}
+    target_ids: set[str] = set()
+    for entry in slide.get("C", {}).get("d", []) or []:
+        source_id = str((entry.get("o") or {}).get("s") or "")
+        target_id = str((entry.get("d") or {}).get("s") or "")
+        if target_id:
+            target_ids.add(target_id)
+        if source_id and target_id:
+            mappings[source_id] = target_id
+
+    source_ids = list(mappings)
+    # Include image decoys that are draggable but absent from the correct map.
+    for object_id, obj in objects.items():
+        if obj.get("tp") == "image" and object_id not in target_ids and object_id not in source_ids:
+            source_ids.append(object_id)
+
+    result: list[dict[str, Any]] = []
+    for index, source_id in enumerate(source_ids):
+        source_obj = objects.get(source_id, {})
+        target_id = mappings.get(source_id, "")
+        target_obj = objects.get(target_id, {})
+        source_text = extract_object_text(source_obj, slide).replace("\u200b", "").strip() or source_id
+        target_text = extract_object_text(target_obj, slide).replace("\u200b", "").strip()
+        target_rect = resolve_object_rect(target_obj, slide) if target_obj else {}
+        if not target_text and target_rect:
+            tx = float(target_rect.get("x", 0)) + float(target_rect.get("w", 0)) / 2
+            ty = float(target_rect.get("y", 0)) + float(target_rect.get("h", 0)) / 2
+            labels: list[tuple[float, str]] = []
+            for label_id, label_obj in objects.items():
+                if label_id in {target_id, "direction"}:
+                    continue
+                label = extract_object_text(label_obj, slide).replace("\u200b", "").strip()
+                if not label:
+                    continue
+                lr = resolve_object_rect(label_obj, slide)
+                lx = float(lr.get("x", 0)) + float(lr.get("w", 0)) / 2
+                ly = float(lr.get("y", 0)) + float(lr.get("h", 0)) / 2
+                labels.append(((lx - tx) ** 2 + (ly - ty) ** 2, label))
+            if labels:
+                target_text = min(labels, key=lambda item: item[0])[1]
+        target_text = target_text or target_id
+        result.append({
+            "id": f"dnd-{index}",
+            "sourceId": source_id,
+            "sourceText": source_text,
+            "sourceImage": extract_object_image(source_obj, slide),
+            "sourceRect": resolve_object_rect(source_obj, slide) if source_obj else {},
+            "targetId": target_id,
+            "targetText": target_text,
+            "targetImage": extract_object_image(target_obj, slide),
+            "targetRect": target_rect,
+            "isMapped": bool(target_id),
+        })
+    return result
+
+
 def extract_sequence_items(slide: dict[str, Any]) -> list[dict[str, Any]]:
     items = []
     for ch in slide.get("C", {}).get("chs", []):
@@ -759,6 +826,7 @@ def special_slide_to_view(
         "choices": [],
         "matchingPairs": [],
         "sequenceItems": [],
+        "dndItems": [],
         "typeInAnswers": [],
         "slideImages": extract_slide_images(slide),
         "editableLevel": "full",
@@ -892,6 +960,7 @@ def slide_to_view(slide: dict[str, Any], group_index: int, question_index: int, 
         "choices": [],
         "matchingPairs": [],
         "sequenceItems": [],
+        "dndItems": [],
         "typeInAnswers": [],
         "slideImages": extract_slide_images(slide),
         "editableLevel": editable_level(qtype),
@@ -917,6 +986,8 @@ def slide_to_view(slide: dict[str, Any], group_index: int, question_index: int, 
         view["matchingPairs"] = extract_matching_pairs(slide)
     elif qtype == "Hotspot":
         view["choices"] = extract_hotspot_choices(slide)
+    elif qtype == "DND":
+        view["dndItems"] = extract_dnd_items(slide)
     elif qtype in ("WordBank", "FillInTheBlank"):
         view["blankAnswers"] = extract_blank_answers(slide)
         rt = slide.get("C", {}).get("rt", {})
@@ -1345,6 +1416,7 @@ class ScormSession:
             try:
                 package_root = extract_scorm_package(source, session_dir / "package")
                 ensure_storage_capacity(SESSIONS_ROOT, protected_ids={session_id})
+                touch_session(SESSIONS_ROOT, session_id, event="create")
                 return cls(session_id, package_root)
             except Exception:
                 delete_session_dir(SESSIONS_ROOT, session_id)

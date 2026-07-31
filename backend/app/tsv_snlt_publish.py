@@ -690,7 +690,7 @@ def fill_workbook_from_tsv(
 
 
 _MEDIA_PATH_RE = re.compile(
-    r"(?:^|[\s=\"'\[\]|,;])(media/[A-Za-z0-9_./\-]+\.(?:jpg|jpeg|png|gif|webp|bmp))",
+    r"(?:^|[\s=\"'\[\]|,;])(media/[A-Za-z0-9_./\-]+\.(?:jpg|jpeg|png|gif|webp|bmp|mp3|wav|m4a|ogg|mp4|webm|mov))",
     re.I,
 )
 

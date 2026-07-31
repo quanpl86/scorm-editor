@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import os
+import json
 import shutil
 import threading
 import time
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -13,6 +15,7 @@ from typing import Iterator
 
 SESSION_IDLE_TTL_SECONDS = int(os.getenv("SESSION_IDLE_TTL_SECONDS", str(2 * 3600)))
 SESSION_STORAGE_LIMIT_BYTES = int(os.getenv("SESSION_STORAGE_LIMIT_BYTES", str(1024**3)))
+SESSION_MAX_UPLOAD_BYTES = int(os.getenv("SESSION_MAX_UPLOAD_BYTES", str(512 * 1024**2)))
 SESSION_STORAGE_TARGET_RATIO = float(os.getenv("SESSION_STORAGE_TARGET_RATIO", "0.85"))
 SESSION_CLEANUP_INTERVAL_SECONDS = int(os.getenv("SESSION_CLEANUP_INTERVAL_SECONDS", "600"))
 
@@ -23,6 +26,9 @@ _storage_write_guard = threading.RLock()
 
 class SessionStorageFullError(RuntimeError):
     pass
+
+
+ACTIVITY_FILENAME = ".session_activity.json"
 
 
 def get_session_lock(session_id: str) -> threading.RLock:
@@ -47,13 +53,43 @@ def storage_write_lock() -> Iterator[None]:
         yield
 
 
-def touch_session(root: Path, session_id: str) -> None:
+def touch_session(root: Path, session_id: str, *, event: str = "access") -> None:
     session_dir = root / session_id
     if session_dir.is_dir():
         try:
+            now = time.time()
+            activity_path = session_dir / ACTIVITY_FILENAME
+            try:
+                activity = json.loads(activity_path.read_text(encoding="utf-8"))
+            except (FileNotFoundError, json.JSONDecodeError, OSError):
+                activity = {}
+            activity["lastAccessedAt"] = now
+            if event == "save":
+                activity["lastSavedAt"] = now
+            elif event == "heartbeat":
+                activity["lastHeartbeatAt"] = now
+            elif event == "create":
+                activity.setdefault("createdAt", now)
+            temp_path = activity_path.with_name(
+                f".{ACTIVITY_FILENAME}.{uuid.uuid4().hex}.tmp"
+            )
+            temp_path.write_text(json.dumps(activity, separators=(",", ":")), encoding="utf-8")
+            os.replace(temp_path, activity_path)
             os.utime(session_dir, None)
         except FileNotFoundError:
             pass
+
+
+def session_last_accessed(item: Path) -> float:
+    if item.is_dir():
+        try:
+            activity = json.loads((item / ACTIVITY_FILENAME).read_text(encoding="utf-8"))
+            value = float(activity.get("lastAccessedAt", 0))
+            if value > 0:
+                return value
+        except (FileNotFoundError, json.JSONDecodeError, OSError, TypeError, ValueError):
+            pass
+    return item.stat().st_mtime
 
 
 def _tree_size(path: Path) -> int:
@@ -74,6 +110,17 @@ def sessions_size(root: Path) -> int:
     if not root.exists():
         return 0
     return _tree_size(root)
+
+
+def _is_session_dir(item: Path) -> bool:
+    """Only manage UUID session directories; never delete marker/config files."""
+    if not item.is_dir():
+        return False
+    try:
+        uuid.UUID(item.name)
+    except ValueError:
+        return False
+    return True
 
 
 def _try_remove(item: Path, *, protected_ids: set[str]) -> tuple[bool, int]:
@@ -124,8 +171,10 @@ def cleanup_sessions(
 
     items: list[tuple[float, Path]] = []
     for item in list(root.iterdir()):
+        if not _is_session_dir(item):
+            continue
         try:
-            items.append((item.stat().st_mtime, item))
+            items.append((session_last_accessed(item), item))
         except FileNotFoundError:
             continue
 
@@ -142,8 +191,10 @@ def cleanup_sessions(
     if total > target:
         remaining = []
         for item in list(root.iterdir()):
+            if not _is_session_dir(item):
+                continue
             try:
-                modified = item.stat().st_mtime
+                modified = session_last_accessed(item)
                 if current_time - modified >= SESSION_IDLE_TTL_SECONDS:
                     remaining.append((modified, item))
             except FileNotFoundError:

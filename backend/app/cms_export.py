@@ -19,12 +19,14 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from .media_bundle import fetch_remote_media, is_remote_url
 from .scorm_parser import (
     extract_blank_answers,
     extract_choices,
     extract_matching_pairs,
     extract_sequence_items,
     extract_type_in_answers,
+    get_package_root,
     quiz_to_view,
     strip_html,
 )
@@ -43,6 +45,7 @@ ISPRING_TO_TEKY: dict[str, str] = {
     "Matching":           "matching",
     "Sequence":           "ordering",
     "Hotspot":            "multiple_select",
+    "DND":                "matching",
 }
 
 SKIP_TYPES = {"InfoSlide", "IntroSlide", "ResultSlide"}
@@ -294,8 +297,7 @@ def _convert_hotspot(
     except ImportError:
         Image = None
 
-    base_dir = Path(__file__).parent.parent
-    package_root = base_dir / "data" / "sessions" / session_id / "package"
+    package_root = get_package_root(session_id)
     
     choices = slide_view.get("choices", [])
     if not choices:
@@ -305,22 +307,30 @@ def _convert_hotspot(
     if not bg_image_raw:
         return [], []
         
-    bg_filename = str(bg_image_raw).split("/")[-1].split("?")[0]
+    bg_filename = str(bg_image_raw).split("/")[-1].split("?")[0] or "hotspot.png"
     bg_stem = Path(bg_filename).stem
     bg_path = None
-    for folder in ("res/data/images", "data/images", "images"):
-        d = package_root / folder
-        if not d.is_dir():
-            continue
-        for cand in d.iterdir():
-            if cand.is_file() and cand.stem == bg_stem:
-                bg_path = cand
+    if not is_remote_url(str(bg_image_raw)):
+        for folder in ("res/data/images", "data/images", "images"):
+            d = package_root / folder
+            if not d.is_dir():
+                continue
+            for cand in d.iterdir():
+                if cand.is_file() and cand.stem == bg_stem:
+                    bg_path = cand
+                    break
+            if bg_path:
                 break
-        if bg_path:
-            break
             
     img = None
-    if bg_path and Image:
+    if Image and is_remote_url(str(bg_image_raw)):
+        try:
+            import io
+            remote_bytes, _, _ = fetch_remote_media(str(bg_image_raw))
+            img = Image.open(io.BytesIO(remote_bytes))
+        except Exception:
+            img = None
+    elif bg_path and Image:
         try:
             img = Image.open(bg_path)
         except Exception:
@@ -365,8 +375,51 @@ def _convert_hotspot(
         result.append(opt)
         if ch.get("isCorrect"):
             correct.append(opt["id"])
-            
+
+    if len(result) == 1:
+        result.append({"id": "hotspot-other", "text": "Khu vực khác"})
     return result, correct
+
+
+def _convert_dnd(
+    slide_view: dict[str, Any],
+    session_id: str,
+    base_url: str,
+    s3_uploader: Callable[[str], str | None] = None,
+) -> tuple[str, dict[str, Any]] | None:
+    items = slide_view.get("dndItems") or []
+    mapped = [item for item in items if item.get("isMapped") and item.get("targetId")]
+    target_ids = list(dict.fromkeys(str(item.get("targetId")) for item in mapped))
+    if not mapped or not target_ids:
+        return None
+
+    if len(target_ids) == 1:
+        target_id = target_ids[0]
+        choices = []
+        for item in items:
+            choices.append({
+                "id": item.get("id", ""),
+                "text": item.get("sourceText", ""),
+                "image": item.get("sourceImage"),
+                "isCorrect": item.get("targetId") == target_id,
+            })
+        options, correct = _convert_mc_options(choices, session_id, base_url, s3_uploader)
+        qtype = "multiple_choice" if len(correct) <= 1 else "multiple_select"
+        if len(options) == 1:
+            options.append({"id": "dnd-other", "text": "Phương án khác"})
+        return qtype, {"options": options, "correctAnswer": correct}
+
+    pairs = []
+    for index, item in enumerate(mapped):
+        pairs.append({
+            "id": item.get("id") or f"dnd-pair-{index}",
+            "leftText": item.get("sourceText", ""),
+            "rightText": item.get("targetText", ""),
+            "leftImage": item.get("sourceImage"),
+            "rightImage": item.get("targetImage"),
+        })
+    pairs_out, correct = _convert_matching(pairs, session_id, base_url, s3_uploader)
+    return "matching", {"pairs": pairs_out, "correctAnswer": correct}
 
 
 def _slide_to_teky(
@@ -425,6 +478,18 @@ def _slide_to_teky(
     blank_answers = slide_view.get("blankAnswers") or []
     type_in = slide_view.get("typeInAnswers") or []
 
+    if ispring_type == "DND":
+        converted = _convert_dnd(slide_view, session_id, base_url, s3_uploader)
+        if not converted:
+            return None
+        q["type"], payload = converted
+        q.update(payload)
+        q["conversionMetadata"] = {
+            "sourceType": "DND",
+            "strategy": "single-target-mc-mr" if q["type"] != "matching" else "multi-target-matching",
+        }
+        return q
+
     if teky_type in {"multiple_choice", "multiple_select", "true_false"}:
         if ispring_type == "TrueFalse":
             opts, correct = _convert_true_false(slide_view.get("choices", []))
@@ -432,6 +497,10 @@ def _slide_to_teky(
             opts, correct = _convert_hotspot(slide_view, session_id, base_url, s3_uploader)
             if len(correct) <= 1:
                 q["type"] = "multiple_choice"
+            q["conversionMetadata"] = {
+                "sourceType": "Hotspot",
+                "strategy": "cropped-regions-mc-mr",
+            }
         else:
             opts, correct = _convert_mc_options(slide_view.get("choices", []), session_id, base_url, s3_uploader)
         q["options"] = opts

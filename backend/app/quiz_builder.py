@@ -823,7 +823,81 @@ def _apply_row_to_slide(
         slide.setdefault("D", {})
         apply_text_to_node(slide["D"], body, "content")
 
+    # Run canonical layout first. Portable Question Media coordinates below are
+    # authoritative and must not be moved by the generic overlap resolver.
     reflow_imported_slide(slide)
+    primary_refs = {str(value) for value in (row.image, row.video, row.audio) if value}
+    for media_index, media in enumerate(row.extra_media or [], start=1):
+        ref = str(media.get("path") or "")
+        role = str(media.get("role") or "image").lower()
+        if not ref:
+            continue
+        position = int(media.get("position", 1))
+        if ref in primary_refs and position == 1:
+            role_types = {
+                "image": {"slidePicture", "image"},
+                "video": {"slideVideo", "video"},
+                "audio": {"slideAudio", "audio"},
+            }.get(role, set())
+            existing = next(
+                (
+                    obj
+                    for obj in slide.setdefault("a", {}).setdefault("o", [])
+                    if obj.get("tp") in role_types
+                ),
+                None,
+            )
+            if existing is not None:
+                rect_values = {
+                    key.lower(): float(media[key.lower()])
+                    for key in ("X", "Y", "W", "H")
+                    if media.get(key.lower()) is not None
+                }
+                if rect_values:
+                    existing["r"] = {
+                        "x": rect_values.get("x", existing.get("r", {}).get("x", 80)),
+                        "y": rect_values.get("y", existing.get("r", {}).get("y", 130)),
+                        "w": max(40.0, rect_values.get("w", existing.get("r", {}).get("w", 180))),
+                        "h": max(40.0, rect_values.get("h", existing.get("r", {}).get("h", 120))),
+                    }
+                continue
+        resolver = {
+            "image": _resolve_and_copy_image,
+            "video": _resolve_and_copy_video,
+            "audio": _resolve_and_copy_audio,
+        }.get(role)
+        if not resolver:
+            continue
+        resolved = resolver(
+            ref,
+            package_root=package_root,
+            excel_dir=excel_dir,
+            fallback_media_dirs=fallback_media_dirs,
+            warnings=warnings,
+        )
+        if not resolved:
+            continue
+        object_type = role
+        storage_prefix = {"image": "images", "video": "videos", "audio": "sounds"}[role]
+        media_ref = resolved if _is_remote_url(resolved) else f"storage://{storage_prefix}/{resolved}"
+        rect = {
+            "x": float(media.get("x", 80 + media_index * 12)),
+            "y": float(media.get("y", 130 + media_index * 12)),
+            "w": max(40.0, float(media.get("w", 180))),
+            "h": max(40.0, float(media.get("h", 120 if role != "audio" else 48))),
+        }
+        slide.setdefault("a", {}).setdefault("o", []).append({
+            "tp": object_type,
+            "I": f"Imported {role.title()} {media_index}",
+            "k": False,
+            "r": rect,
+            "i": media_ref,
+            "s": "rectangle",
+            "S": _blank_object_styles(),
+            "b": 0.3,
+        })
+        _bump_slide_object_quota(slide, object_type)
+
     return warnings
 
 

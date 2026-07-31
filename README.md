@@ -83,12 +83,31 @@ Mount Render Persistent Disk vào thư mục được cấu hình bởi `SESSION
 SESSIONS_ROOT=/var/data/scorm-sessions
 SESSION_STORAGE_LIMIT_BYTES=1073741824
 SESSION_STORAGE_TARGET_RATIO=0.85
+SESSION_MAX_UPLOAD_BYTES=536870912
 SESSION_IDLE_TTL_SECONDS=7200
 SESSION_CLEANUP_INTERVAL_SECONDS=600
 ```
 
 Trình duyệt gửi heartbeat mỗi 5 phút. Session không còn heartbeat sẽ được xóa
 sau khoảng 2 giờ; session được xóa ngay sau khi export CMS JSON thành công.
+Cleanup chạy khi backend khởi động và lặp lại theo
+`SESSION_CLEANUP_INTERVAL_SECONDS`. Chỉ các thư mục session UUID mới được quản
+lý/xóa; file cấu hình hoặc marker trong thư mục mount được giữ nguyên. Khi đạt
+hard limit 1 GB, backend trả HTTP 507 thay vì tiếp tục ghi vượt quota.
+
+### 3.4. Source Project ZIP và round-trip
+
+`Tải Source Project` tạo ZIP gồm workbook chuẩn, thư mục `media/`, sheet
+`Quiz Settings`, `Question Media` và `Export Warnings`. Ảnh/audio/video local
+hoặc URL HTTP(S) công khai được tải, khử trùng lặp và gắn lại vào workbook;
+sheet `Question Media` giữ vai trò, thứ tự và tọa độ cho trường hợp một câu có
+nhiều media. URL mạng nội bộ/localhost bị từ chối để tránh SSRF.
+
+Hotspot được chuyển thành MC/MR bằng ảnh vùng cắt. DND một vùng đích được
+chuyển thành MC/MR; DND nhiều vùng đích được chuyển thành Matching. JSON schema
+v2 giữ `_scormEditorState` để phục hồi đầy đủ layout; JSON CMS cũ không có raw
+state vẫn được migrate các câu hỏi/media hỗ trợ, còn layout iSpring không tồn
+tại trong file cũ sẽ dùng layout mặc định.
 
 ## 4. Quy ước đặt tên khi Export Ảnh (Image Export Naming Conventions)
 Hệ thống hỗ trợ 8 dạng câu hỏi/slide chính. Khi người dùng thực hiện xuất ảnh (Export) trên ứng dụng, thuật toán sẽ tự động phân loại và gán hậu tố tên file dựa trên dạng câu hỏi và vị trí của hình ảnh để tránh trùng lặp:

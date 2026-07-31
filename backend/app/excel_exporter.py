@@ -8,11 +8,11 @@ import tempfile
 import zipfile
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
 
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
 
+from .media_bundle import MediaBundler
 from .scorm_parser import ScormSession
 
 
@@ -61,14 +61,6 @@ def _safe_filename(value: str, fallback: str = "Quiz") -> str:
     return cleaned[:120].strip() or fallback
 
 
-def _remote_url(value: str | None) -> bool:
-    return bool(value and str(value).startswith(("http://", "https://")))
-
-
-def _url_filename(value: str) -> str:
-    return Path(urlsplit(value).path).name
-
-
 def _answer_values(q: dict[str, Any], excel_type: str) -> list[dict[str, Any]]:
     """Normalize every supported editor type to at most six canonical Excel answers."""
     if q.get("type") == "Hotspot":
@@ -81,6 +73,29 @@ def _answer_values(q: dict[str, Any], excel_type: str) -> list[dict[str, Any]]:
             }
             for idx, choice in enumerate(q.get("choices") or [])
         ][:MAX_ANSWERS]
+
+    if q.get("type") == "DND":
+        items = q.get("dndItems") or []
+        mapped = [item for item in items if item.get("isMapped") and item.get("targetId")]
+        target_ids = list(dict.fromkeys(str(item.get("targetId")) for item in mapped))
+        if len(target_ids) == 1:
+            target_id = target_ids[0]
+            return [
+                {
+                    "text": item.get("sourceText", ""),
+                    "image": item.get("sourceImage"),
+                    "correct": item.get("targetId") == target_id,
+                }
+                for item in items[:MAX_ANSWERS]
+            ]
+        return [
+            {
+                "text": f"{item.get('sourceText', '')} | {item.get('targetText', '')}",
+                "leftImage": item.get("sourceImage"),
+                "rightImage": item.get("targetImage"),
+            }
+            for item in mapped[:MAX_ANSWERS]
+        ]
 
     if excel_type == "MG":
         return [
@@ -149,27 +164,14 @@ def export_session_to_excel_zip(session: ScormSession) -> tuple[Path, str]:
         cell.fill = PatternFill(start_color="DDDDDD", end_color="DDDDDD", fill_type="solid")
         cell.alignment = Alignment(horizontal="center", vertical="center")
 
-    added_names: set[str] = set()
     warnings: list[str] = []
+    question_media_rows: list[list[Any]] = []
 
     with zipfile.ZipFile(temp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        bundler = MediaBundler(session, zf)
+
         def add_local_media(original: str | None, proposed_name: str) -> str:
-            if not original:
-                return ""
-            raw = str(original).strip()
-            if not raw:
-                return ""
-            search_value = _url_filename(raw) if _remote_url(raw) else raw
-            try:
-                source = session.asset_path(search_value)
-            except FileNotFoundError:
-                return raw if _remote_url(raw) else ""
-            final_name = f"{_safe_filename(proposed_name, 'media')}{source.suffix.lower()}"
-            archive_name = f"media/{final_name}"
-            if archive_name not in added_names:
-                zf.write(source, archive_name)
-                added_names.add(archive_name)
-            return archive_name
+            return bundler.add(original, _safe_filename(proposed_name, "media"))
 
         def add_hotspot_crop(answer: dict[str, Any], proposed_name: str) -> str:
             image_ref = answer.get("image")
@@ -179,23 +181,26 @@ def export_session_to_excel_zip(session: ScormSession) -> tuple[Path, str]:
             try:
                 from PIL import Image
 
-                source = session.asset_path(_url_filename(image_ref) if _remote_url(image_ref) else str(image_ref))
-                with Image.open(source) as image:
+                resolved = bundler.read(str(image_ref))
+                if not resolved:
+                    raise FileNotFoundError(str(image_ref))
+                image_bytes, source_suffix = resolved
+                with Image.open(io.BytesIO(image_bytes)) as image:
                     x = max(0, int(float(rect.get("x", 0)) * image.width / 10000))
                     y = max(0, int(float(rect.get("y", 0)) * image.height / 10000))
                     width = max(1, int(float(rect.get("w", 0)) * image.width / 10000))
                     height = max(1, int(float(rect.get("h", 0)) * image.height / 10000))
                     crop = image.crop((x, y, min(image.width, x + width), min(image.height, y + height)))
-                    suffix = source.suffix.lower() if source.suffix.lower() in IMAGE_EXTS else ".png"
+                    suffix = source_suffix if source_suffix in IMAGE_EXTS else ".png"
                     if crop.mode in {"RGBA", "LA"} and suffix in {".jpg", ".jpeg"}:
                         crop = crop.convert("RGB")
                     archive_name = f"media/{_safe_filename(proposed_name, 'hotspot')}{suffix}"
                     buffer = io.BytesIO()
                     fmt = "JPEG" if suffix in {".jpg", ".jpeg"} else ("GIF" if suffix == ".gif" else "PNG")
                     crop.save(buffer, format=fmt)
-                    if archive_name not in added_names:
+                    if archive_name not in bundler.names:
                         zf.writestr(archive_name, buffer.getvalue())
-                        added_names.add(archive_name)
+                        bundler.names.add(archive_name)
                     return archive_name
             except Exception as exc:
                 warnings.append(f"Không crop được hotspot {proposed_name}: {exc}")
@@ -208,6 +213,22 @@ def export_session_to_excel_zip(session: ScormSession) -> tuple[Path, str]:
                 excel_type = "MC" if sum(bool(answer.get("correct")) for answer in answers) <= 1 else "MR"
                 if excel_type == "MC" and len(answers) == 1:
                     answers.append({"text": "Khu vực khác", "correct": False})
+            elif source_type == "DND":
+                mapped_targets = {
+                    str(item.get("targetId"))
+                    for item in (q.get("dndItems") or [])
+                    if item.get("isMapped") and item.get("targetId")
+                }
+                if len(mapped_targets) == 1:
+                    correct_count = sum(bool(answer.get("correct")) for answer in answers)
+                    excel_type = "MC" if correct_count <= 1 else "MR"
+                    if len(answers) == 1:
+                        answers.append({"text": "Phương án khác", "correct": False})
+                elif len(mapped_targets) > 1:
+                    excel_type = "MG"
+                else:
+                    excel_type = "IS"
+                    answers = []
             elif source_type == "MultipleChoiceText" and len(answers) < 2:
                 # This iSpring-only type is not representable in the canonical
                 # Teky schema when the source exposes no choices.
@@ -218,24 +239,55 @@ def export_session_to_excel_zip(session: ScormSession) -> tuple[Path, str]:
 
             prefix = f"{safe_title}_{q_index}"
             question_media: list[str] = []
+            seen_question_refs: set[str] = set()
+
+            def add_question_media(reference: str | None, role: str, position: int, rect: dict[str, Any] | None = None) -> str:
+                raw = str(reference or "").strip()
+                if not raw:
+                    return ""
+                code = {"image": "IMG", "video": "VID", "audio": "AUD"}.get(role, "MEDIA")
+                exported = add_local_media(raw, f"{prefix}_{code}-ND{position}")
+                if exported:
+                    r = rect or {}
+                    question_media_rows.append([
+                        q_index,
+                        q.get("id", ""),
+                        role,
+                        position,
+                        exported,
+                        r.get("x", ""), r.get("y", ""), r.get("w", ""), r.get("h", ""),
+                    ])
+                return exported
+
+            # Layout objects go first so the portable metadata retains their
+            # exact canvas rectangle when the same asset is also a slide image.
+            for obj in (q.get("layout") or {}).get("objects") or []:
+                for role in ("image", "video", "audio"):
+                    value = obj.get(role)
+                    raw = str(value or "")
+                    if not raw or raw in seen_question_refs:
+                        continue
+                    seen_question_refs.add(raw)
+                    position = 1 + sum(1 for row in question_media_rows if row[0] == q_index and row[2] == role)
+                    exported = add_question_media(value, role, position, obj.get("r"))
+                    if role == "image" and exported:
+                        question_media.append(exported)
             for image in q.get("slideImages") or []:
-                exported = add_local_media(image, f"{prefix}_IMG-ND{len(question_media) + 1}")
+                raw = str(image)
+                if raw in seen_question_refs:
+                    continue
+                seen_question_refs.add(raw)
+                exported = add_question_media(image, "image", len(question_media) + 1)
                 if exported:
                     question_media.append(exported)
-            if not question_media:
-                for obj in (q.get("layout") or {}).get("objects") or []:
-                    if obj.get("image"):
-                        exported = add_local_media(obj["image"], f"{prefix}_IMG-ND{len(question_media) + 1}")
-                        if exported:
-                            question_media.append(exported)
 
             video = q.get("video") or ""
             audio = q.get("audio") or ""
             for obj in (q.get("layout") or {}).get("objects") or []:
                 video = video or obj.get("video") or ""
                 audio = audio or obj.get("audio") or ""
-            video_ref = video if _remote_url(video) else add_local_media(video, f"{prefix}_VID-ND")
-            audio_ref = audio if _remote_url(audio) else add_local_media(audio, f"{prefix}_AUD-ND")
+            video_ref = add_local_media(video, f"{prefix}_VID-ND")
+            audio_ref = add_local_media(audio, f"{prefix}_AUD-ND")
 
             explanation = q.get("explanation") or (q.get("feedback") or {}).get("correct") or ""
             feedback = q.get("feedback") or {}
@@ -246,7 +298,7 @@ def export_session_to_excel_zip(session: ScormSession) -> tuple[Path, str]:
             ):
                 value = feedback.get(key)
                 if value:
-                    ref = value if _remote_url(value) else add_local_media(value, f"{prefix}_{code}")
+                    ref = add_local_media(value, f"{prefix}_{code}")
                     if ref:
                         explanation = f"{explanation} [{kind}={ref}]".strip()
 
@@ -313,6 +365,12 @@ def export_session_to_excel_zip(session: ScormSession) -> tuple[Path, str]:
         for setting in settings_rows:
             ws_settings.append(setting)
 
+        ws_media = wb.create_sheet("Question Media")
+        ws_media.append(["Question Index", "Question ID", "Role", "Position", "Path", "X", "Y", "W", "H"])
+        for row in question_media_rows:
+            ws_media.append(row)
+
+        warnings.extend(bundler.warnings)
         if warnings:
             ws_warnings = wb.create_sheet("Export Warnings")
             ws_warnings.append(["Warning"])
