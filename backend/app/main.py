@@ -184,6 +184,7 @@ def import_cms_json(background_tasks: BackgroundTasks, file: UploadFile = File(.
         session_id = str(uuid.uuid4())
         session_dir = SESSIONS_ROOT / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
+        (session_dir / "package").mkdir(parents=True, exist_ok=True)
         
         # Save the stateless editor state as session.json
         with open(session_dir / "session.json", "w", encoding="utf-8") as f:
@@ -944,7 +945,7 @@ def export_session_project(session_id: str):
     This reverse-parses the current SCORM session JSON and builds a standard Teky LMS Excel file,
     along with a media folder containing all referenced assets.
     """
-    session = ScormSession.get(session_id)
+    session = get_session(session_id)
     if not session:
         raise HTTPException(404, "Session không tồn tại")
     

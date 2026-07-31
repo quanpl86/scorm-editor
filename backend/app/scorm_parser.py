@@ -162,7 +162,11 @@ def atomic_write_text(path: Path, content: str) -> None:
 def get_package_root(session_id: str) -> Path:
     package_root = SESSIONS_ROOT / session_id / "package"
     if not package_root.exists():
-        raise FileNotFoundError("Session không tồn tại")
+        session_json = SESSIONS_ROOT / session_id / "session.json"
+        if session_json.exists():
+            package_root.mkdir(parents=True, exist_ok=True)
+        else:
+            raise FileNotFoundError("Session không tồn tại")
     return package_root
 
 
@@ -1240,11 +1244,17 @@ class ScormSession:
     def __init__(self, session_id: str, package_root: Path):
         self.session_id = session_id
         self.package_root = package_root
-        self.index_path = find_index_html(package_root)
+        try:
+            self.index_path = find_index_html(package_root)
+            index_html = self.index_path.read_text(encoding="utf-8")
+            self.index_html_template = index_html
+            self.quiz_json = decode_quiz_data(index_html)
+        except ValueError:
+            self.index_path = None
+            self.index_html_template = ""
+            self.quiz_json = {}
+        
         self.manifest_path = package_root / "imsmanifest.xml"
-        index_html = self.index_path.read_text(encoding="utf-8")
-        self.index_html_template = index_html
-        self.quiz_json = decode_quiz_data(index_html)
         self.meta = parse_manifest_meta(self.manifest_path) if self.manifest_path.exists() else {}
 
     @classmethod
@@ -1331,10 +1341,11 @@ class ScormSession:
             quiz_path,
             json.dumps(self.quiz_json, ensure_ascii=False, indent=2),
         )
-        atomic_write_text(
-            self.index_path,
-            replace_quiz_data(self.index_html_template, self.quiz_json),
-        )
+        if self.index_path:
+            atomic_write_text(
+                self.index_path,
+                replace_quiz_data(self.index_html_template, self.quiz_json),
+            )
 
     def asset_path(self, relative: str) -> Path:
         # Check if this asset is mapped to a different file in iSpring's rs (resources) dict
