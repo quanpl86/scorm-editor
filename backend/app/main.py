@@ -846,7 +846,34 @@ def _generate_cms_json(session_id: str, request: Request):
 
         import copy
         stateless_json = copy.deepcopy(session.quiz_json)
-        
+
+        # Upload ALL images referenced in stateless_json that aren't in upload_cache yet
+        import re as _re
+        _raw = json.dumps(stateless_json, ensure_ascii=False)
+        for _m in _re.finditer(r'storage://images/([^"\'\\>\s]+)', _raw):
+            _fname = _m.group(1)
+            # Strip iSpring JSON metadata suffix e.g. "file.png{...}"
+            _clean = _fname.split("{")[0] if "{" in _fname else _fname
+            if _clean not in upload_cache:
+                try:
+                    handle_s3_upload(_clean)
+                except Exception:
+                    pass
+        for _m in _re.finditer(r'storage://sounds/([^"\'\\>\s]+)', _raw):
+            _fname = _m.group(1).split("{")[0]
+            if _fname not in upload_cache:
+                try:
+                    handle_s3_upload(_fname)
+                except Exception:
+                    pass
+        for _m in _re.finditer(r'storage://videos/([^"\'\\>\s]+)', _raw):
+            _fname = _m.group(1).split("{")[0]
+            if _fname not in upload_cache:
+                try:
+                    handle_s3_upload(_fname)
+                except Exception:
+                    pass
+
         def _replace_s3_urls(obj):
             if isinstance(obj, dict):
                 for k, v in obj.items():
