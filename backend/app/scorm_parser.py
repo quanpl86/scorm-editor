@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
 
+from .fill_blank import BLANK_MARKER_RE, ensure_question_markers, normalize_blank_answers
 from .fonts import extract_font_manifest
 from .layout import apply_question_layout_edit, extract_layout, image_path_from_html
 from .session_manager import (
@@ -994,8 +995,15 @@ def slide_to_view(slide: dict[str, Any], group_index: int, question_index: int, 
         h_html = rt.get("h") or ""
         a_html = rt.get("a") or ""
         view["richHtml"] = a_html if len(strip_html(a_html)) > len(strip_html(h_html)) else (h_html or a_html)
-        if qtype == "WordBank":
-            view["wordBankWords"] = list(slide.get("C", {}).get("ew", []) or [])
+        if qtype in {"WordBank", "FillInTheBlank"}:
+            extras = (
+                slide.get("_metadata", {}).get("blankDistractors")
+                or slide.get("C", {}).get("ew", [])
+                or []
+            )
+            view["wordBankWords"] = list(extras)
+            if qtype == "FillInTheBlank":
+                view["blankDistractors"] = list(extras)
     elif qtype in ("TypeIn", "Numeric", "MultipleNumeric"):
         view["typeInAnswers"] = extract_type_in_answers(slide)
 
@@ -1157,8 +1165,11 @@ def apply_question_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:
     if edit.get("matchingPairs") is not None and slide.get("tp") == "Matching":
         apply_matching_pairs(slide, edit["matchingPairs"])
 
-    if edit.get("wordBankWords") is not None and slide.get("tp") == "WordBank":
-        slide.setdefault("C", {})["ew"] = [w for w in edit["wordBankWords"] if str(w).strip()]
+    if edit.get("wordBankWords") is not None and slide.get("tp") in {"WordBank", "FillInTheBlank"}:
+        extras = [str(w).strip() for w in edit["wordBankWords"] if str(w).strip()]
+        slide.setdefault("C", {})["ew"] = extras
+        if slide.get("tp") == "FillInTheBlank":
+            slide.setdefault("_metadata", {})["blankDistractors"] = extras
 
     if edit.get("richHtml") is not None and slide.get("tp") in {"WordBank", "FillInTheBlank"}:
         slide.setdefault("C", {})
@@ -1168,41 +1179,41 @@ def apply_question_edit(slide: dict[str, Any], edit: dict[str, Any]) -> None:
     if edit.get("blankAnswers") is not None and slide.get("tp") == "FillInTheBlank":
         slide.setdefault("C", {})
         rt = slide["C"].setdefault("rt", {})
-        existing_entries = rt.get("r", [])
-        existing_id = next(
-            (entry.get("id") for entry in existing_entries if entry.get("id")),
-            "qmFillInTheBlank0",
-        )
-        answer = (edit.get("blankAnswers") or [{}])[0]
-        blank_id = answer.get("id") or existing_id
-        values = answer.get("values") or answer.get("acceptedAnswers") or []
-        accepted_answers = [
-            str(value).strip() for value in values if str(value).strip()
-        ]
-        correct_answer = accepted_answers[0] if accepted_answers else ""
-
-        rt["r"] = [{
-            "id": blank_id,
-            "type": "qmFillInTheBlank",
-            "data": {"v": accepted_answers},
-        }]
+        blanks = normalize_blank_answers(edit.get("blankAnswers"))
 
         question_text = edit.get("questionText")
         if question_text is None:
             question_text = strip_html(slide.get("D", {}).get("h", ""))
-        question_text = str(question_text or "")
-        blank_span = f'<span id="{html.escape(blank_id)}"></span>'
+        question_text = ensure_question_markers(question_text, len(blanks))
         escaped_question = html.escape(question_text)
-        if "___" in escaped_question:
-            rich_content = escaped_question.replace("___", blank_span, 1)
-        else:
-            rich_content = f"{escaped_question} {blank_span}".strip()
+        blank_index = 0
+
+        def replace_marker(_: re.Match[str]) -> str:
+            nonlocal blank_index
+            if blank_index >= len(blanks):
+                return ""
+            blank_id = html.escape(blanks[blank_index]["id"])
+            blank_index += 1
+            return f'<span id="{blank_id}"></span>'
+
+        rich_content = BLANK_MARKER_RE.sub(replace_marker, escaped_question)
         rt["h"] = f"<p><span>{rich_content}</span></p>"
-        rt["d"] = [question_text, {"id": blank_id}]
-        slide["C"]["chs"] = [{
-            "i": blank_id,
-            "t": {"h": correct_answer},
-        }]
+        rt["r"] = [
+            {
+                "id": blank["id"],
+                "type": "qmFillInTheBlank",
+                "data": {"v": list(blank["values"])},
+            }
+            for blank in blanks
+        ]
+        rt["d"] = [question_text, *({"id": blank["id"]} for blank in blanks)]
+        slide["C"]["chs"] = [
+            {
+                "i": blank["id"],
+                "t": {"h": blank["values"][0] if blank["values"] else ""},
+            }
+            for blank in blanks
+        ]
 
     if edit.get("blankAnswers") is not None and slide.get("tp") == "WordBank":
         slide.setdefault("C", {})
@@ -1467,7 +1478,17 @@ class ScormSession:
         questions = {q["id"]: q for q in payload.get("questions", [])}
         new_qs = [q for q in payload.get("questions", []) if q.get("isNew") or str(q.get("id", "")).startswith("new_")]
 
-        groups = self.quiz_json["d"]["sl"]["g"]
+        groups = self.quiz_json["d"]["sl"].setdefault("g", [])
+        if not groups and new_qs:
+            groups.append({"T": "Imported Questions", "S": []})
+
+        # A JSON-restored or freshly-created editor session can legitimately
+        # start with an empty question group.  The old implementation cloned
+        # the last existing slide, so every new question silently disappeared
+        # when there was no slide to clone.  Load the canonical template for
+        # the requested type instead; this also avoids creating a FIB question
+        # from an unrelated MultipleChoice slide.
+        templates: dict[str, dict[str, Any]] | None = None
         for gi, group in enumerate(groups):
             new_slides = []
             for slide in group.get("S", []):
@@ -1478,11 +1499,26 @@ class ScormSession:
                     apply_question_edit(slide, questions[sid])
                 new_slides.append(slide)
 
-            if gi == 0 and new_qs and new_slides:
+            if gi == 0 and new_qs:
                 import copy
                 import uuid
+
+                if templates is None:
+                    # Local import avoids the module-level quiz_builder ->
+                    # scorm_parser dependency becoming circular at startup.
+                    from .quiz_builder import load_slide_templates
+
+                    templates = load_slide_templates()
                 for q in new_qs:
-                    template = copy.deepcopy(new_slides[-1])
+                    requested_type = str(q.get("type") or "MultipleChoice")
+                    source_template = templates.get(requested_type)
+                    if source_template is None and new_slides:
+                        source_template = new_slides[-1]
+                    if source_template is None:
+                        raise ValueError(
+                            f"Không có slide mẫu để lưu câu hỏi mới loại {requested_type}."
+                        )
+                    template = copy.deepcopy(source_template)
                     template["i"] = f"slide_{uuid.uuid4().hex[:8]}"
                     apply_question_edit(template, q)
                     new_slides.append(template)

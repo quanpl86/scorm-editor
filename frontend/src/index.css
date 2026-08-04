@@ -673,6 +673,84 @@ button, input, textarea, select {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px 14px;
   margin-top: 4px;
+  text-align: left;
+}
+
+.settings-check {
+  position: relative;
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--label);
+  cursor: pointer;
+  transition: border-color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.settings-check:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.settings-check:has(input:checked) {
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
+}
+
+.settings-check:has(input:focus-visible) {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+.settings-check:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.settings-check input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.settings-check-box {
+  position: relative;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  transition: border-color 0.16s ease, background-color 0.16s ease;
+}
+
+.settings-check input:checked + .settings-check-box {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.settings-check input:checked + .settings-check-box::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.settings-check-label {
+  font-size: 0.82rem;
+  line-height: 1.35;
+  font-weight: 600;
 }
 
 .settings-form-note {

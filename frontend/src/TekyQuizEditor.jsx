@@ -2,6 +2,173 @@ import React, { useState } from 'react';
 import { HiOutlineArrowUpTray, HiOutlineTrash, HiOutlineArrowDownTray } from 'react-icons/hi2';
 import './TekyQuizEditor.css';
 import { API, assetUrl, exportProject, uploadNewImage } from './api';
+import {
+  NEW_BLANK_TOKEN,
+  blankMarkerRegex,
+  blankPromptKey,
+  countBlankMarkers,
+  ensureBlankMarkers,
+  normalizeBlankPrompt,
+  normalizeBlankAnswers,
+  splitBlankPrompt,
+} from './fillBlankUtils';
+
+function escapeEditorHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/\n/g, '<br>');
+}
+
+function blankEditorHtml(value) {
+  const parts = splitBlankPrompt(value);
+  return parts.map((part, index) => {
+    const holder = index < parts.length - 1
+      ? `<span class="teky-inline-blank-chip" contenteditable="false" data-blank-marker="true">Ô trống ${index + 1}</span>`
+      : '';
+    return `${escapeEditorHtml(part)}${holder}`;
+  }).join('');
+}
+
+function createBlankChip(index = 0) {
+  const chip = document.createElement('span');
+  chip.className = 'teky-inline-blank-chip';
+  chip.contentEditable = 'false';
+  chip.dataset.blankMarker = 'true';
+  chip.textContent = `Ô trống ${index + 1}`;
+  return chip;
+}
+
+function renumberBlankChips(root) {
+  const chips = Array.from(root.querySelectorAll('[data-blank-marker="true"]'));
+  chips.forEach((chip, index) => { chip.textContent = `Ô trống ${index + 1}`; });
+  return chips;
+}
+
+function promoteTypedBlankMarkers(root) {
+  const textNodes = [];
+  const visit = (node) => {
+    Array.from(node.childNodes).forEach(child => {
+      if (child.nodeType === Node.TEXT_NODE) textNodes.push(child);
+      else if (child.nodeType === Node.ELEMENT_NODE && child.dataset?.blankMarker !== 'true') visit(child);
+    });
+  };
+  visit(root);
+
+  const inserted = [];
+  textNodes.forEach(textNode => {
+    const source = textNode.nodeValue || '';
+    const matches = [...source.matchAll(blankMarkerRegex())];
+    if (!matches.length) return;
+    const fragment = document.createDocumentFragment();
+    let cursor = 0;
+    matches.forEach(match => {
+      fragment.append(document.createTextNode(source.slice(cursor, match.index)));
+      const chip = createBlankChip();
+      inserted.push(chip);
+      fragment.append(chip);
+      cursor = match.index + match[0].length;
+    });
+    fragment.append(document.createTextNode(source.slice(cursor)));
+    textNode.replaceWith(fragment);
+  });
+
+  const chips = renumberBlankChips(root);
+  return inserted.map(chip => chips.indexOf(chip)).filter(index => index >= 0);
+}
+
+function serializeBlankEditor(node) {
+  const read = (current) => {
+    if (current.nodeType === Node.TEXT_NODE) return current.nodeValue || '';
+    if (current.nodeType !== Node.ELEMENT_NODE) return '';
+    if (current.dataset?.blankMarker === 'true') return NEW_BLANK_TOKEN;
+    if (current.tagName === 'BR') return '\n';
+    const value = Array.from(current.childNodes).map(read).join('');
+    return ['DIV', 'P'].includes(current.tagName) ? `${value}\n` : value;
+  };
+  return Array.from(node.childNodes).map(read).join('').replace(/\u00a0/g, ' ');
+}
+
+const BlankPromptEditor = React.forwardRef(function BlankPromptEditor(
+  { value, onChange, onInsertBlanks },
+  ref,
+) {
+  const editorRef = React.useRef(null);
+  const valueAtFocus = React.useRef(value);
+  const [editing, setEditing] = React.useState(false);
+  const displayValue = editing ? valueAtFocus.current : normalizeBlankPrompt(value);
+
+  React.useImperativeHandle(ref, () => ({
+    insertBlankAtCaret() {
+      const root = editorRef.current;
+      if (!root) return;
+      root.focus();
+      const selection = window.getSelection();
+      let range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+      if (!range || !root.contains(range.commonAncestorContainer)) {
+        range = document.createRange();
+        range.selectNodeContents(root);
+        range.collapse(false);
+      }
+      range.deleteContents();
+      const chip = createBlankChip();
+      const trailingSpace = document.createTextNode(' ');
+      range.insertNode(trailingSpace);
+      range.insertNode(chip);
+      const chips = renumberBlankChips(root);
+      const blankIndex = chips.indexOf(chip);
+      range.setStartAfter(trailingSpace);
+      range.collapse(true);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      onInsertBlanks(serializeBlankEditor(root), [blankIndex]);
+    },
+  }), [onInsertBlanks]);
+
+  return (
+    <div
+      ref={editorRef}
+      className="teky-blank-prompt-input"
+      contentEditable
+      suppressContentEditableWarning
+      role="textbox"
+      aria-label="Nội dung câu hỏi điền vào chỗ trống"
+      aria-multiline="true"
+      data-placeholder={`Ví dụ: ${NEW_BLANK_TOKEN} + ${NEW_BLANK_TOKEN} = 12`}
+      dangerouslySetInnerHTML={{ __html: blankEditorHtml(displayValue) }}
+      onFocus={() => {
+        valueAtFocus.current = value;
+        setEditing(true);
+      }}
+      onInput={(event) => {
+        const insertedIndexes = promoteTypedBlankMarkers(event.currentTarget);
+        const questionText = serializeBlankEditor(event.currentTarget);
+        if (insertedIndexes.length) {
+          const chips = event.currentTarget.querySelectorAll('[data-blank-marker="true"]');
+          const lastInserted = chips[insertedIndexes[insertedIndexes.length - 1]];
+          if (lastInserted) {
+            const range = document.createRange();
+            const selection = window.getSelection();
+            range.setStartAfter(lastInserted);
+            range.collapse(true);
+            selection?.removeAllRanges();
+            selection?.addRange(range);
+          }
+          onInsertBlanks(questionText, insertedIndexes);
+        } else {
+          onChange(questionText);
+        }
+      }}
+      onBlur={(event) => {
+        const normalized = normalizeBlankPrompt(serializeBlankEditor(event.currentTarget));
+        if (normalized !== normalizeBlankPrompt(value)) onChange(normalized);
+        setEditing(false);
+      }}
+    />
+  );
+});
 
 function UploadButton({ sessionId, onUploadComplete, label = '' }) {
   const [uploading, setUploading] = useState(false);
@@ -452,23 +619,29 @@ function TekyQuizSettings({ quiz, onChange }) {
 
 function TekyQuestionForm({ question, onChange, onDelete, index, sessionId, quizTitle }) {
   const [sidebarExpanded, setSidebarExpanded] = React.useState(false);
+  const blankPromptEditorRef = React.useRef(null);
 
   React.useEffect(() => {
-    if (['WordBank', 'FillInTheBlank'].includes(question.type) && question.subtitleText) {
+    if (['WordBank', 'FillInTheBlank'].includes(question.type)) {
       const primary = String(question.questionText || '').replace(/\s+/g, ' ').trim();
       const secondary = String(question.subtitleText || '').replace(/\s+/g, ' ').trim();
       let questionText = primary;
       if (!primary) {
         questionText = secondary;
-      } else if (!primary.toLocaleLowerCase().includes(secondary.toLocaleLowerCase())) {
+      } else if (secondary && blankPromptKey(primary) !== blankPromptKey(secondary)) {
         questionText = `${primary}\n\n${secondary}`;
       }
-      onChange({
-        questionText,
-        subtitleText: ''
-      });
+      questionText = normalizeBlankPrompt(questionText);
+      const blankAnswers = normalizeBlankAnswers({ ...question, questionText });
+      const updates = {};
+      if (questionText !== question.questionText) updates.questionText = questionText;
+      if (question.subtitleText) updates.subtitleText = '';
+      if (JSON.stringify(blankAnswers) !== JSON.stringify(question.blankAnswers || [])) {
+        updates.blankAnswers = blankAnswers;
+      }
+      if (Object.keys(updates).length) onChange(updates);
     }
-  }, [question.type, question.subtitleText]);
+  }, [question.type, question.subtitleText, question.questionText, question.blankAnswers]);
 
   const typeOptions = [
     { value: 'MultipleChoice', label: 'Trắc nghiệm (Chọn 1)', icon: '◉' },
@@ -487,17 +660,18 @@ function TekyQuestionForm({ question, onChange, onDelete, index, sessionId, quiz
   const visualQuestionType = question.type === 'WordBank' ? 'FillInTheBlank' : question.type;
   const currentTypeOption = typeOptions.find(t => t.value === visualQuestionType);
   const currentTypeLabel = currentTypeOption?.label || question.type;
-  const isSingleTextAnswer = ['TypeIn', 'FillInTheBlank', 'WordBank'].includes(question.type);
-  const acceptedAnswers = question.type === 'TypeIn'
-    ? (question.typeInAnswers?.length ? question.typeInAnswers : [''])
-    : (question.blankAnswers?.[0]?.values?.length ? question.blankAnswers[0].values : ['']);
+  const isDragBlank = ['FillInTheBlank', 'WordBank'].includes(question.type);
+  const isSingleTextAnswer = question.type === 'TypeIn';
+  const acceptedAnswers = question.typeInAnswers?.length ? question.typeInAnswers : [''];
+  const blankAnswers = normalizeBlankAnswers(question);
+  const distractors = question.blankDistractors || question.wordBankWords || [];
   const answerSectionLabel = {
     MultipleChoice: 'DANH SÁCH LỰA CHỌN (CHỌN 1 ĐÁP ÁN ĐÚNG)',
     MultipleResponse: 'DANH SÁCH LỰA CHỌN (CHỌN NHIỀU ĐÁP ÁN ĐÚNG)',
     TrueFalse: 'ĐÁP ÁN ĐÚNG (CHỌN ĐÚNG HOẶC SAI)',
     TypeIn: 'ĐÁP ÁN ĐÚNG CHẤP NHẬN',
-    FillInTheBlank: 'ĐÁP ÁN ĐÚNG CHẤP NHẬN',
-    WordBank: 'ĐÁP ÁN ĐÚNG CHẤP NHẬN',
+    FillInTheBlank: 'THIẾT LẬP ĐÁP ÁN ĐÚNG CHO CÁC Ô TRỐNG',
+    WordBank: 'THIẾT LẬP ĐÁP ÁN ĐÚNG CHO CÁC Ô TRỐNG',
     Numeric: 'ĐÁP ÁN SỐ ĐÚNG',
     MultipleNumeric: 'DANH SÁCH ĐÁP ÁN SỐ ĐÚNG',
     Matching: 'DANH SÁCH CÁC CẶP ĐÁP ÁN',
@@ -509,23 +683,44 @@ function TekyQuestionForm({ question, onChange, onDelete, index, sessionId, quiz
     Sequence: '+ THÊM MỤC MỚI',
     MultipleNumeric: '+ THÊM Ô NHẬP MỚI',
     TypeIn: '+ THÊM TỪ ĐỒNG NGHĨA',
-    FillInTheBlank: '+ THÊM TỪ ĐỒNG NGHĨA',
-    WordBank: '+ THÊM TỪ ĐỒNG NGHĨA',
   }[question.type] || '+ THÊM LỰA CHỌN';
 
   const updateAcceptedAnswers = (answers) => {
     const nextAnswers = answers.length ? answers : [''];
-    if (question.type === 'TypeIn') {
-      onChange({ typeInAnswers: nextAnswers });
-      return;
-    }
+    onChange({ typeInAnswers: nextAnswers });
+  };
+
+  const updateBlankAnswers = (nextBlanks) => {
+    const normalized = nextBlanks.length ? nextBlanks : [{ id: 'qmFillInTheBlank0', values: [''] }];
     onChange({
-      blankAnswers: [{
-        ...(question.blankAnswers?.[0] || {}),
-        id: question.blankAnswers?.[0]?.id || 'qmFillInTheBlank0',
-        values: nextAnswers,
-      }],
+      blankAnswers: normalized,
+      questionText: ensureBlankMarkers(question.questionText, normalized.length),
     });
+  };
+
+  const updateDistractors = (nextDistractors) => onChange({
+    wordBankWords: nextDistractors,
+    blankDistractors: nextDistractors,
+  });
+
+  const insertBlankMappings = (questionText, insertedIndexes) => {
+    const nextBlanks = blankAnswers.map(blank => ({ ...blank, values: [...(blank.values || [])] }));
+    const existingIds = new Set(nextBlanks.map(blank => blank.id));
+    let idSequence = nextBlanks.length;
+    insertedIndexes.slice().sort((a, b) => a - b).forEach(blankIndex => {
+      let blankId = `qmFillInTheBlank${idSequence}`;
+      while (existingIds.has(blankId)) {
+        idSequence += 1;
+        blankId = `qmFillInTheBlank${idSequence}`;
+      }
+      existingIds.add(blankId);
+      idSequence += 1;
+      nextBlanks.splice(blankIndex, 0, {
+        id: blankId,
+        values: [''],
+      });
+    });
+    onChange({ questionText, blankAnswers: nextBlanks });
   };
 
   const changeQuestionType = (nextType) => {
@@ -543,6 +738,8 @@ function TekyQuestionForm({ question, onChange, onDelete, index, sessionId, quiz
         id: question.blankAnswers?.[0]?.id || 'qmFillInTheBlank0',
         values: [currentAnswer],
       }];
+      updates.questionText = ensureBlankMarkers(question.questionText, 1);
+      updates.wordBankWords = question.wordBankWords || [];
     }
     onChange(updates);
   };
@@ -551,7 +748,21 @@ function TekyQuestionForm({ question, onChange, onDelete, index, sessionId, quiz
     <div className="teky-question-card active">
       <div className="teky-q-header">
         <div className="teky-q-number">{index}</div>
-        <div className="teky-q-title-preview">{index}. {currentTypeLabel}: {question.questionText || 'Câu hỏi mới...'}</div>
+        <div className="teky-q-title-preview">
+          {index}. {currentTypeLabel}:{' '}
+          {isDragBlank
+            ? splitBlankPrompt(question.questionText).map((part, partIndex, parts) => (
+              <React.Fragment key={partIndex}>
+                {part}
+                {partIndex < parts.length - 1 && (
+                  <span className="teky-inline-blank-chip teky-inline-blank-chip-compact">
+                    Ô trống {partIndex + 1}
+                  </span>
+                )}
+              </React.Fragment>
+            ))
+            : (question.questionText || 'Câu hỏi mới...')}
+        </div>
         <div className="teky-q-type-badge"><span className="icon">{currentTypeOption?.icon}</span> {currentTypeLabel}</div>
         <button className="teky-icon-btn" onClick={onDelete}>🗑</button>
         <button className="teky-icon-btn" style={{ color: '#ccc' }}>▲</button>
@@ -590,13 +801,45 @@ function TekyQuestionForm({ question, onChange, onDelete, index, sessionId, quiz
 
         <div className="teky-q-content flex-1">
           <div className="teky-field-group">
-            <label>CÂU HỎI</label>
-          <textarea
-            rows={3}
-            value={question.questionText || ''}
-            onChange={e => onChange({ questionText: e.target.value })}
-            placeholder="Nhập nội dung câu hỏi..."
-          />
+            <div className="teky-field-label-row">
+              <label>CÂU HỎI</label>
+              {isDragBlank && (
+                <button
+                  type="button"
+                  className="teky-insert-blank-btn"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => blankPromptEditorRef.current?.insertBlankAtCaret()}
+                >
+                  ● + Chèn ô trống
+                </button>
+              )}
+            </div>
+          {isDragBlank ? (
+            <BlankPromptEditor
+              ref={blankPromptEditorRef}
+              value={question.questionText || ''}
+              onInsertBlanks={insertBlankMappings}
+              onChange={(questionText) => {
+              const detected = countBlankMarkers(questionText);
+              if (!detected) {
+                onChange({ questionText });
+                return;
+              }
+              const nextBlanks = blankAnswers.slice(0, detected);
+              while (nextBlanks.length < detected) {
+                nextBlanks.push({ id: `qmFillInTheBlank${nextBlanks.length}`, values: [''] });
+              }
+              onChange({ questionText, blankAnswers: nextBlanks });
+              }}
+            />
+          ) : (
+            <textarea
+              rows={3}
+              value={question.questionText || ''}
+              onChange={e => onChange({ questionText: e.target.value })}
+              placeholder="Nhập nội dung câu hỏi..."
+            />
+          )}
         </div>
 
         <div className="teky-flex-row">
@@ -898,6 +1141,100 @@ function TekyQuestionForm({ question, onChange, onDelete, index, sessionId, quiz
                    }} />
                    <span className="tf-label">❌ Sai (False)</span>
                  </div>
+              </div>
+            )}
+
+            {isDragBlank && (
+              <div className="teky-drag-blank-editor">
+                <p className="teky-single-text-hint">
+                  Chèn từ khóa <strong>{NEW_BLANK_TOKEN}</strong> vào nội dung. Mỗi ô trống tương ứng với một nhóm đáp án đúng bên dưới.
+                  <span className="teky-blank-detected-badge">Phát hiện {blankAnswers.length} ô trống</span>
+                </p>
+                <div className="teky-blank-answer-list">
+                  {blankAnswers.map((blank, blankIndex) => (
+                    <div className="teky-blank-answer-card" key={blank.id || blankIndex}>
+                      <div className="teky-blank-card-title">
+                        <span>{blankIndex + 1}</span>
+                        Đáp án đúng cho ô trống thứ {blankIndex + 1}
+                      </div>
+                      {(blank.values?.length ? blank.values : ['']).map((value, valueIndex) => (
+                        <div className="teky-accepted-answer-row" key={valueIndex}>
+                          <input
+                            type="text"
+                            value={value}
+                            placeholder={valueIndex === 0 ? 'Nhập thẻ đáp án đúng...' : 'Đáp án đúng thay thế...'}
+                            onChange={(event) => {
+                              const nextBlanks = blankAnswers.map(item => ({ ...item, values: [...(item.values || [])] }));
+                              nextBlanks[blankIndex].values[valueIndex] = event.target.value;
+                              updateBlankAnswers(nextBlanks);
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="teky-remove-accepted-answer"
+                            disabled={(blank.values?.length || 1) === 1}
+                            onClick={() => {
+                              const nextBlanks = blankAnswers.map(item => ({ ...item, values: [...(item.values || [])] }));
+                              nextBlanks[blankIndex].values.splice(valueIndex, 1);
+                              updateBlankAnswers(nextBlanks);
+                            }}
+                          >
+                            <HiOutlineTrash />
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        className="teky-add-synonym-btn"
+                        onClick={() => {
+                          const nextBlanks = blankAnswers.map(item => ({ ...item, values: [...(item.values || [])] }));
+                          nextBlanks[blankIndex].values.push('');
+                          updateBlankAnswers(nextBlanks);
+                        }}
+                      >
+                        + Thêm đáp án đúng thay thế
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="teky-distractor-section">
+                  <div className="teky-distractor-header">
+                    <div>
+                      <strong>THẺ TỪ NHIỄU BỔ SUNG</strong>
+                      <p>Đáp án sai hiển thị cùng các thẻ đúng để học sinh kéo thả.</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="teky-btn-add-answer"
+                      onClick={() => updateDistractors([...distractors, ''])}
+                    >
+                      + Thêm thẻ nhiễu
+                    </button>
+                  </div>
+                  {distractors.map((value, distractorIndex) => (
+                    <div className="teky-accepted-answer-row teky-distractor-row" key={distractorIndex}>
+                      <span className="teky-distractor-index">{distractorIndex + 1}.</span>
+                      <input
+                        type="text"
+                        value={value}
+                        placeholder="Nhập thẻ đáp án sai..."
+                        onChange={(event) => {
+                          const next = [...distractors];
+                          next[distractorIndex] = event.target.value;
+                          updateDistractors(next);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="teky-remove-accepted-answer"
+                        onClick={() => updateDistractors(distractors.filter((_, i) => i !== distractorIndex))}
+                      >
+                        <HiOutlineTrash />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 

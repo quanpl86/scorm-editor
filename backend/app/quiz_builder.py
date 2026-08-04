@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .excel_import import ExcelQuestion, ParsedMediaRefs, SKIP_IMPORT_TYPES, resolve_media_path
+from .fill_blank import BLANK_MARKER_RE, ensure_question_markers, normalize_blank_answers
 from .media_rich import audio_attachment, embed_rich_image, embed_rich_video
 from .layout import (
     _blank_object_styles,
@@ -791,25 +792,40 @@ def _apply_row_to_slide(
 
     elif tp == "FillInTheBlank":
         rt = slide["C"].setdefault("rt", {})
-        blank_ids = _blank_ids_from_html(rt.get("h", ""), "qmFillInTheBlank")
-        blank_id = blank_ids[0] if blank_ids else "qmFillInTheBlank0"
-        answers = [ans.text for ans in row.answers if ans.text]
-        plain = strip_plain(row.question_text)
-        blank_span = f'<span id="{blank_id}"></span>'
+        legacy_answers = [ans.text for ans in row.answers if ans.text]
+        blanks = normalize_blank_answers(row.blank_answers, fallback=legacy_answers)
+        plain = ensure_question_markers(strip_plain(row.question_text), len(blanks))
         escaped_question = html.escape(plain)
-        if "___" in escaped_question:
-            fill_content = escaped_question.replace("___", blank_span, 1)
-        else:
-            fill_content = f"{escaped_question} {blank_span}".strip()
+        blank_index = 0
+
+        def replace_marker(_: re.Match[str]) -> str:
+            nonlocal blank_index
+            if blank_index >= len(blanks):
+                return ""
+            blank_id = html.escape(blanks[blank_index]["id"])
+            blank_index += 1
+            return f'<span id="{blank_id}"></span>'
+
+        fill_content = BLANK_MARKER_RE.sub(replace_marker, escaped_question)
         rich_html = (
             f'<p style="font-size:18px;font-family:{FONT_CONTENT};color:#000000">'
             f'<span>{fill_content}</span></p>'
         )
         apply_text_to_node(rt, plain, "content")
         rt["h"] = rich_html
-        rt["d"] = [plain, {"id": blank_id}]
-        if answers:
-            _upsert_blank_answer(rt, blank_id, answers, "qmFillInTheBlank")
+        rt["d"] = [plain, *({"id": blank["id"]} for blank in blanks)]
+        rt["r"] = []
+        for blank in blanks:
+            _upsert_blank_answer(rt, blank["id"], blank["values"], "qmFillInTheBlank")
+        slide["C"]["chs"] = [
+            {
+                "i": blank["id"],
+                "t": {"h": blank["values"][0] if blank["values"] else ""},
+            }
+            for blank in blanks
+        ]
+        slide["C"]["ew"] = list(row.distractors)
+        slide.setdefault("_metadata", {})["blankDistractors"] = list(row.distractors)
 
     elif tp in ("Numeric", "MultipleNumeric"):
         slide["C"]["chs"] = [

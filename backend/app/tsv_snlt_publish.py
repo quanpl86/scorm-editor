@@ -67,6 +67,11 @@ EXPECTED_QUESTION_HEADERS = [
     "Answer 6 Right Image",
 ]
 
+# Optional schema-v2 columns. Legacy TSV files remain valid; when present these
+# preserve multi-holder Fill in Blank mappings and drag-card distractors.
+OPTIONAL_QUESTION_HEADERS = ["Blank Answers JSON", "Distractors"]
+QUESTION_OUTPUT_HEADERS = EXPECTED_QUESTION_HEADERS + OPTIONAL_QUESTION_HEADERS
+
 EXPECTED_SETTINGS_FIELDS = [
     "title",
     "description",
@@ -621,7 +626,7 @@ def apply_questions_to_sheet(ws, rows: list[dict[str, str]]) -> int:
         col_index[str(h).strip()] = c
 
     # Đảm bảo đủ header chuẩn (template thiếu cột → thêm)
-    for header in EXPECTED_QUESTION_HEADERS:
+    for header in QUESTION_OUTPUT_HEADERS:
         if header not in col_index:
             col = (ws.max_column or 0) + 1
             ws.cell(1, col).value = header
@@ -632,7 +637,7 @@ def apply_questions_to_sheet(ws, rows: list[dict[str, str]]) -> int:
 
     for i, row in enumerate(rows):
         excel_row = 2 + i
-        for header in EXPECTED_QUESTION_HEADERS:
+        for header in QUESTION_OUTPUT_HEADERS:
             col = col_index[header]
             raw = row.get(header, "")
             # DictReader may miss keys if TSV short; also try case-insensitive

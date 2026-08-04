@@ -19,6 +19,13 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from .fill_blank import (
+    align_blank_answers,
+    drag_options,
+    ensure_question_markers,
+    normalize_blank_answers,
+    normalize_distractors,
+)
 from .media_bundle import fetch_remote_media, is_remote_url
 from .scorm_parser import (
     extract_blank_answers,
@@ -507,9 +514,67 @@ def _slide_to_teky(
         q["correctAnswer"] = correct
 
     elif teky_type == "fill_blank":
-        first_blank = blank_answers[0] if blank_answers else {}
-        accepted = first_blank.get("acceptedAnswers") or first_blank.get("values") or []
-        q["correctAnswer"] = [answer for answer in accepted if answer]
+        source_text = subtitle_text or question_text
+        blanks = align_blank_answers(source_text, normalize_blank_answers(blank_answers))
+        distractors = normalize_distractors(
+            slide_view.get("blankDistractors")
+            or slide_view.get("wordBankWords")
+            or []
+        )
+        # Teky CMS treats `options` of fill_blank as *distractor cards only*;
+        # correct cards are generated from correctAnswer/blankAnswers.  Never
+        # allow a correct value to leak into the distractor collection, even
+        # when an older editor state accidentally stored it among extra words.
+        correct_value_keys = {
+            str(value).strip().casefold()
+            for blank in blanks
+            for value in (blank.get("values") or [])
+            if str(value).strip()
+        }
+        distractors = [
+            value for value in distractors
+            if value.strip().casefold() not in correct_value_keys
+        ]
+        q["question"] = ensure_question_markers(source_text, len(blanks))
+        # Legacy CMS: one blank used correctAnswer as a synonym list. Keep that
+        # exact shape; for multiple holders use the primary value in holder order.
+        q["correctAnswer"] = (
+            list(blanks[0]["values"])
+            if len(blanks) == 1
+            else [blank["values"][0] if blank["values"] else "" for blank in blanks]
+        )
+        q["blankAnswers"] = [
+            {
+                "id": blank["id"],
+                "index": index,
+                "values": list(blank["values"]),
+                "acceptedAnswers": list(blank["values"]),
+            }
+            for index, blank in enumerate(blanks)
+        ]
+        # `blanks` is an explicit transport alias for the new CMS renderer;
+        # `blankAnswers` remains the editor/iSpring-compatible representation.
+        q["blanks"] = [
+            {
+                "id": blank["id"],
+                "index": index,
+                "correctAnswers": list(blank["values"]),
+            }
+            for index, blank in enumerate(blanks)
+        ]
+        q["distractors"] = distractors
+        q["blankDistractors"] = distractors
+        all_drag_options = drag_options(blanks, distractors)
+        distractor_options = [
+            option for option in all_drag_options
+            if option.get("isDistractor")
+        ]
+        # Both aliases are intentionally distractor-only for compatibility
+        # with CMS importer versions that bind either field to the
+        # "Thẻ từ nhiễu bổ sung" form collection.
+        q["dragOptions"] = distractor_options
+        q["options"] = list(distractor_options)
+        q["responseMode"] = "drag_in_blank"
         q["useRegex"] = bool(slide_view.get("useRegex", False))
 
     elif teky_type in ("short_answer", "numeric", "multiple_numeric"):

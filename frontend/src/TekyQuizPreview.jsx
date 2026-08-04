@@ -9,6 +9,7 @@ import {
   FaTimes,
 } from 'react-icons/fa';
 import { assetUrl } from './api';
+import { buildDragCards, normalizeBlankAnswers, splitBlankPrompt } from './fillBlankUtils';
 import './TekyQuizPreview.css';
 
 function getEmbedUrl(url) {
@@ -35,7 +36,104 @@ function isAnswered(question, answer) {
     return Object.values(answer || {}).filter(isFilled).length === count;
   }
   if (question.type === 'Sequence') return Array.isArray(answer) && answer.length > 0;
+  if (['FillInTheBlank', 'WordBank'].includes(question.type)) {
+    const count = normalizeBlankAnswers(question).length;
+    return count > 0 && Object.values(answer || {}).filter(value => isFilled(value?.text || value)).length === count;
+  }
   return isFilled(answer);
+}
+
+function FillBlankPrompt({ question, answer, onAnswer, dragged, setDragged }) {
+  const blanks = normalizeBlankAnswers(question);
+  const parts = splitBlankPrompt(question.questionText);
+  const cards = buildDragCards(question);
+  const assignments = answer || {};
+  const usedCardIds = new Set(Object.values(assignments).map(value => value?.cardId).filter(Boolean));
+
+  const placeCard = (blankIndex, card, fromBlankIndex = null) => {
+    if (!card || (usedCardIds.has(card.id) && fromBlankIndex === null)) return;
+    const next = { ...assignments };
+    const displaced = next[blankIndex];
+    if (fromBlankIndex !== null) delete next[fromBlankIndex];
+    next[blankIndex] = { cardId: card.id, text: card.text };
+    if (displaced && fromBlankIndex !== null && fromBlankIndex !== blankIndex) {
+      next[fromBlankIndex] = displaced;
+    }
+    onAnswer(next);
+    setDragged(null);
+  };
+
+  const placeFirstAvailable = (card) => {
+    const blankIndex = blanks.findIndex((_, index) => !assignments[index]);
+    if (blankIndex >= 0) placeCard(blankIndex, card);
+  };
+
+  return (
+    <>
+      <h3 className="teky-q-text teky-fill-blank-prompt">
+        {parts.map((part, partIndex) => (
+          <React.Fragment key={partIndex}>
+            <span>{part}</span>
+            {partIndex < blanks.length && (
+              <button
+                type="button"
+                draggable={Boolean(assignments[partIndex])}
+                className={`teky-blank-holder ${assignments[partIndex] ? 'filled' : ''}`}
+                onDragStart={() => {
+                  const assigned = assignments[partIndex];
+                  if (assigned) {
+                    setDragged({
+                      kind: 'fill-blank',
+                      questionId: question.id,
+                      fromBlankIndex: partIndex,
+                      card: { id: assigned.cardId, text: assigned.text },
+                    });
+                  }
+                }}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={() => {
+                  if (dragged?.kind === 'fill-blank' && dragged.questionId === question.id) {
+                    placeCard(partIndex, dragged.card, dragged.fromBlankIndex ?? null);
+                  }
+                }}
+                onClick={() => {
+                  if (!assignments[partIndex]) return;
+                  const next = { ...assignments };
+                  delete next[partIndex];
+                  onAnswer(next);
+                }}
+                aria-label={assignments[partIndex]
+                  ? `Ô trống ${partIndex + 1}: ${assignments[partIndex].text}. Bấm để trả thẻ.`
+                  : `Ô trống ${partIndex + 1}`}
+              >
+                {assignments[partIndex]?.text || `Ô trống ${partIndex + 1}`}
+              </button>
+            )}
+          </React.Fragment>
+        ))}
+      </h3>
+      <p className="teky-drag-blank-hint">Kéo thẻ đáp án vào đúng ô trống hoặc bấm vào thẻ để điền lần lượt.</p>
+      <div className="teky-drag-card-pool">
+        {cards.map(card => {
+          const used = usedCardIds.has(card.id);
+          return (
+            <button
+              type="button"
+              key={card.id}
+              draggable={!used}
+              disabled={used}
+              className={`teky-drag-answer-card ${used ? 'used' : ''}`}
+              onDragStart={() => setDragged({ kind: 'fill-blank', questionId: question.id, card })}
+              onDragEnd={() => setDragged(null)}
+              onClick={() => placeFirstAvailable(card)}
+            >
+              <FaGripLines aria-hidden /> {card.text}
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
 }
 
 function MatchSelect({ value, options, onChange, sessionId, ariaLabel }) {
@@ -186,7 +284,17 @@ function QuestionCard({
         <span className="teky-badge-pts">{question.points || 1} ĐIỂM</span>
       </div>
 
-      <h3 className="teky-q-text">{question.questionText}</h3>
+      {['FillInTheBlank', 'WordBank'].includes(question.type) ? (
+        <FillBlankPrompt
+          question={question}
+          answer={answer}
+          onAnswer={onAnswer}
+          dragged={dragged}
+          setDragged={setDragged}
+        />
+      ) : (
+        <h3 className="teky-q-text">{question.questionText}</h3>
+      )}
       <div className="teky-q-group">{(question.topic || question.groupTitle || 'QUIZ').toUpperCase()}</div>
 
       <QuestionMedia question={question} sessionId={sessionId} />
@@ -315,7 +423,7 @@ function QuestionCard({
           </div>
         )}
 
-        {['TypeIn', 'FillInTheBlank', 'WordBank'].includes(question.type) && (
+        {question.type === 'TypeIn' && (
           <div className="teky-input-view">
             <input
               type="text"

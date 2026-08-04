@@ -1,0 +1,37 @@
+{
+  "title": "Kiểm thử điền vào chỗ trống",
+  "description": "Kiểm tra tương thích dữ liệu cũ và giao diện drag-in-blank mới.",
+  "questions": [
+    {
+      "id": "legacy-fib-1",
+      "type": "fill_blank",
+      "question": "Trong Figma, một phần tử giao diện có thể tái sử dụng được gọi là ___.\n\nTrong Figma, một phần tử giao diện có thể tái sử dụng được gọi là [ô_trống].",
+      "correctAnswer": ["component", "Component", "components", "Components"],
+      "blankAnswers": [
+        {
+          "id": "blank-1",
+          "values": ["component", "Component", "components", "Components"]
+        },
+        {
+          "id": "blank-2",
+          "values": []
+        }
+      ],
+      "distractors": ["instance", "frame"],
+      "points": 1,
+      "explanation": "Component là thành phần giao diện có thể tái sử dụng."
+    },
+    {
+      "id": "multi-fib-1",
+      "type": "fill_blank",
+      "question": "[ô_trống] + [ô_trống] = 12",
+      "correctAnswer": ["6", "6"],
+      "blanks": [
+        {"id": "blank-a", "correctAnswers": ["6"]},
+        {"id": "blank-b", "correctAnswers": ["6"]}
+      ],
+      "distractors": ["4", "8"],
+      "points": 1
+    }
+  ]
+}

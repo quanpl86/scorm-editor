@@ -227,8 +227,12 @@ class _ProjectSession:
                 },
                 {
                     "type": "FillInTheBlank",
-                    "questionText": "Điền ___",
-                    "blankAnswers": [{"values": ["từ"]}],
+                    "questionText": "___ + ___ = 12",
+                    "blankAnswers": [
+                        {"id": "blank-1", "values": ["6"]},
+                        {"id": "blank-2", "values": ["6", "six"]},
+                    ],
+                    "wordBankWords": ["4", "8"],
                     "difficulty": "medium",
                 },
                 {
@@ -332,5 +336,7 @@ def test_source_project_excel_round_trips_types_settings_and_media(tmp_path):
         assert rows[0].image == "media/Project Round Trip_1_IMG-ND1.png"
         assert rows[0].answers[0].image
         assert len(rows[0].extra_media) >= 2
+        assert [blank["values"] for blank in rows[2].blank_answers] == [["6"], ["6", "six"]]
+        assert rows[2].distractors == ["4", "8"]
     finally:
         Path(zip_path).unlink(missing_ok=True)

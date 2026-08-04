@@ -31,7 +31,7 @@ SNLT-HP01-B01/
 
 ## Sheet `Quiz Questions`
 
-### Thứ tự cột chuẩn (35 cột)
+### Thứ tự cột chuẩn (37 cột)
 
 | # | Cột | Nhóm | Mô tả |
 |---|-----|------|--------|
@@ -44,12 +44,14 @@ SNLT-HP01-B01/
 | 12 | `Points` | Text | Điểm câu (≥ 1) |
 | 13 | `Required` | Text | `True` / `False` — bắt buộc trả lời |
 | 14 | `Use Regex` | Text | `True` / `False` — chỉ FIB/TI khi Answer là RegEx đã kiểm thử |
-| 15 | `Image` | Media | Ảnh câu hỏi: `media/file.ext` |
-| 16 | `Video` | Media | **Chỉ URL YouTube hoặc Vimeo** (không file trong media/) |
-| 17 | `Audio` | Media | **Chỉ URL HTTPS trực tiếp** tới file audio |
-| 18–23 | `Answer 1 Image` … `Answer 6 Image` | Media | Ảnh đáp án: `media/...` |
-| 24–29 | `Answer 1 Left Image` … `Answer 6 Left Image` | Media | Matching — ảnh vế trái |
-| 30–35 | `Answer 1 Right Image` … `Answer 6 Right Image` | Media | Matching — ảnh vế phải |
+| 15 | `Blank Answers JSON` | Text | FIB nhiều holder: JSON array `[{"id":"...","values":["..."]}]` |
+| 16 | `Distractors` | Text | FIB Drag in Blank: JSON array các thẻ nhiễu, ví dụ `["4","8"]` |
+| 17 | `Image` | Media | Ảnh câu hỏi: `media/file.ext` |
+| 18 | `Video` | Media | **Chỉ URL YouTube hoặc Vimeo** (không file trong media/) |
+| 19 | `Audio` | Media | **Chỉ URL HTTPS trực tiếp** tới file audio |
+| 20–25 | `Answer 1 Image` … `Answer 6 Image` | Media | Ảnh đáp án: `media/...` |
+| 26–31 | `Answer 1 Left Image` … `Answer 6 Left Image` | Media | Matching — ảnh vế trái |
+| 32–37 | `Answer 1 Right Image` … `Answer 6 Right Image` | Media | Matching — ảnh vế phải |
 
 ### Map loại câu hỏi
 
@@ -60,7 +62,7 @@ SNLT-HP01-B01/
 | TF | true_false | `*` trước Đúng hoặc Sai |
 | MG | matching | `Vế trái\|Vế phải`; tối đa **6 cặp** |
 | SEQ | ordering | Answer 1…N = thứ tự đúng; tối đa 6 |
-| FIB | fill_blank | `___` trong stem; Answer = biến thể chấp nhận |
+| FIB | fill_blank | `[ô_trống]` hoặc legacy `___`; nhiều holder dùng `Blank Answers JSON`; `Distractors` là thẻ sai |
 | TI | short_answer | Text hoặc 1 RegEx nếu `Use Regex=True` |
 | NUM | numeric | Một số ở Answer 1 |
 | MNUM | multiple_numeric | Nhiều số Answer 1…6 theo thứ tự |

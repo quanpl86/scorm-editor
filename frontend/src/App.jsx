@@ -1182,41 +1182,45 @@ function ImportPage({ onImport, loading, loadingMessage, error, errorKind, impor
                       </div>
 
                       <div className="settings-checks">
-                        <label className="tsv-check">
+                        <label className="settings-check">
                           <input
                             type="checkbox"
                             checked={settingsForm.shuffleQuestions}
                             onChange={(e) => patchSettingsForm('shuffleQuestions', e.target.checked)}
                             disabled={loading}
                           />
-                          Trộn thứ tự câu hỏi
+                          <span className="settings-check-box" aria-hidden="true" />
+                          <span className="settings-check-label">Trộn thứ tự câu hỏi</span>
                         </label>
-                        <label className="tsv-check">
+                        <label className="settings-check">
                           <input
                             type="checkbox"
                             checked={settingsForm.shuffleAnswers}
                             onChange={(e) => patchSettingsForm('shuffleAnswers', e.target.checked)}
                             disabled={loading}
                           />
-                          Trộn thứ tự đáp án
+                          <span className="settings-check-box" aria-hidden="true" />
+                          <span className="settings-check-label">Trộn thứ tự đáp án</span>
                         </label>
-                        <label className="tsv-check">
+                        <label className="settings-check">
                           <input
                             type="checkbox"
                             checked={settingsForm.allowReview}
                             onChange={(e) => patchSettingsForm('allowReview', e.target.checked)}
                             disabled={loading}
                           />
-                          Cho xem lại sau khi nộp
+                          <span className="settings-check-box" aria-hidden="true" />
+                          <span className="settings-check-label">Cho xem lại sau khi nộp</span>
                         </label>
-                        <label className="tsv-check">
+                        <label className="settings-check">
                           <input
                             type="checkbox"
                             checked={settingsForm.isPublic}
                             onChange={(e) => patchSettingsForm('isPublic', e.target.checked)}
                             disabled={loading}
                           />
-                          Quiz công khai (isPublic)
+                          <span className="settings-check-box" aria-hidden="true" />
+                          <span className="settings-check-label">Quiz công khai (isPublic)</span>
                         </label>
                       </div>
                       <p className="field-hint settings-form-note">
@@ -1764,23 +1768,57 @@ function QuestionEditor({ question, sessionId, onChange, onDelete, onImageUpload
 
       {question.type === 'FillInTheBlank' && (
         <div className="editor-section">
-          <h4>Đáp án đúng chấp nhận (Điền vào chỗ trống)</h4>
+          <h4>Đáp án đúng cho các ô trống (Drag in Blank)</h4>
           <p style={{ fontSize: '0.85rem', color: '#666' }}>
-            Dùng ký tự <strong>___</strong> trong nội dung câu hỏi để đánh dấu chỗ trống.
+            Dùng <strong>[ô_trống]</strong> hoặc <strong>___</strong> trong nội dung để đánh dấu từng holder.
           </p>
-          <div className="field">
-            <input
-              type="text"
-              value={question.blankAnswers?.[0]?.values?.[0] || ''}
-              onChange={(e) => update({
-                blankAnswers: [{
-                  id: question.blankAnswers?.[0]?.id || 'qmFillInTheBlank0',
-                  values: [e.target.value],
-                }],
-              })}
-              placeholder="Chỉ nhập một đáp án đúng"
-            />
-          </div>
+          {(question.blankAnswers || []).map((blank, idx) => (
+            <div className="field" key={blank.id || idx}>
+              <label>Ô trống {idx + 1}</label>
+              <input
+                type="text"
+                value={(blank.values || []).join('; ')}
+                onChange={(e) => {
+                  const blankAnswers = [...(question.blankAnswers || [])]
+                  blankAnswers[idx] = {
+                    ...blank,
+                    values: e.target.value.split(';').map(value => value.trim()).filter(Boolean),
+                  }
+                  update({ blankAnswers })
+                }}
+                placeholder="Các đáp án đúng, phân tách bằng dấu ;"
+              />
+            </div>
+          ))}
+          <button
+            className="btn btn-sm"
+            onClick={() => update({
+              questionText: `${question.questionText || ''} [ô_trống]`.trim(),
+              blankAnswers: [
+                ...(question.blankAnswers || []),
+                { id: `qmFillInTheBlank${question.blankAnswers?.length || 0}`, values: [''] },
+              ],
+            })}
+          >
+            + Thêm ô trống
+          </button>
+          <h4 style={{ marginTop: '16px' }}>Thẻ từ nhiễu</h4>
+          {(question.wordBankWords || []).map((word, idx) => (
+            <div className="field" key={idx}>
+              <input
+                type="text"
+                value={word}
+                onChange={(e) => {
+                  const words = [...(question.wordBankWords || [])]
+                  words[idx] = e.target.value
+                  update({ wordBankWords: words, blankDistractors: words })
+                }}
+              />
+            </div>
+          ))}
+          <button className="btn btn-sm" onClick={() => update({
+            wordBankWords: [...(question.wordBankWords || []), ''],
+          })}>+ Thêm thẻ nhiễu</button>
         </div>
       )}
 

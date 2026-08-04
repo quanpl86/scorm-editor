@@ -1,133 +1,57 @@
-# Design QA — Teky LMS Editor & Viewer
+# Fill-in-the-Blank Design QA
 
-## Nguồn đối chiếu
+- Source visual truth:
+  - `/Users/mac/Desktop/Screenshot 2026-08-03 at 17.32.48.png`
+  - `/var/folders/vb/kb6nt89j7zqc5dbxjn8p7pg40000gn/T/TemporaryItems/NSIRD_screencaptureui_mYK6Yc/Screenshot 2026-08-04 at 10.49.21.png`
+- Implementation screenshots:
+  - `/Users/mac/Downloads/SCORM-PROJECT/scorm-editor/design-qa-editor-multi-focused.png`
+  - `/Users/mac/Downloads/SCORM-PROJECT/scorm-editor/design-qa-viewer.png`
+  - `/Users/mac/Downloads/SCORM-PROJECT/scorm-editor/design-qa-distractors-final2.png`
+- Combined comparison: `/Users/mac/Downloads/SCORM-PROJECT/scorm-editor/design-qa-comparison.png`
+  and `/Users/mac/Downloads/SCORM-PROJECT/scorm-editor/design-qa-distractors-comparison.png`
+- Browser viewport: 1280 × 720 CSS px, device pixel ratio 1
+- Source pixels: 979 × 1168; implementation pixels: 1280 × 720
+- Normalization: the source editor card and implementation editor card were cropped to the same feature region and scaled to 680 px width in the combined comparison.
+- State: two-holder drag-in-blank question with correct cards `6`, `6` and distractors `4`, `8`; viewer also tested with every holder filled.
 
-- Editor: bộ 13 ảnh LMS từ `14.36.30` đến `14.38.51` do người dùng cung cấp.
-- Viewer: bộ 8 ảnh LMS từ `14.32.12` đến `14.33.45`, bao phủ toàn bộ 9 dạng câu hỏi:
-  TypeIn, Matching, Multiple Response, Ordering, Multiple Choice, Fill,
-  Numeric, Multiple Numeric và True/False.
-- Dữ liệu QA: `ImportTemplate/Full_quiz_9_types_teky_lms.zip`.
-- JSON chuẩn LMS: `docs/cms_json_full_sample.json`.
+## Full-view and focused comparison evidence
 
-## Viewport và ảnh đối chiếu Viewer
+The editor follows the CMS structure: inline orange holders in the prompt, a holder insertion action, one correct-answer card per holder, a separate distractor section, and the existing Teky orange/blue visual language. The focused comparison was required because the complete application chrome and viewport widths differ; the holder editor is the feature under review.
 
-- Desktop nguồn và implementation: 1738 × 1167 px.
-- Mobile implementation: 760 × 1000 px; không có tràn ngang.
-- Implementation:
-  - `qa-artifacts/teky-viewer-desktop-top-final3.png`
-  - `qa-artifacts/teky-viewer-desktop-sticky-final3.png`
-  - `qa-artifacts/teky-viewer-submit-modal-final.png`
-  - `qa-artifacts/teky-viewer-mobile-final.png`
-- Ảnh ghép nguồn/implementation được đánh giá trong cùng một canvas:
-  - `qa-artifacts/compare-viewer-top-final.png`
-  - `qa-artifacts/compare-viewer-scroll-final.png`
+## Findings
 
-## Kết quả đối chiếu Viewer
+No actionable P0, P1, or P2 mismatch remains for the requested feature.
 
-### Full-view
+- Typography: label hierarchy, holder text, answer inputs, and helper copy are consistent with the existing Teky editor. The reference uses a slightly denser viewport; this does not alter the component hierarchy or operation.
+- Spacing/layout: inline holders, media fields, scoring row, answer cards, and distractor block retain the same order and grouping as the CMS reference.
+- Colors/tokens: holder orange, light borders, muted helper text, white surfaces, and focus states match the established editor palette.
+- Image quality/assets: this feature contains no custom raster assets. Existing icon-library controls remain sharp and no placeholder imagery was introduced.
+- Copy/content: holder numbering, correct-answer labels, distractor instructions, and drag instructions are present and unambiguous.
+- Accessibility/interaction: holders and cards are buttons, click-to-fill supports touch/keyboard users, filled holders can return cards, desktop drag/drop is supported, focus rings are visible, and progress updates after all holders are filled.
 
-- Banner preview màu cam, header tên quiz, tiến độ, mô tả và đồng hồ bám đúng
-  hierarchy LMS.
-- Header tiếp tục hiển thị khi cuộn; kiểm tra thực tế tại `scrollTop = 2454`:
-  banner ở `top = 0`, quiz header ở `top = 52`.
-- Nội dung dùng một trang cuộn gồm intro card, toàn bộ question card và footer
-  nộp bài; không còn chuyển từng câu bằng pagination.
-- Card, nhãn `CÂU HỎI`, điểm số, topic chip, khoảng cách, viền và bán kính bo
-  khớp ngôn ngữ UI của LMS.
-- Media câu hỏi và media đáp án giữ đúng tỉ lệ, nằm trong vùng nền xám nhạt.
+## Comparison history
 
-### Tương tác 9 dạng câu hỏi
+1. Initial browser pass found a P1 compatibility issue: one legacy `___` prompt plus its new `[ô_trống]` copy produced three visible holders.
+2. Fixed by canonicalizing marker variants, collapsing semantically duplicate prompt lines, and trimming only trailing empty phantom mappings while preserving meaningful legacy alternatives.
+3. Post-fix evidence: the legacy question reports one holder, the native multi-holder question reports two, and the viewer reports 3 filled / 0 empty holders with progress `2/2 ĐÃ TRẢ LỜI`.
+4. A later CMS comparison found a P1 layout/interaction mismatch: distractor inputs collapsed into the delete-button column and new holders were appended instead of inserted at the caret.
+5. Fixed the distractor row grid to `index / flexible input / delete`, added caret-position insertion, live conversion of typed `___` or `[ô_trống]`, sequential renumbering, and answer-mapping insertion at the same index.
+6. Post-fix evidence: all distractor inputs measure 912 px inside a 994 px row, a newly added empty distractor uses the same width, and inserting a holder before an existing holder changes the mappings from `[component]` to `[empty, component]` in visible holder order.
 
-- Multiple Choice: chọn duy nhất một đáp án.
-- Multiple Response: chọn/bỏ chọn nhiều đáp án.
-- True/False: hai lựa chọn Đúng/Sai.
-- Matching: mỗi dòng có item trái, mũi tên và dropdown ghép bên phải.
-- Ordering: kéo thả và hỗ trợ bàn phím Arrow Up/Down để đổi thứ tự.
-- TypeIn và Fill: đúng một textbox; Fill dùng `___` trong nội dung để biểu thị
-  chỗ trống.
-- Numeric: một input số.
-- Multiple Numeric: nhiều input số có nhãn `Ô 1`, `Ô 2`, ...
-- Word Bank legacy dùng cùng UX một textbox theo yêu cầu tương thích LMS.
+## Primary interactions tested
 
-### Nộp bài
-
-- Footer hiển thị số câu chưa trả lời và nút `Nộp bài`.
-- Modal xác nhận hiển thị tổng câu, đã trả lời, bỏ trống, phần trăm hoàn thành
-  và liên kết quay tới từng câu chưa trả lời.
-- Nút đóng và `Tiếp tục làm bài` quay lại viewer đúng trạng thái.
-
-## Editor
-
-- Quiz Details, Settings và Questions đã khớp hierarchy LMS.
-- MC/MR dùng lưới hai cột; True/False một hàng; Matching trái/phải; Ordering
-  dạng lưới; Numeric một ô; Multiple Numeric nhiều ô đánh số.
-- TypeIn và Fill chỉ còn một textbox đáp án; question ID do hệ thống sinh và
-  không hiển thị trên editor.
-- TypeIn và Fill có danh sách đáp án chấp nhận/từ đồng nghĩa trong editor,
-  nút `+ THÊM TỪ ĐỒNG NGHĨA` và checkbox `Sử dụng RegEx để so khớp`; viewer
-  vẫn giữ đúng một textbox trả lời như LMS.
-- Mỗi câu có switch `BẮT BUỘC`; trạng thái được lưu và xuất sang CMS JSON.
-- Các nút tải media ở câu hỏi/đáp án dùng icon upload thật và khung cố định
-  44 × 44 px, không còn co méo theo nội dung bên cạnh.
-- Import Excel/media, hiệu chỉnh, xem trước và export CMS JSON giữ nguyên luồng.
-
-## QA bổ sung — Required, từ đồng nghĩa, RegEx và upload
-
-- Nguồn LMS:
-  - `Screenshot 2026-07-28 at 14.59.46.png`
-  - `Screenshot 2026-07-28 at 15.00.50.png`
-  - `Screenshot 2026-07-28 at 15.01.49.png`
-- Implementation:
-  - `qa-artifacts/teky-editor-required-regex-upload-final.png`
-- Ảnh ghép nguồn/implementation được đánh giá trong cùng một canvas:
-  - `qa-artifacts/compare-editor-required-regex-upload-final.png`
-- Viewport nguồn: 983 × 1022 px; viewport implementation: 1280 × 720 px.
-  Đối chiếu tập trung vào cùng trạng thái editor Fill-in-the-Blank và cùng cụm
-  điều khiển `BẮT BUỘC` / đáp án chấp nhận / RegEx.
-- Kiểm tra DOM:
-  - 10 switch `BẮT BUỘC`;
-  - 3 checkbox RegEx cho TypeIn, FillInTheBlank và WordBank legacy;
-  - TypeIn và Fill đọc đủ 2 đáp án chấp nhận từ Excel;
-  - 6 nút upload đang hiển thị đều đo đúng 44 × 44 px.
-- Kiểm tra tương tác trên Fill:
-  - bật `BẮT BUỘC` → `aria-pressed="true"`;
-  - bật RegEx → checkbox checked;
-  - thêm từ đồng nghĩa → sinh thêm một input có thể sửa/xóa.
-- CMS JSON giữ toàn bộ `correctAnswer`, đồng thời xuất `required` và
-  `useRegex`.
-
-## Interaction, responsive và console
-
-- Đã thử chọn MC/MR/TF, ba dropdown Matching, TypeIn, Fill, Numeric, hai ô
-  Multiple Numeric và Word Bank.
-- Ordering đã đổi thứ tự bằng bàn phím; trạng thái answered cập nhật tức thời.
-- Desktop và mobile đều cuộn được; mobile 760 px có `scrollWidth = 760`.
-- Console errors: 0.
-- Frontend production build: passed.
-- Backend tests: 35 passed.
-
-## Lịch sử sửa lỗi
-
-- P0: `.app` chặn cuộn viewer do `overflow: hidden` — đã tạo scroll container
-  riêng cho Teky preview.
-- P1: Viewer cũ hiển thị từng câu — đã chuyển sang toàn bộ bài trên một trang.
-- P1: banner/header không sticky vì preview container bị flex co còn một
-  viewport — đã để container tăng theo nội dung; sticky được xác nhận bằng DOM.
-- P1: media video local từng render iframe lồng cả ứng dụng — đã dùng thẻ
-  `<video controls>` cho asset local; URL ngoài vẫn dùng iframe.
-- P1: TypeIn/Fill từng làm mất accepted answers phụ — editor/parser/exporter nay
-  giữ đầy đủ từ đồng nghĩa, trong khi viewer vẫn chỉ hiển thị một textbox trả lời.
-- P1: switch `BẮT BUỘC` trước đây chỉ là hình tĩnh — đã nối state, save và CMS
-  export.
-- P1: nút upload media đáp án bị co méo — đã cố định kích thước và dùng icon
-  upload nhất quán.
-- P2: Ordering chỉ phụ thuộc chuột — đã thêm thao tác bàn phím và aria-label.
-- P2: thiếu trạng thái xác nhận nộp bài — đã thêm modal thống kê và danh sách
-  câu còn trống.
+- Imported a CMS-only legacy JSON fixture: 2/2 questions succeeded.
+- Opened editor and verified holder counts 1 and 2.
+- Clicked a correct card into a single holder.
+- Clicked two equal-value cards into two distinct holders.
+- Verified used-card state, zero empty holders, and completed progress.
+- Checked browser console: no warnings or errors.
+- Focused the prompt and inserted a holder before an existing holder; numbering and answer-card order shifted together.
+- Typed `___` directly and verified immediate conversion to a numbered holder.
+- Added a distractor after leaving the content editor; the new full-width input remained visible and editable.
 
 ## Follow-up polish
 
-- `Tự luận` vẫn disabled vì chưa có mapping tương ứng trong JSON Teky LMS chuẩn.
-  Khi LMS xác nhận schema type này, có thể bật mà không đổi lại bố cục.
+- P3: old synonym variants remain editable below the primary answer to preserve legacy matching semantics; only the primary value becomes a draggable card, matching the new CMS response model.
 
 final result: passed

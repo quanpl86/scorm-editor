@@ -6,12 +6,15 @@ Sample: ImportTemplate/Sample_import_template.xls
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
+
+from .fill_blank import normalize_blank_answers
 
 # Excel abbreviation → iSpring slide tp
 EXCEL_TYPE_MAP: dict[str, str] = {
@@ -110,6 +113,8 @@ class ExcelQuestion:
     explanation: str | None = None
     required: bool = False
     use_regex: bool = False
+    blank_answers: list[dict[str, Any]] = field(default_factory=list)
+    distractors: list[str] = field(default_factory=list)
     answers: list[ParsedAnswer] = field(default_factory=list)
     correct_feedback: ParsedMediaRefs = field(default_factory=ParsedMediaRefs)
     incorrect_feedback: ParsedMediaRefs = field(default_factory=ParsedMediaRefs)
@@ -345,7 +350,7 @@ def _validate_question(q: ExcelQuestion) -> None:
         q.errors.append("Short answer cần ít nhất 1 đáp án chấp nhận")
     elif tp in ("Numeric", "MultipleNumeric") and n < 1:
         q.warnings.append("Numeric cần ít nhất 1 đáp án (=số, ví dụ =5)")
-    elif tp == "FillInTheBlank" and n < 1:
+    elif tp == "FillInTheBlank" and n < 1 and not q.blank_answers:
         q.warnings.append("FIB cần ít nhất 1 đáp án cho ô trống")
     elif tp == "WordBank" and n < 2:
         q.errors.append("WB cần ít nhất 2 từ (1 đúng * + 1 nhiễu)")
@@ -382,6 +387,8 @@ def parse_excel_file(path: Path, *, sheet_index: int = 0) -> list[ExcelQuestion]
     expl_col = col("explanation") or col("correct feedback")
     required_col = col("required", "mandatory", "bắt buộc")
     regex_col = col("use regex", "useregex", "regex", "sử dụng regex")
+    blank_answers_col = col("blank answers json", "blankanswers", "blank answers")
+    distractors_col = col("distractors", "blank distractors", "thẻ nhiễu")
     correct_fb_col = col("correct feedback")
     incorrect_fb_col = col("incorrect feedback")
     points_col = col("points")
@@ -465,6 +472,27 @@ def parse_excel_file(path: Path, *, sheet_index: int = 0) -> list[ExcelQuestion]
             except ValueError:
                 pass
 
+        parsed_blank_answers: list[dict[str, Any]] = []
+        if blank_answers_col:
+            raw_blank_answers = _cell_str(row.get(blank_answers_col))
+            if raw_blank_answers:
+                try:
+                    decoded = json.loads(raw_blank_answers)
+                    if isinstance(decoded, list):
+                        parsed_blank_answers = normalize_blank_answers(decoded)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+        parsed_distractors: list[str] = []
+        if distractors_col:
+            raw_distractors = _cell_str(row.get(distractors_col))
+            if raw_distractors:
+                try:
+                    decoded = json.loads(raw_distractors)
+                    values = decoded if isinstance(decoded, list) else [decoded]
+                except json.JSONDecodeError:
+                    values = re.split(r"[;|\n]", raw_distractors)
+                parsed_distractors = [str(value).strip() for value in values if str(value).strip()]
+
         q = ExcelQuestion(
             row_index=int(idx) + 2,
             excel_type=excel_type,
@@ -478,6 +506,8 @@ def parse_excel_file(path: Path, *, sheet_index: int = 0) -> list[ExcelQuestion]
             explanation=_cell_str(row.get(expl_col)) if expl_col else "",
             required=_cell_bool(row.get(required_col)) if required_col else False,
             use_regex=_cell_bool(row.get(regex_col)) if regex_col else False,
+            blank_answers=parsed_blank_answers,
+            distractors=parsed_distractors,
             answers=answers,
             correct_feedback=(
                 parse_media_brackets(_cell_str(row.get(correct_fb_col)))

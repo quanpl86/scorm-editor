@@ -331,7 +331,7 @@ Khi import, ảnh được copy vào package và đăng ký trong session. Khi e
 | `TF` | Đúng/Sai | `true_false` | Đánh dấu đáp án đúng |
 | `MG`/`MA` | Ghép cặp | `matching` | `Vế trái|Vế phải`; có thể kèm ảnh hai vế |
 | `SEQ` | Sắp xếp thứ tự | `ordering` | Thứ tự Answer 1...N là thứ tự đúng |
-| `FIB`/`WB` | Điền vào chỗ trống | `fill_blank` | Câu hỏi dùng `___`; một textbox và nhiều đáp án tương đồng |
+| `FIB`/`WB` | Drag in Blank | `fill_blank` | Dùng `[ô_trống]` hoặc legacy `___`; nhiều holder, đáp án riêng và thẻ nhiễu |
 | `TI`/`SA` | Trả lời ngắn | `short_answer` | Một textbox; thêm từ đồng nghĩa nếu cần |
 | `NUM`/`NUMG` | Đáp án số | `numeric` | Một giá trị số chính xác |
 | `MNUM` | Nhiều đáp án số | `multiple_numeric` | Nhiều ô/giá trị số theo thứ tự |

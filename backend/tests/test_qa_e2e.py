@@ -271,6 +271,51 @@ def test_cms_json_download_deletes_completed_session(master_available, monkeypat
     assert not session_dir.exists()
 
 
+def test_cms_json_export_rejects_empty_quiz_without_deleting_session(master_available, monkeypatch):
+    monkeypatch.setattr("app.s3_service.upload_file_to_s3", lambda _path: None)
+    session = ScormSession.create_from_source(MASTER_SCORM)
+    session.quiz_json.setdefault("d", {}).setdefault("sl", {})["g"] = [
+        {"T": "Imported Questions", "S": []}
+    ]
+    session.persist()
+    session_dir = SESSIONS_ROOT / session.session_id
+
+    response = client.post(f"/api/session/{session.session_id}/export-cms-json")
+
+    assert response.status_code == 400
+    assert "không có câu hỏi" in response.json()["detail"]
+    assert session_dir.is_dir()
+
+
+def test_save_new_fill_blank_into_empty_question_group(master_available):
+    session = ScormSession.create_from_source(MASTER_SCORM)
+    session.quiz_json.setdefault("d", {}).setdefault("sl", {})["g"] = [
+        {"T": "Imported Questions", "S": []}
+    ]
+    session.persist()
+
+    saved = session.save_view({
+        "title": "New FIB",
+        "questions": [{
+            "id": "new_fib",
+            "isNew": True,
+            "type": "FillInTheBlank",
+            "questionText": "[ô_trống] + [ô_trống] = 12",
+            "blankAnswers": [
+                {"id": "qmFillInTheBlank0", "values": ["6"]},
+                {"id": "qmFillInTheBlank1", "values": ["6"]},
+            ],
+            "wordBankWords": ["4", "8"],
+            "points": 1,
+        }],
+    })
+
+    assert saved["questionCount"] == 1
+    assert saved["questions"][0]["type"] == "FillInTheBlank"
+    assert [item["values"] for item in saved["questions"][0]["blankAnswers"]] == [["6"], ["6"]]
+    assert saved["questions"][0]["wordBankWords"] == ["4", "8"]
+
+
 def test_legacy_cms_json_without_editor_state_is_migrated(master_available):
     legacy = {
         "title": "Legacy CMS",
@@ -312,6 +357,56 @@ def test_legacy_cms_json_without_editor_state_is_migrated(master_available):
     assert view["tekyQuiz"]["difficultyLevel"] == "hard"
     assert view["questions"][0]["slideImages"][0] == legacy["questions"][0]["imageUrl"]
     assert view["importSummary"]["legacyMigration"] is True
+
+
+def test_json_import_recovers_cms_questions_when_embedded_state_is_empty(master_available):
+    payload = {
+        "title": "Recover stale state",
+        "questions": [{
+            "id": "fib-1",
+            "type": "fill_blank",
+            "question": "[ô_trống] + [ô_trống] = 12",
+            "correctAnswer": ["6", "6"],
+            "blankAnswers": [
+                {"id": "blank-1", "acceptedAnswers": ["6"]},
+                {"id": "blank-2", "acceptedAnswers": ["6"]},
+            ],
+            "distractors": ["4", "8"],
+        }],
+        "_scormEditorState": {
+            "d": {"T": "Stale", "sl": {"g": [{"T": "Imported Questions", "S": []}]}},
+        },
+    }
+
+    response = client.post(
+        "/api/import/json",
+        files={"file": ("stale.json", json.dumps([payload]), "application/json")},
+    )
+
+    assert response.status_code == 200
+    view = response.json()
+    assert view["questionCount"] == 1
+    assert view["questions"][0]["type"] == "FillInTheBlank"
+    assert len(view["questions"][0]["blankAnswers"]) == 2
+    assert view["importSummary"]["legacyMigration"] is True
+
+
+def test_json_import_rejects_unrecoverable_empty_export():
+    payload = {
+        "title": "Broken empty export",
+        "questions": [],
+        "_scormEditorState": {
+            "d": {"T": "Broken", "sl": {"g": [{"T": "Imported Questions", "S": []}]}},
+        },
+    }
+
+    response = client.post(
+        "/api/import/json",
+        files={"file": ("empty.json", json.dumps([payload]), "application/json")},
+    )
+
+    assert response.status_code == 400
+    assert "không chứa câu hỏi" in response.json()["detail"]
 
 
 def test_tsv_zip_passes_embedded_media_to_publisher(monkeypatch, tmp_path):

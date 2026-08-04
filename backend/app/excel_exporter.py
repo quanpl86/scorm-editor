@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import tempfile
 import zipfile
@@ -13,6 +14,7 @@ import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
 
 from .media_bundle import MediaBundler
+from .fill_blank import align_blank_answers, normalize_blank_answers
 from .scorm_parser import ScormSession
 
 
@@ -29,6 +31,8 @@ QUESTION_HEADERS = [
     "Points",
     "Required",
     "Use Regex",
+    "Blank Answers JSON",
+    "Distractors",
     "Image",
     "Video",
     "Audio",
@@ -311,6 +315,25 @@ def export_session_to_excel_zip(session: ScormSession) -> tuple[Path, str]:
                 "Points": q.get("points", 1),
                 "Required": bool(q.get("required", False)),
                 "Use Regex": bool(q.get("useRegex", False)),
+                "Blank Answers JSON": (
+                    json.dumps(
+                        align_blank_answers(
+                            q.get("questionText", ""),
+                            normalize_blank_answers(q.get("blankAnswers") or []),
+                        ),
+                        ensure_ascii=False,
+                    )
+                    if source_type in {"FillInTheBlank", "WordBank"}
+                    else ""
+                ),
+                "Distractors": (
+                    json.dumps(
+                        q.get("blankDistractors") or q.get("wordBankWords") or [],
+                        ensure_ascii=False,
+                    )
+                    if source_type in {"FillInTheBlank", "WordBank"}
+                    else ""
+                ),
                 "Image": question_media[0] if question_media else "",
                 "Video": video_ref,
                 "Audio": audio_ref,

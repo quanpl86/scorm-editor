@@ -113,7 +113,7 @@ AI → TSV (text + optional placeholders)
 | TF | `*Đúng`/`Sai` hoặc ngược lại |
 | MG | `Trái\|Phải`; **≤6 cặp**; Left Image ×6 rồi Right Image ×6 |
 | SEQ | Answer 1…N thứ tự đúng; **≤6**; không `*` |
-| FIB | `___` trong stem; đồng nghĩa → Answer 1..N **hoặc** 1 regex + Use Regex=True |
+| FIB | Một holder: `[ô_trống]` hoặc legacy `___` + Answer 1..N. Nhiều holder: thêm `Blank Answers JSON` và `Distractors` |
 | TI | **Ưu tiên** Answer 1..N plain text (Use Regex=False). Chỉ dùng 1 regex ở Answer 1 nếu Use Regex=True |
 | NUM | Answer 1 = số |
 | MNUM | Answer 1…K = các số theo thứ tự (≤6) |
@@ -129,6 +129,11 @@ AI → TSV (text + optional placeholders)
 | Use Regex | `True` / `False` | Chỉ `True` khi FIB/TI và **duy nhất Answer 1** là RegEx đã kiểm thử; mặc định `False` |
 
 ### 3.5.1. TI / FIB — nhiều đáp án tương đồng (bắt buộc đúng cấu trúc)
+
+Với FIB nhiều holder, dùng ví dụ:
+`Question Text = [ô_trống] + [ô_trống] = 12`,
+`Blank Answers JSON = [{"id":"blank-1","values":["6"]},{"id":"blank-2","values":["6"]}]`,
+`Distractors = ["4","8"]`. Các cột này là JSON trên một ô TSV, không tách bằng tab.
 
 Agent **hay lỗi** khi gộp đồng nghĩa bằng `|` hoặc nhét regex sai cột → lệch TSV (Explanation/Difficulty dồn vào Answer).
 

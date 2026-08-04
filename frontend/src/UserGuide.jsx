@@ -287,15 +287,15 @@ Audio: https://cdn.example.com/audio/bai-hoc.mp3`}</GuideCode>
             ['TF', 'true_false', 'Chọn Đúng hoặc Sai'],
             ['MG / MA', 'matching', 'Các cặp Vế trái|Vế phải, hỗ trợ ảnh hai vế'],
             ['SEQ', 'ordering', 'Answer 1…N chính là thứ tự đúng'],
-            ['FIB / WB', 'fill_blank', 'Một textbox; đề dùng ___; hỗ trợ đáp án tương đồng'],
+            ['FIB / WB', 'fill_blank', 'Drag in Blank; nhiều [ô_trống], đáp án riêng từng holder và thẻ nhiễu'],
             ['TI / SA', 'short_answer', 'Một textbox; hỗ trợ từ đồng nghĩa và RegEx'],
             ['NUM / NUMG', 'numeric', 'Một giá trị số chính xác'],
             ['MNUM', 'multiple_numeric', 'Nhiều giá trị/ô số theo thứ tự'],
           ]}
         />
         <GuideNote>
-          FIB và Short Answer trên LMS đều chỉ có một textbox. Nút THÊM TỪ ĐỒNG NGHĨA thêm các
-          giá trị chấp nhận cho cùng textbox; không tạo thêm textbox trả lời.
+          FIB hiện dùng Drag in Blank và vẫn đọc được dấu ___ từ JSON cũ. Short Answer tiếp tục
+          dùng textbox; các đáp án tương đồng của Short Answer không tạo thêm ô trả lời.
         </GuideNote>
         <ul>
           <li><strong>Required:</strong> bật/tắt bắt buộc trả lời cho từng question.</li>

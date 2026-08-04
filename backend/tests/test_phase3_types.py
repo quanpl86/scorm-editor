@@ -210,7 +210,7 @@ def test_required_and_regex_settings_round_trip_in_question_view():
     assert view["useRegex"] is True
 
 
-def test_fill_blank_edit_keeps_synonyms_and_uses_underscore_marker():
+def test_fill_blank_edit_keeps_multiple_holders_synonyms_and_legacy_marker():
     slide = {
         "tp": "FillInTheBlank",
         "D": {"h": "<p>Trình duyệt mặc định là ___.</p>"},
@@ -236,13 +236,19 @@ def test_fill_blank_edit_keeps_synonyms_and_uses_underscore_marker():
                 {"id": "qmFillInTheBlank0", "values": ["Edge", "Microsoft Edge"]},
                 {"id": "qmFillInTheBlank1", "values": ["Chrome"]},
             ],
+            "wordBankWords": ["Firefox", "Safari"],
         },
     )
 
-    assert len(slide["C"]["rt"]["r"]) == 1
+    assert len(slide["C"]["rt"]["r"]) == 2
     assert slide["C"]["rt"]["r"][0]["data"]["v"] == ["Edge", "Microsoft Edge"]
+    assert slide["C"]["rt"]["r"][1]["data"]["v"] == ["Chrome"]
     assert 'id="qmFillInTheBlank0"' in slide["C"]["rt"]["h"]
+    assert 'id="qmFillInTheBlank1"' in slide["C"]["rt"]["h"]
     assert "___" not in slide["C"]["rt"]["h"]
+    assert slide["C"]["ew"] == ["Firefox", "Safari"]
+    view = slide_to_view(slide, 0, 0, "Nhóm")
+    assert view["blankDistractors"] == ["Firefox", "Safari"]
 
 
 def test_fill_in_blank_view_collapses_legacy_duplicate_question_and_content():

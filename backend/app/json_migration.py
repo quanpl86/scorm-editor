@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .excel_import import ExcelQuestion, ParsedAnswer
+from .fill_blank import align_blank_answers, normalize_blank_answers, normalize_distractors, normalize_question_prompt
 
 
 CMS_TO_ISPRING = {
@@ -59,15 +60,33 @@ def cms_questions_to_excel_rows(quiz_obj: dict[str, Any]) -> list[ExcelQuestion]
                     text=str(item.get("text") or ""),
                     image=item.get("imageUrl"),
                 ))
+        elif ispring_type == "FillInTheBlank":
+            raw_blanks = question.get("blankAnswers") or question.get("blanks") or []
+            blank_answers = align_blank_answers(
+                question.get("question"),
+                normalize_blank_answers(raw_blanks, fallback=correct_values),
+            )
+            answers = [
+                ParsedAnswer(text=value, is_correct=True)
+                for value in (blank_answers[0]["values"] if blank_answers else correct_values)
+            ]
         else:
+            blank_answers = []
             answers = [ParsedAnswer(text=value, is_correct=True) for value in correct_values]
+
+        if ispring_type != "FillInTheBlank":
+            blank_answers = []
 
         metadata = question.get("metadata") or {}
         rows.append(ExcelQuestion(
             row_index=index,
             excel_type=excel_type,
             ispring_type=ispring_type,
-            question_text=str(question.get("question") or ""),
+            question_text=(
+                normalize_question_prompt(question.get("question"))
+                if ispring_type == "FillInTheBlank"
+                else str(question.get("question") or "")
+            ),
             image=question.get("imageUrl"),
             video=question.get("videoUrl"),
             audio=question.get("audioUrl"),
@@ -76,6 +95,12 @@ def cms_questions_to_excel_rows(quiz_obj: dict[str, Any]) -> list[ExcelQuestion]
             explanation=str(question.get("explanation") or ""),
             required=bool(question.get("required", False)),
             use_regex=bool(question.get("useRegex", False)),
+            blank_answers=blank_answers,
+            distractors=normalize_distractors(
+                question.get("distractors")
+                or question.get("blankDistractors")
+                or []
+            ),
             points=float(question.get("points", 1) or 1),
             answers=answers,
         ))

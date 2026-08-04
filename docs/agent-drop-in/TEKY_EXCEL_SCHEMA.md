@@ -60,7 +60,7 @@ SNLT-HP01-B01/
 | TF | true_false | `*` trước Đúng hoặc Sai |
 | MG | matching | `Vế trái\|Vế phải`; tối đa **6 cặp** |
 | SEQ | ordering | Answer 1…N = thứ tự đúng; tối đa 6 |
-| FIB | fill_blank | `___` trong stem; Answer = biến thể chấp nhận |
+| FIB | fill_blank | `[ô_trống]` hoặc legacy `___`; nhiều holder dùng `Blank Answers JSON`; `Distractors` là thẻ sai |
 | TI | short_answer | Text hoặc 1 RegEx nếu `Use Regex=True` |
 | NUM | numeric | Một số ở Answer 1 |
 | MNUM | multiple_numeric | Nhiều số Answer 1…6 theo thứ tự |

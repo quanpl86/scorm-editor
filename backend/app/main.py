@@ -200,6 +200,19 @@ def merge_cms_config_into_editor_state(
     return merged
 
 
+def editor_state_question_count(editor_state: dict[str, Any] | None) -> int:
+    """Count editable question slides in a raw iSpring editor state."""
+    if not isinstance(editor_state, dict):
+        return 0
+    groups = editor_state.get("d", {}).get("sl", {}).get("g", [])
+    return sum(
+        1
+        for group in groups
+        for slide in (group.get("S", []) if isinstance(group, dict) else [])
+        if isinstance(slide, dict) and slide.get("tp") not in {"InfoSlide", "IntroSlide", "ResultSlide"}
+    )
+
+
 def replace_editor_media_with_s3(
     value: Any,
     upload_cache: dict[str, str | None],
@@ -315,6 +328,21 @@ def import_cms_json(background_tasks: BackgroundTasks, file: UploadFile = File(.
         editor_state = quiz_obj.get("_scormEditorState")
         if not editor_state:
             return create_session_from_legacy_cms(quiz_obj)
+
+        # Some early editor exports embedded a valid-looking but empty raw
+        # state while the canonical CMS `questions` array still contained the
+        # quiz.  Prefer the recoverable CMS data instead of reopening a blank
+        # editor and later exporting `questions: []`.
+        cms_questions = quiz_obj.get("questions") or []
+        raw_question_count = editor_state_question_count(editor_state)
+        if raw_question_count == 0:
+            if cms_questions:
+                return create_session_from_legacy_cms(quiz_obj)
+            raise HTTPException(
+                400,
+                "File JSON không chứa câu hỏi trong cả questions và "
+                "_scormEditorState; không có dữ liệu câu hỏi để phục hồi.",
+            )
         
         if "d" not in editor_state or "sl" not in editor_state.get("d", {}):
             raise HTTPException(400, "File JSON này thuộc phiên bản Beta (lưu trữ dưới dạng View) không tương thích để phục hồi. Vui lòng sử dụng bản Export mới nhất.")
@@ -1074,6 +1102,13 @@ def _generate_cms_json(session_id: str, request: Request):
                     break
 
         quiz_obj = quiz_to_cms_json(quiz_view, session_id, base_url=base, s3_uploader=handle_s3_upload)
+
+        if not quiz_obj.get("questions"):
+            raise HTTPException(
+                400,
+                "Không thể export JSON vì session hiện không có câu hỏi đã được lưu. "
+                "Dữ liệu chưa bị xoá; vui lòng lưu lại câu hỏi rồi export lại.",
+            )
 
         import copy
         stateless_json = copy.deepcopy(session.quiz_json)
